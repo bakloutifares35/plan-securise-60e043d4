@@ -1,13 +1,36 @@
-import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Network, Calendar, FileSignature, Users, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RoleSwitcher } from "./RoleSwitcher";
 
-export type Section = "dashboard" | "form" | "plan" | "benchmark";
+export type Section =
+  | "dashboard" | "form" | "plan" | "benchmark"
+  | "orgchart" | "entity" | "calendar" | "policy" | "committee" | "references";
 
-const items: { id: Section; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { id: "form", label: "Identification des risques", icon: FileText },
-  { id: "plan", label: "Plan de continuité", icon: ListChecks },
-  { id: "benchmark", label: "Benchmark", icon: BarChart3 },
+const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
+  {
+    label: "Pilotage",
+    items: [
+      { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+      { id: "benchmark", label: "Benchmark", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Gouvernance (M1)",
+    items: [
+      { id: "orgchart", label: "Organigramme", icon: Network },
+      { id: "calendar", label: "Calendrier annuel", icon: Calendar },
+      { id: "policy", label: "Politique PCA", icon: FileSignature },
+      { id: "committee", label: "Comité de pilotage", icon: Users },
+      { id: "references", label: "Référentiels & rôles", icon: Settings },
+    ],
+  },
+  {
+    label: "Opérationnel",
+    items: [
+      { id: "form", label: "Identification des risques", icon: FileText },
+      { id: "plan", label: "Plan de continuité", icon: ListChecks },
+    ],
+  },
 ];
 
 export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: Section) => void }) => {
@@ -22,28 +45,36 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
           <p className="text-xs text-muted-foreground">Continuité d'activité</p>
         </div>
       </div>
-      <nav className="flex-1 p-3 space-y-1">
-        {items.map((it) => {
-          const Icon = it.icon;
-          const isActive = active === it.id;
-          return (
-            <button
-              key={it.id}
-              onClick={() => onChange(it.id)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {it.label}
-            </button>
-          );
-        })}
+      <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+        {groups.map((g) => (
+          <div key={g.label}>
+            <p className="px-3 mb-1.5 text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">{g.label}</p>
+            <div className="space-y-0.5">
+              {g.items.map((it) => {
+                const Icon = it.icon;
+                const isActive = active === it.id;
+                return (
+                  <button
+                    key={it.id}
+                    onClick={() => onChange(it.id)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {it.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
-      <div className="p-4 border-t border-border text-xs text-muted-foreground">
+      <RoleSwitcher />
+      <div className="p-3 border-t border-border text-xs text-muted-foreground text-center">
         © 2026 PCA Manager
       </div>
     </aside>
