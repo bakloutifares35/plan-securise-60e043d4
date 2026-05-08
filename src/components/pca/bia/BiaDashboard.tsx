@@ -27,10 +27,10 @@ export const BiaDashboard = () => {
   }, [processes, campaigns]);
 
   const cards = [
-    { label: "Processus inventoriés", value: processes.length, icon: Activity, tone: "primary" },
-    { label: "Processus critiques", value: stats.critical, icon: AlertTriangle, tone: "destructive" },
-    { label: "Couverture BIA", value: `${stats.coverage}%`, icon: CheckCircle2, tone: "success" },
-    { label: "Campagnes en cours", value: stats.inProgress, icon: Calendar, tone: "accent" },
+    { label: "Processus inventoriés", value: processes.length, icon: Activity, cls: "bg-primary/10 text-primary" },
+    { label: "Processus critiques", value: stats.critical, icon: AlertTriangle, cls: "bg-destructive/10 text-destructive" },
+    { label: "Couverture BIA", value: `${stats.coverage}%`, icon: CheckCircle2, cls: "bg-success/10 text-success" },
+    { label: "Campagnes en cours", value: stats.inProgress, icon: Calendar, cls: "bg-accent/10 text-accent" },
   ];
 
   return (
@@ -60,7 +60,7 @@ export const BiaDashboard = () => {
                   <p className="text-xs text-muted-foreground">{c.label}</p>
                   <p className="text-2xl font-bold text-foreground mt-1">{c.value}</p>
                 </div>
-                <div className={`h-10 w-10 rounded-lg flex items-center justify-center bg-${c.tone}/10 text-${c.tone}`}>
+                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${c.cls}`}>
                   <Icon className="h-5 w-5" />
                 </div>
               </CardContent>
