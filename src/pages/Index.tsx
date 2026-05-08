@@ -10,9 +10,11 @@ import { AnnualCalendar } from "@/components/pca/AnnualCalendar";
 import { PolicyEditor } from "@/components/pca/PolicyEditor";
 import { SteeringCommittee } from "@/components/pca/SteeringCommittee";
 import { References } from "@/components/pca/References";
+import { BiaModule } from "@/components/pca/bia/BiaModule";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
+import { BiaProvider } from "@/contexts/BiaContext";
 
 const Index = () => {
   const [section, setSection] = useState<Section>("dashboard");
@@ -20,6 +22,7 @@ const Index = () => {
   return (
     <RoleProvider>
       <GovernanceProvider>
+        <BiaProvider>
         <div className="min-h-screen flex bg-[image:var(--gradient-subtle)]">
           <Sidebar active={section} onChange={setSection} />
           <main className="flex-1 min-w-0">
@@ -33,6 +36,7 @@ const Index = () => {
                   <SelectItem value="policy">Politique PCA</SelectItem>
                   <SelectItem value="committee">Comité de pilotage</SelectItem>
                   <SelectItem value="references">Référentiels & rôles</SelectItem>
+                  <SelectItem value="bia">Business Impact Analysis</SelectItem>
                   <SelectItem value="form">Identification des risques</SelectItem>
                   <SelectItem value="plan">Plan de continuité</SelectItem>
                   <SelectItem value="benchmark">Benchmark</SelectItem>
@@ -50,9 +54,11 @@ const Index = () => {
               {section === "policy" && <PolicyEditor />}
               {section === "committee" && <SteeringCommittee />}
               {section === "references" && <References />}
+              {section === "bia" && <BiaModule />}
             </div>
           </main>
         </div>
+        </BiaProvider>
       </GovernanceProvider>
     </RoleProvider>
   );
