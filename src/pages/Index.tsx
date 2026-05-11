@@ -26,11 +26,7 @@ const Index = () => {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="dashboard">Tableau de bord</SelectItem>
-                  <SelectItem value="orgchart">Organigramme</SelectItem>
-                  <SelectItem value="calendar">Calendrier annuel</SelectItem>
-                  <SelectItem value="policy">Politique PCA</SelectItem>
-                  <SelectItem value="committee">Comité de pilotage</SelectItem>
-                  <SelectItem value="references">Référentiels & rôles</SelectItem>
+                  <SelectItem value="governance">Gouvernance PCA</SelectItem>
                   <SelectItem value="bia">Business Impact Analysis</SelectItem>
                   <SelectItem value="form">Identification des risques</SelectItem>
                   <SelectItem value="plan">Plan de continuité</SelectItem>
@@ -43,12 +39,7 @@ const Index = () => {
               {section === "form" && <RiskForm />}
               {section === "plan" && <PlanSteps />}
               {section === "benchmark" && <Benchmark />}
-              {section === "orgchart" && <OrgChart onNavigate={setSection} />}
-              {section === "entity" && <EntityProfile onBack={() => setSection("orgchart")} />}
-              {section === "calendar" && <AnnualCalendar />}
-              {section === "policy" && <PolicyEditor />}
-              {section === "committee" && <SteeringCommittee />}
-              {section === "references" && <References />}
+              {section === "governance" && <GovernanceModule />}
               {section === "bia" && <BiaModule />}
             </div>
           </main>
