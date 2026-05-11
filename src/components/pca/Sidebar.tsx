@@ -1,10 +1,10 @@
-import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Network, Calendar, FileSignature, Users, Settings, Activity } from "lucide-react";
+import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
 
 export type Section =
   | "dashboard" | "form" | "plan" | "benchmark"
-  | "orgchart" | "entity" | "calendar" | "policy" | "committee" | "references"
+  | "governance" | "entity"
   | "bia";
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
@@ -18,11 +18,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
   {
     label: "Gouvernance (M1)",
     items: [
-      { id: "orgchart", label: "Organigramme", icon: Network },
-      { id: "calendar", label: "Calendrier annuel", icon: Calendar },
-      { id: "policy", label: "Politique PCA", icon: FileSignature },
-      { id: "committee", label: "Comité de pilotage", icon: Users },
-      { id: "references", label: "Référentiels & rôles", icon: Settings },
+      { id: "governance", label: "Gouvernance PCA", icon: Building2 },
     ],
   },
   {
