@@ -5,6 +5,7 @@ import { RiskForm } from "@/components/pca/RiskForm";
 import { PlanSteps } from "@/components/pca/PlanSteps";
 import { Benchmark } from "@/components/pca/Benchmark";
 import { GovernanceModule } from "@/components/pca/GovernanceModule";
+import { BiaModule } from "@/components/pca/bia/BiaModule";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
