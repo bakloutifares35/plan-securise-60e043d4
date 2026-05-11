@@ -1,11 +1,11 @@
-import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2 } from "lucide-react";
+import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
 
 export type Section =
   | "dashboard" | "form" | "plan" | "benchmark"
   | "governance" | "entity"
-  | "bia";
+  | "bia" | "risk";
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -25,6 +25,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
     label: "Opérationnel",
     items: [
       { id: "bia", label: "Business Impact Analysis", icon: Activity },
+      { id: "risk", label: "Analyse des Risques", icon: AlertOctagon },
       { id: "form", label: "Identification des risques", icon: FileText },
       { id: "plan", label: "Plan de continuité", icon: ListChecks },
     ],
