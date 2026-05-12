@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,6 +22,15 @@ type AiResult = { org_chart: OrgNode[]; processes: AiProcess[]; risks: AiRisk[] 
 
 const SECTORS = ["Banque & Finance", "Assurance", "Industrie", "Santé", "Retail", "Autre"];
 const SIZES = ["Moins de 50", "50-200", "200-500", "500-2000", "Plus de 2000 employés"];
+
+const SECTOR_CHECKLISTS: Record<string, string[]> = {
+  "Banque & Finance": ["Paiements interbancaires", "Gestion des crédits", "Trading", "Service client", "Infrastructure IT", "Cybersécurité", "Paie et RH", "Conformité"],
+  "Assurance": ["Gestion des sinistres", "Souscription", "Indemnisation", "Service client", "Comptabilité", "IT"],
+  "Industrie": ["Production", "Logistique", "Approvisionnement", "Maintenance", "IT", "RH"],
+  "Santé": ["Consultations", "Chirurgie", "Pharmacie", "Imagerie médicale", "Dossiers patients", "IT"],
+  "Retail": ["Ventes en magasin", "E-commerce", "Logistique", "Marketing", "Fidélisation", "IT"],
+  "Autre": ["Opérations", "Finance", "Marketing", "RH", "IT", "Service client"],
+};
 
 const parseDuration = (s: string): number => {
   const m = s.toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*(h|j|jour|jours|d|day|days|w|sem|semaine|m|mois)?/);
@@ -72,12 +81,23 @@ export const BcmAiConsultant = () => {
   const [size, setSize] = useState("");
   const [country, setCountry] = useState("France");
   const [subsidiaries, setSubsidiaries] = useState<number>(0);
-  const [description, setDescription] = useState("");
+  const [selectedProcesses, setSelectedProcesses] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AiResult | null>(null);
 
   const { setProcesses, processes } = useBia();
   const { entities, setEntities } = useGovernance();
+
+  const toggleProcess = (name: string) => {
+    setSelectedProcesses((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
+  };
+
+  const buildDescription = () => {
+    if (selectedProcesses.length === 0) return "";
+    return `Secteur : ${sector}. Processus principaux concernés : ${selectedProcesses.join(", ")}.`;
+  };
 
   const generate = async () => {
     if (!sector || !size) {
@@ -86,6 +106,7 @@ export const BcmAiConsultant = () => {
     }
     setLoading(true);
     setResult(null);
+    const description = buildDescription();
     try {
       const { data, error } = await supabase.functions.invoke("bcm-ai-consultant", {
         body: { sector, size, country, subsidiaries, description },
@@ -176,7 +197,7 @@ export const BcmAiConsultant = () => {
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Secteur d'activité *</Label>
-              <Select value={sector} onValueChange={setSector}>
+              <Select value={sector} onValueChange={(val) => { setSector(val); setSelectedProcesses([]); }}>
                 <SelectTrigger><SelectValue placeholder="Sélectionner un secteur" /></SelectTrigger>
                 <SelectContent>
                   {SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -202,13 +223,25 @@ export const BcmAiConsultant = () => {
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Description libre</Label>
-            <Textarea
-              rows={5}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Décrivez vos processus principaux, vos spécificités et vos contraintes..."
-            />
+            <Label>Processus principaux</Label>
+            {sector && SECTOR_CHECKLISTS[sector] ? (
+              <div className="rounded-lg border border-border bg-card p-4 grid md:grid-cols-2 gap-3">
+                {SECTOR_CHECKLISTS[sector].map((item) => (
+                  <div key={item} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`proc-${item}`}
+                      checked={selectedProcesses.includes(item)}
+                      onCheckedChange={() => toggleProcess(item)}
+                    />
+                    <Label htmlFor={`proc-${item}`} className="text-sm font-normal cursor-pointer">
+                      {item}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Sélectionnez un secteur pour afficher la liste des processus.</p>
+            )}
           </div>
           <div className="flex justify-end">
             <Button onClick={generate} disabled={loading} size="lg">
