@@ -30,6 +30,7 @@ const Index = () => {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="dashboard">Tableau de bord</SelectItem>
+                  <SelectItem value="ai">BCM AI Consultant</SelectItem>
                   <SelectItem value="governance">Gouvernance PCA</SelectItem>
                   <SelectItem value="bia">Business Impact Analysis</SelectItem>
                   <SelectItem value="risk">Analyse des Risques</SelectItem>
