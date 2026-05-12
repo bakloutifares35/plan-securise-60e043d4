@@ -5,7 +5,7 @@ import { RoleSwitcher } from "./RoleSwitcher";
 export type Section =
   | "dashboard" | "form" | "plan" | "benchmark"
   | "governance" | "entity"
-  | "bia" | "risk";
+  | "bia" | "risk" | "ai";
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
