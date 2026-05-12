@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,6 +22,15 @@ type AiResult = { org_chart: OrgNode[]; processes: AiProcess[]; risks: AiRisk[] 
 
 const SECTORS = ["Banque & Finance", "Assurance", "Industrie", "Santé", "Retail", "Autre"];
 const SIZES = ["Moins de 50", "50-200", "200-500", "500-2000", "Plus de 2000 employés"];
+
+const SECTOR_CHECKLISTS: Record<string, string[]> = {
+  "Banque & Finance": ["Paiements interbancaires", "Gestion des crédits", "Trading", "Service client", "Infrastructure IT", "Cybersécurité", "Paie et RH", "Conformité"],
+  "Assurance": ["Gestion des sinistres", "Souscription", "Indemnisation", "Service client", "Comptabilité", "IT"],
+  "Industrie": ["Production", "Logistique", "Approvisionnement", "Maintenance", "IT", "RH"],
+  "Santé": ["Consultations", "Chirurgie", "Pharmacie", "Imagerie médicale", "Dossiers patients", "IT"],
+  "Retail": ["Ventes en magasin", "E-commerce", "Logistique", "Marketing", "Fidélisation", "IT"],
+  "Autre": ["Opérations", "Finance", "Marketing", "RH", "IT", "Service client"],
+};
 
 const parseDuration = (s: string): number => {
   const m = s.toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*(h|j|jour|jours|d|day|days|w|sem|semaine|m|mois)?/);
