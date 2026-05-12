@@ -81,12 +81,23 @@ export const BcmAiConsultant = () => {
   const [size, setSize] = useState("");
   const [country, setCountry] = useState("France");
   const [subsidiaries, setSubsidiaries] = useState<number>(0);
-  const [description, setDescription] = useState("");
+  const [selectedProcesses, setSelectedProcesses] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AiResult | null>(null);
 
   const { setProcesses, processes } = useBia();
   const { entities, setEntities } = useGovernance();
+
+  const toggleProcess = (name: string) => {
+    setSelectedProcesses((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
+  };
+
+  const buildDescription = () => {
+    if (selectedProcesses.length === 0) return "";
+    return `Secteur : ${sector}. Processus principaux concernés : ${selectedProcesses.join(", ")}.`;
+  };
 
   const generate = async () => {
     if (!sector || !size) {
@@ -95,6 +106,7 @@ export const BcmAiConsultant = () => {
     }
     setLoading(true);
     setResult(null);
+    const description = buildDescription();
     try {
       const { data, error } = await supabase.functions.invoke("bcm-ai-consultant", {
         body: { sector, size, country, subsidiaries, description },
