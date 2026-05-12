@@ -197,7 +197,7 @@ export const BcmAiConsultant = () => {
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Secteur d'activité *</Label>
-              <Select value={sector} onValueChange={setSector}>
+              <Select value={sector} onValueChange={(val) => { setSector(val); setSelectedProcesses([]); }}>
                 <SelectTrigger><SelectValue placeholder="Sélectionner un secteur" /></SelectTrigger>
                 <SelectContent>
                   {SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
