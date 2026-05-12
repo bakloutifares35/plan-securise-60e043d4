@@ -1,17 +1,18 @@
-import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon } from "lucide-react";
+import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
 
 export type Section =
   | "dashboard" | "form" | "plan" | "benchmark"
   | "governance" | "entity"
-  | "bia" | "risk";
+  | "bia" | "risk" | "ai";
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
     label: "Pilotage",
     items: [
       { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+      { id: "ai", label: "BCM AI Consultant", icon: Sparkles },
       { id: "benchmark", label: "Benchmark", icon: BarChart3 },
     ],
   },

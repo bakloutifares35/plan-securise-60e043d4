@@ -1,0 +1,4 @@
+project_id = "axbzqgrgrbjhkpjsiqej"
+
+[functions.bcm-ai-consultant]
+verify_jwt = false

@@ -7,6 +7,7 @@ import { Benchmark } from "@/components/pca/Benchmark";
 import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
 import { RiskModule } from "@/components/pca/risk/RiskModule";
+import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -29,6 +30,7 @@ const Index = () => {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="dashboard">Tableau de bord</SelectItem>
+                  <SelectItem value="ai">BCM AI Consultant</SelectItem>
                   <SelectItem value="governance">Gouvernance PCA</SelectItem>
                   <SelectItem value="bia">Business Impact Analysis</SelectItem>
                   <SelectItem value="risk">Analyse des Risques</SelectItem>
@@ -40,6 +42,7 @@ const Index = () => {
             </header>
             <div className="p-6 md:p-10 max-w-7xl mx-auto">
               {section === "dashboard" && <Dashboard />}
+              {section === "ai" && <BcmAiConsultant />}
               {section === "form" && <RiskForm />}
               {section === "plan" && <PlanSteps />}
               {section === "benchmark" && <Benchmark />}
