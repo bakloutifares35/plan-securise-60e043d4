@@ -7,6 +7,7 @@ import { Benchmark } from "@/components/pca/Benchmark";
 import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
 import { RiskModule } from "@/components/pca/risk/RiskModule";
+import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
