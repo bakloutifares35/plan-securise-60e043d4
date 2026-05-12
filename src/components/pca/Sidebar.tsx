@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon } from "lucide-react";
+import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
 
