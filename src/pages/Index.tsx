@@ -42,6 +42,7 @@ const Index = () => {
             </header>
             <div className="p-6 md:p-10 max-w-7xl mx-auto">
               {section === "dashboard" && <Dashboard />}
+              {section === "ai" && <BcmAiConsultant />}
               {section === "form" && <RiskForm />}
               {section === "plan" && <PlanSteps />}
               {section === "benchmark" && <Benchmark />}
