@@ -223,13 +223,25 @@ export const BcmAiConsultant = () => {
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Description libre</Label>
-            <Textarea
-              rows={5}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Décrivez vos processus principaux, vos spécificités et vos contraintes..."
-            />
+            <Label>Processus principaux</Label>
+            {sector && SECTOR_CHECKLISTS[sector] ? (
+              <div className="rounded-lg border border-border bg-card p-4 grid md:grid-cols-2 gap-3">
+                {SECTOR_CHECKLISTS[sector].map((item) => (
+                  <div key={item} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`proc-${item}`}
+                      checked={selectedProcesses.includes(item)}
+                      onCheckedChange={() => toggleProcess(item)}
+                    />
+                    <Label htmlFor={`proc-${item}`} className="text-sm font-normal cursor-pointer">
+                      {item}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Sélectionnez un secteur pour afficher la liste des processus.</p>
+            )}
           </div>
           <div className="flex justify-end">
             <Button onClick={generate} disabled={loading} size="lg">
