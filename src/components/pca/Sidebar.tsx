@@ -12,6 +12,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
     label: "Pilotage",
     items: [
       { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+      { id: "ai", label: "BCM AI Consultant", icon: Sparkles },
       { id: "benchmark", label: "Benchmark", icon: BarChart3 },
     ],
   },
