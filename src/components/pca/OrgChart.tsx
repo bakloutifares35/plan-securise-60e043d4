@@ -399,7 +399,9 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
                     <h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4>
                     <span className="text-sm font-bold">{m}%</span>
                   </div>
-                  <Progress value={m} className="h-3" indicatorClassName={maturityColor(m)} />
+                  <div className="h-3 w-full rounded-full bg-secondary overflow-hidden">
+                    <div className={cn("h-full transition-all", maturityColor(m))} style={{ width: `${m}%` }} />
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {m < 50 ? "Niveau faible — actions urgentes requises" : m < 75 ? "Niveau intermédiaire — améliorations recommandées" : "Niveau élevé — bonne maturité"}
                   </p>
