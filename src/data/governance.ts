@@ -1,6 +1,9 @@
+export type EntityType = "Groupe" | "Holding" | "Filiale" | "Direction" | "Service";
+
 export type Entity = {
   id: string;
   name: string;
+  type?: EntityType;
   country: string;
   sector: string;
   parentId: string | null;
@@ -8,7 +11,20 @@ export type Entity = {
   referentBackup: string;
   status: "Actif" | "Inactif";
   pcaStatus: "Validé" | "En cours" | "À réviser" | "Non démarré";
+  maturity?: number; // 0-100
+  processIds?: string[];
   children?: Entity[];
+};
+
+export const ENTITY_TYPES: EntityType[] = ["Groupe", "Holding", "Filiale", "Direction", "Service"];
+
+export const defaultMaturity = (s: Entity["pcaStatus"]): number => {
+  switch (s) {
+    case "Validé": return 85;
+    case "En cours": return 60;
+    case "À réviser": return 45;
+    default: return 20;
+  }
 };
 
 export const initialEntities: Entity[] = [
