@@ -2,3 +2,6 @@ project_id = "axbzqgrgrbjhkpjsiqej"
 
 [functions.bcm-ai-consultant]
 verify_jwt = false
+
+[functions.org-process-suggester]
+verify_jwt = false

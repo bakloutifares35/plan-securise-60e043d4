@@ -1,6 +1,9 @@
+export type EntityType = "Groupe" | "Holding" | "Filiale" | "Direction" | "Service";
+
 export type Entity = {
   id: string;
   name: string;
+  type?: EntityType;
   country: string;
   sector: string;
   parentId: string | null;
@@ -8,76 +11,29 @@ export type Entity = {
   referentBackup: string;
   status: "Actif" | "Inactif";
   pcaStatus: "Validé" | "En cours" | "À réviser" | "Non démarré";
+  maturity?: number; // 0-100
+  processIds?: string[];
   children?: Entity[];
 };
 
+export const ENTITY_TYPES: EntityType[] = ["Groupe", "Holding", "Filiale", "Direction", "Service"];
+
+export const defaultMaturity = (s: Entity["pcaStatus"]): number => {
+  switch (s) {
+    case "Validé": return 85;
+    case "En cours": return 60;
+    case "À réviser": return 45;
+    default: return 20;
+  }
+};
+
 export const initialEntities: Entity[] = [
-  {
-    id: "e1",
-    name: "Groupe Atlas Holding",
-    country: "France",
-    sector: "Holding",
-    parentId: null,
-    referent: "Marie Dubois",
-    referentBackup: "Jean Martin",
-    status: "Actif",
-    pcaStatus: "Validé",
-  },
-  {
-    id: "e2",
-    name: "Atlas Finance SA",
-    country: "France",
-    sector: "Banque & Finance",
-    parentId: "e1",
-    referent: "Pierre Leroy",
-    referentBackup: "Sophie Durand",
-    status: "Actif",
-    pcaStatus: "Validé",
-  },
-  {
-    id: "e3",
-    name: "Atlas Insurance",
-    country: "Belgique",
-    sector: "Assurance",
-    parentId: "e1",
-    referent: "Lucas Bernard",
-    referentBackup: "Emma Petit",
-    status: "Actif",
-    pcaStatus: "En cours",
-  },
-  {
-    id: "e4",
-    name: "Direction IT",
-    country: "France",
-    sector: "Technologie",
-    parentId: "e2",
-    referent: "Thomas Robert",
-    referentBackup: "Julie Moreau",
-    status: "Actif",
-    pcaStatus: "Validé",
-  },
-  {
-    id: "e5",
-    name: "Service Cybersécurité",
-    country: "France",
-    sector: "Cybersécurité",
-    parentId: "e4",
-    referent: "Antoine Garcia",
-    referentBackup: "Camille Roux",
-    status: "Actif",
-    pcaStatus: "Validé",
-  },
-  {
-    id: "e6",
-    name: "Atlas Maroc",
-    country: "Maroc",
-    sector: "Banque & Finance",
-    parentId: "e1",
-    referent: "Yassine El Amrani",
-    referentBackup: "Fatima Benali",
-    status: "Actif",
-    pcaStatus: "À réviser",
-  },
+  { id: "e1", name: "Groupe Atlas Holding", type: "Groupe", country: "France", sector: "Holding", parentId: null, referent: "Marie Dubois", referentBackup: "Jean Martin", status: "Actif", pcaStatus: "Validé", maturity: 88 },
+  { id: "e2", name: "Atlas Finance SA", type: "Filiale", country: "France", sector: "Banque & Finance", parentId: "e1", referent: "Pierre Leroy", referentBackup: "Sophie Durand", status: "Actif", pcaStatus: "Validé", maturity: 82 },
+  { id: "e3", name: "Atlas Insurance", type: "Filiale", country: "Belgique", sector: "Assurance", parentId: "e1", referent: "Lucas Bernard", referentBackup: "Emma Petit", status: "Actif", pcaStatus: "En cours", maturity: 62 },
+  { id: "e4", name: "Direction IT", type: "Direction", country: "France", sector: "Technologie", parentId: "e2", referent: "Thomas Robert", referentBackup: "Julie Moreau", status: "Actif", pcaStatus: "Validé", maturity: 78 },
+  { id: "e5", name: "Service Cybersécurité", type: "Service", country: "France", sector: "Cybersécurité", parentId: "e4", referent: "Antoine Garcia", referentBackup: "Camille Roux", status: "Actif", pcaStatus: "Validé", maturity: 80 },
+  { id: "e6", name: "Atlas Maroc", type: "Filiale", country: "Maroc", sector: "Banque & Finance", parentId: "e1", referent: "Yassine El Amrani", referentBackup: "Fatima Benali", status: "Actif", pcaStatus: "À réviser", maturity: 42 },
 ];
 
 export type CalendarEvent = {
