@@ -48,7 +48,7 @@ export type Process = {
   department: string;
   owner: string;
   description: string;
-  status: "Actif" | "Inactif" | "En revue";
+  status: "Actif" | "Inactif" | "En revue" | "Nouveau";
   impacts: ImpactMatrix;
   rto: number; // hours
   rpo: number; // hours
