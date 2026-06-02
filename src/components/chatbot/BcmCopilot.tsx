@@ -1,4 +1,4 @@
-// src/components/pca/BcmAiConsultant.tsx
+// src/components/chatbot/BcmCopilot.tsx
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,17 +22,14 @@ const predefinedAnswers: Record<string, string> = {
   mtpd: "Le **MTPD (Maximum Tolerable Period of Disruption)** est la durée maximale d’interruption au-delà de laquelle l’organisation ne peut plus survivre.",
   mbco: "Le **MBCO (Minimum Business Continuity Objective)** est le niveau de service minimal à maintenir pendant une crise.",
   "iso 22301": "L’**ISO 22301** est la norme internationale pour les systèmes de management de la continuité d’activité (SMCA).",
-  criticité: "La **criticité** d’un processus se détermine en fonction de l’impact d’une interruption. Utilisez une échelle de 1 à 5 (1 = mineur, 5 = catastrophique) sur plusieurs axes : financier, réglementaire, réputation, client, opérationnel.",
-  impact: "Pour évaluer l’impact d’une indisponibilité, considérez les axes : financier (perte directe), réglementaire (amendes), réputation (image), client (fidélité), opérationnel (productivité). Chaque axe est noté de 1 à 5.",
+  criticité: "La **criticité** d’un processus se détermine en fonction de l’impact d’une interruption. Utilisez une échelle de 1 à 5.",
+  impact: "Pour évaluer l’impact, considérez les axes : financier, réglementaire, réputation, client, opérationnel.",
 };
 
 const getContextualSuggestions = (lastAssistantMessage: string): string[] => {
   const lower = lastAssistantMessage.toLowerCase();
-  if (lower.includes("rto")) return ["Voir les standards par secteur", "Comment calculer mon RTO ?", "Exemple concret"];
-  if (lower.includes("rpo")) return ["Différence RTO/RPO", "Calculer mon RPO", "Bonnes pratiques"];
-  if (lower.includes("criticité") || lower.includes("critique")) return ["Grille d'évaluation détaillée", "Exemples par secteur", "Impact financier"];
-  if (lower.includes("impact")) return ["Axe financier", "Axe réglementaire", "Axe réputationnel", "Axe client", "Axe opérationnel"];
-  if (lower.includes("iso 22301")) return ["Exigences clés", "Processus de certification", "Guide de mise en œuvre"];
+  if (lower.includes("rto")) return ["Voir les standards par secteur", "Comment calculer mon RTO ?"];
+  if (lower.includes("criticité")) return ["Grille d'évaluation", "Exemples par secteur"];
   return ["En savoir plus", "Autre question", "Aide pour mon BIA"];
 };
 
@@ -46,7 +43,7 @@ const getCurrentProcessContext = () => {
   }
 };
 
-export const BcmAiConsultant = () => {
+export const BcmCopilot = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -87,9 +84,7 @@ export const BcmAiConsultant = () => {
 
     const context = getCurrentProcessContext();
     const processInfo = context.processName ? ` (Processus actuel: ${context.processName}, secteur: ${context.entitySector})` : "";
-    const prompt = `Tu es un expert en continuité d'activité (BCM) certifié ISO 22301. Tu aides un consultant à remplir un BIA.${processInfo}
-Réponds en français, de manière concise, professionnelle et utile (maximum 3 phrases). 
-Question: ${text}`;
+    const prompt = `Tu es un expert BCM certifié ISO 22301. Tu aides un consultant à remplir un BIA.${processInfo} Réponds en français, concis (max 3 phrases). Question: ${text}`;
 
     try {
       const response = await fetch("http://localhost:11434/api/generate", {
@@ -107,7 +102,7 @@ Question: ${text}`;
       addMessage("assistant", ollamaAnswer, getContextualSuggestions(ollamaAnswer));
     } catch (error) {
       console.error("Ollama error:", error);
-      addMessage("assistant", "⚠️ Le service IA est momentanément indisponible. Veuillez réessayer plus tard.", ["Réessayer", "Aide"]);
+      addMessage("assistant", "⚠️ Service IA indisponible. Réessayez plus tard.", ["Réessayer", "Aide"]);
     }
     setIsLoading(false);
   };
@@ -115,16 +110,11 @@ Question: ${text}`;
   const handleWelcome = () => {
     if (messages.length === 0) {
       const context = getCurrentProcessContext();
-      let welcomeMsg = "Bonjour ! Je suis votre **assistant BCM**. Je peux vous aider à remplir votre BIA, expliquer les concepts ISO 22301, suggérer des RTO/RPO, et détecter des anomalies. Comment puis-je vous aider ?";
+      let welcomeMsg = "Bonjour ! Je suis votre assistant BCM Copilot. Je peux vous aider pour le BIA, l'ISO 22301, et détecter des anomalies. Comment puis-je vous aider ?";
       if (context.processName) {
-        welcomeMsg = `Bonjour ! Je vois que vous travaillez sur le processus **${context.processName}** (secteur ${context.entitySector}). Je suis votre assistant BCM. Que voulez‑vous savoir ?`;
+        welcomeMsg = `Bonjour ! Je vois que vous travaillez sur **${context.processName}** (secteur ${context.entitySector}). Je suis votre assistant BCM Copilot. Que voulez-vous savoir ?`;
       }
-      addMessage("assistant", welcomeMsg, [
-        "Qu'est-ce que le RTO ?",
-        "Comment évaluer l'impact ?",
-        "Standards ISO 22301",
-        "Aide pour mon BIA"
-      ]);
+      addMessage("assistant", welcomeMsg, ["Qu'est-ce que le RTO ?", "Comment évaluer l'impact ?", "ISO 22301"]);
     }
   };
 
@@ -152,71 +142,41 @@ Question: ${text}`;
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      <Card className="w-[420px] h-[600px] flex flex-col shadow-2xl rounded-xl border bg-background">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 border-b bg-gradient-to-r from-primary/10 to-background">
+      <Card className="w-[420px] h-[600px] flex flex-col shadow-2xl rounded-xl">
+        <CardHeader className="flex flex-row items-center justify-between border-b">
           <div className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
             <div>
-              <CardTitle className="text-base">BCM AI Consultant</CardTitle>
+              <CardTitle className="text-base">BCM Copilot</CardTitle>
               <p className="text-xs text-muted-foreground">Assistant ISO 22301</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}>
-            <X className="h-4 w-4" />
-          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}><X className="h-4 w-4" /></Button>
         </CardHeader>
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((msg) => (
             <div key={msg.id} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
-              <div
-                className={cn(
-                  "max-w-[85%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap break-words",
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-foreground"
-                )}
-              >
+              <div className={cn("max-w-[85%] rounded-lg px-4 py-2 text-sm", msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted")}>
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
             </div>
           ))}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-muted rounded-lg px-4 py-2 text-sm text-muted-foreground">
-                <span className="animate-pulse">●●●</span>
-              </div>
-            </div>
-          )}
+          {isLoading && <div className="text-muted-foreground text-sm">●●●</div>}
           <div ref={messagesEndRef} />
         </CardContent>
         <CardFooter className="pt-3 border-t flex flex-col gap-2">
           {messages.length > 0 && messages[messages.length - 1].suggestions && (
             <div className="flex flex-wrap gap-2 w-full">
               {messages[messages.length - 1].suggestions!.map((sug, idx) => (
-                <Button
-                  key={idx}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-7"
-                  onClick={() => sendMessage(sug)}
-                >
+                <Button key={idx} variant="outline" size="sm" className="text-xs h-7" onClick={() => sendMessage(sug)}>
                   {sug}
                 </Button>
               ))}
             </div>
           )}
           <div className="flex w-full gap-2">
-            <Input
-              ref={inputRef}
-              placeholder="Posez votre question..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !isLoading && sendMessage(input)}
-              disabled={isLoading}
-            />
-            <Button size="icon" onClick={() => sendMessage(input)} disabled={isLoading}>
-              <Send className="h-4 w-4" />
-            </Button>
+            <Input ref={inputRef} placeholder="Posez votre question..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage(input)} disabled={isLoading} />
+            <Button size="icon" onClick={() => sendMessage(input)} disabled={isLoading}><Send className="h-4 w-4" /></Button>
           </div>
         </CardFooter>
       </Card>

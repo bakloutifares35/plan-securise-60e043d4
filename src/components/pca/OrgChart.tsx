@@ -12,12 +12,19 @@ import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
 import { type Entity, type EntityType, type EntityStatus, ENTITY_TYPES, ENTITY_STATUSES, SECTORS, defaultMaturity } from "@/data/governance";
-import { emptyImpacts, type Process, type Criticality } from "@/data/bia";
+import { type Process, type Criticality } from "@/data/bia";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import * as XLSX from 'xlsx';
+import * as pdfjsLib from 'pdfjs-dist';
+import Tesseract from 'tesseract.js';
 
-type Section = "dashboard" | "form" | "plan" | "benchmark" | "orgchart" | "entity" | "calendar" | "policy" | "committee" | "references";
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+
+// ==================== CONSTANTES POUR L'ASSISTANT IA (commentées pour l'instant) ====================
+// const PROCESSUS_PAR_DIRECTION: Record<string, any[]> = { ... };
+// const getProcessusForDirection = (dirName: string) => { ... };
 
 const SUB_TYPES: EntityType[] = ["Filiale", "Direction", "Service", "Département"];
 const COMPANY_SIZES = ["Moins de 50", "50-200", "200-500", "500-2000", "Plus de 2000 employés"] as const;
@@ -43,21 +50,13 @@ const PcaBadge = ({ s }: { s: Entity["pcaStatus"] }) => {
   return <Badge className={cn("hover:opacity-90", map[s])}>{s}</Badge>;
 };
 
-const critColor = (c: Criticality) => {
-  switch (c) {
-    case "Critique": return "bg-destructive/15 text-destructive border-destructive/30";
-    case "Majeur": return "bg-warning/15 text-warning border-warning/30";
-    case "Modéré": return "bg-accent/15 text-accent border-accent/30";
-    default: return "bg-muted text-muted-foreground border-border";
-  }
-};
-
 const maturityColor = (m: number) => {
   if (m < 50) return "bg-destructive";
   if (m < 75) return "bg-warning";
   return "bg-success";
 };
 
+<<<<<<< HEAD
 type SubForm = {
   name: string; type: EntityType; country: string; sector: string;
   referent: string; referentBackup: string; status: EntityStatus;
@@ -75,6 +74,9 @@ const Node = ({
   onAddSub: (parentId: string, form: SubForm) => void;
   canWrite: boolean; canAdmin: boolean;
 }) => {
+=======
+const Node = ({ node, depth, onDelete, onSelect }: { node: Entity; depth: number; onDelete: (id: string) => void; onSelect: (id: string) => void }) => {
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
   const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
   const [sub, setSub] = useState<SubForm>(emptySubForm());
@@ -177,10 +179,14 @@ const Node = ({
   );
 };
 
+<<<<<<< HEAD
 type SuggestionProc = { name: string; criticality: Criticality; checked: boolean };
 type SuggestionGroup = { entityId: string; entityName: string; processes: SuggestionProc[] };
 
 type EditFormState = {
+=======
+type FormState = {
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
   name: string; type: EntityType | ""; country: string; sector: string;
   referent: string; referentBackup: string; contact: string;
   parentId: string; status: EntityStatus;
@@ -191,13 +197,14 @@ const emptyEditForm: EditFormState = {
   parentId: "", status: "Actif",
 };
 
-export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section) => void }) => {
+export const OrgChart = () => {
   const { entities, setEntities, setSelectedEntityId } = useGovernance();
-  const { upsertProcess, processes } = useBia();
+  const { processes } = useBia();
   const { can } = useRole();
 
   const [panelId, setPanelId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+<<<<<<< HEAD
   const [editForm, setEditForm] = useState<EditFormState>(emptyEditForm);
 
   // Setup form (step 1)
@@ -209,12 +216,22 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
   // AI state
   const [aiLoading, setAiLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestionGroup[] | null>(null);
+=======
+  const [editForm, setEditForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(emptyForm);
+
+  // État pour l'assistant IA (commenté)
+  // const [aiLoading, setAiLoading] = useState(false);
+  // const [suggestions, setSuggestions] = useState<any>(null);
+  // const [picked, setPicked] = useState<Record<string, boolean>>({});
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
 
   const tree = buildTree(entities);
   const panelEntity = entities.find((e) => e.id === panelId) || null;
   const panelProcesses = panelEntity ? processes.filter((p) => p.entityId === panelEntity.id) : [];
   const panelParent = panelEntity ? entities.find((e) => e.id === panelEntity.parentId) : null;
 
+<<<<<<< HEAD
   const addEntity = (e: Entity) => {
     setEntities([...entities, e]);
     setPendingIds((prev) => { const n = new Set(prev); n.add(e.id); return n; });
@@ -245,8 +262,12 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
   };
 
   const addSubEntity = (parentId: string, sub: SubForm) => {
+=======
+  const submitInline = async () => {
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
     if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
     const e: Entity = {
+<<<<<<< HEAD
       id: `e${Date.now()}`,
       name: sub.name, type: sub.type, country: sub.country, sector: sub.sector,
       parentId, referent: sub.referent || "—", referentBackup: sub.referentBackup || "—",
@@ -254,9 +275,35 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
     };
     addEntity(e);
     toast.success("Sous-entité ajoutée");
+=======
+      id: crypto.randomUUID(),
+      name: form.name, type: form.type as EntityType, country: form.country, sector: form.sector,
+      parentId: form.parentId || null,
+      referent: form.referent || "—", referentBackup: form.referentBackup || "—",
+      contact: form.contact || undefined,
+      status: form.status, pcaStatus: "Non démarré", maturity: 20,
+    };
+    const { data, error } = await (supabase as any)
+      .from('organisations')
+      .insert({
+        name: e.name,
+        type: e.type?.toUpperCase(),
+        country_code: e.country,
+        sector: e.sector,
+        parent_id: e.parentId || null,
+        pca_referent: e.referent,
+        status: 'ACTIVE'
+      })
+      .select();
+    if (error) { toast.error("Erreur: " + error.message); return; }
+    e.id = data[0].id;
+    setEntities([...entities, e]);
+    setForm(emptyForm);
+    toast.success("Entité créée et sauvegardée");
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!can("admin")) { toast.error("Action réservée à l'administrateur"); return; }
     const toRemove = new Set<string>([id]);
     let changed = true;
@@ -264,6 +311,7 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
       changed = false;
       for (const e of entities) if (e.parentId && toRemove.has(e.parentId) && !toRemove.has(e.id)) { toRemove.add(e.id); changed = true; }
     }
+    await (supabase as any).from('organisations').delete().in('id', Array.from(toRemove));
     setEntities(entities.filter((e) => !toRemove.has(e.id)));
     setPendingIds((prev) => { const n = new Set(prev); toRemove.forEach((x) => n.delete(x)); return n; });
     if (panelId && toRemove.has(panelId)) { setPanelId(null); setEditing(false); }
@@ -282,11 +330,22 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
     }
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!panelEntity) return;
     if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
     if (!editForm.name || !editForm.country || !editForm.sector) { toast.error("Champs obligatoires manquants"); return; }
     if (editForm.parentId === panelEntity.id) { toast.error("Une entité ne peut pas être son propre parent"); return; }
+    await (supabase as any)
+      .from('organisations')
+      .update({
+        name: editForm.name,
+        type: editForm.type?.toUpperCase(),
+        country_code: editForm.country,
+        sector: editForm.sector,
+        parent_id: editForm.parentId || null,
+        pca_referent: editForm.referent,
+      })
+      .eq('id', panelEntity.id);
     setEntities(entities.map((e) => e.id === panelEntity.id ? {
       ...e,
       name: editForm.name,
@@ -301,6 +360,7 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
     toast.success("Entité mise à jour");
   };
 
+<<<<<<< HEAD
   const generateAi = async () => {
     const targets = entities.filter((e) => pendingIds.has(e.id));
     if (targets.length === 0) {
@@ -424,6 +484,217 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
   }
 
   const pendingCount = pendingIds.size;
+=======
+  // Fonctions de l'assistant IA (commentées)
+  // const generateAi = () => { ... }
+  // const importToBia = async () => { ... }
+
+  const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId?: string) => (
+    <div className="grid md:grid-cols-3 gap-3">
+      <div><Label>Nom *</Label><Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" /></div>
+      <div><Label>Type</Label><Select value={state.type} onValueChange={(v) => set({ ...state, type: v as EntityType })}><SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger><SelectContent>{ENTITY_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Pays *</Label><Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" /></div>
+      <div><Label>Secteur d'activité *</Label><Select value={state.sector} onValueChange={(v) => set({ ...state, sector: v })}><SelectTrigger><SelectValue placeholder="Secteur" /></SelectTrigger><SelectContent>{SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Référent PCA</Label><Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" /></div>
+      <div><Label>Référent backup</Label><Input value={state.referentBackup} onChange={(e) => set({ ...state, referentBackup: e.target.value })} placeholder="Contact suppléant" /></div>
+      <div><Label>Coordonnées référent</Label><Input value={state.contact} onChange={(e) => set({ ...state, contact: e.target.value })} placeholder="email ou téléphone" /></div>
+      <div><Label>Entité parente</Label><Select value={state.parentId || "__root__"} onValueChange={(v) => set({ ...state, parentId: v === "__root__" ? "" : v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__root__">— Racine —</SelectItem>{entities.filter((e) => e.id !== excludeId).map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Statut</Label><Select value={state.status} onValueChange={(v) => set({ ...state, status: v as EntityStatus })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ENTITY_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select></div>
+    </div>
+  );
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
+
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Nom', 'Type', 'Pays', 'Secteur', 'Référent PCA', 'Référent Backup', 'Entité Parente'],
+      ['Groupe Atlas Holding', 'GROUPE', 'France', 'Banque & Finance', 'Marie Dubois', 'Pierre Leroy', ''],
+      ['Direction IT', 'DIRECTION', 'France', 'Banque & Finance', 'Thomas Robert', 'Jean Martin', 'Groupe Atlas Holding'],
+      ['Direction Finance', 'DIRECTION', 'France', 'Banque & Finance', 'Sophie Leroy', 'Marc Dupont', 'Groupe Atlas Holding'],
+    ]);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Organigramme'); XLSX.writeFile(wb, 'modele_organigramme.xlsx');
+  };
+
+  // ==================== IMPORT PDF AVEC OCR ====================
+  const insertEntitiesFromAI = async (entitiesFromAI: Array<{name: string, type: string, parent: string | null}>) => {
+    const insertedIds = new Map();
+    for (const entity of entitiesFromAI) {
+      const { data, error } = await (supabase as any)
+        .from('organisations')
+        .insert({
+          name: entity.name,
+          type: (entity.type || 'DEPARTMENT').toUpperCase(),
+          country_code: 'FR',
+          sector: 'Général',
+          parent_id: null,
+          pca_referent: 'À définir',
+          status: 'ACTIVE'
+        })
+        .select()
+        .single();
+      if (error) console.error(`Erreur ${entity.name}:`, error);
+      else { insertedIds.set(entity.name, data.id); console.log(`✅ Inséré: ${entity.name}`); }
+    }
+    for (const entity of entitiesFromAI) {
+      if (entity.parent && insertedIds.has(entity.parent)) {
+        const entityId = insertedIds.get(entity.name);
+        const parentId = insertedIds.get(entity.parent);
+        await (supabase as any).from('organisations').update({ parent_id: parentId }).eq('id', entityId);
+        console.log(`🔗 Lié: ${entity.name} → ${entity.parent}`);
+      }
+    }
+    const { data: allEntities } = await (supabase as any).from('organisations').select('*');
+    if (allEntities) {
+      const formatted = allEntities.map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        country: e.country_code,
+        sector: e.sector || 'Général',
+        parentId: e.parent_id,
+        referent: e.pca_referent || '—',
+        referentBackup: '—',
+        status: 'Actif',
+        pcaStatus: 'Non démarré',
+        maturity: 20,
+      }));
+      setEntities(formatted);
+    }
+  };
+
+  const processFileWithAI = async (file: File) => {
+    const startTime = Date.now();
+    try {
+      if (file.type !== "application/pdf") { toast.error("Format non supporté. Utilisez un PDF."); return; }
+      console.log("📄 Analyse du PDF...");
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+      const textContent = await page.getTextContent();
+      let extractedText = textContent.items.map((item: any) => item.str).join(' ');
+      if (!extractedText || extractedText.trim().length < 10) {
+        console.log("📄 Texte non trouvé, tentative d'OCR...");
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: context, viewport }).promise;
+        const imageData = canvas.toDataURL('image/png');
+        const { data: { text } } = await Tesseract.recognize(imageData, 'fra', { logger: (m) => console.log(m) });
+        extractedText = text;
+        console.log("📝 OCR extrait :", extractedText);
+      }
+      console.log("📝 Texte extrait:", extractedText);
+      const response = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "mistral",
+          prompt: `Extrais l'organigramme de ce texte: "${extractedText}"
+RÈGLES:
+- "Niveau 1 : X" → X est la RACINE (parent = null)
+- TOUS les noms après les tirets "-" sont les ENFANTS de la racine
+Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DIRECTION","parent":null},{"name":"Direction Financière","type":"DIRECTION","parent":"Direction Skillia"}]}`,
+          options: { temperature: 0, num_predict: 500 },
+          stream: false
+        })
+      });
+      const result = await response.json();
+      let cleanResponse = result.response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const firstBrace = cleanResponse.indexOf('{');
+      const lastBrace = cleanResponse.lastIndexOf('}');
+      const jsonStr = cleanResponse.substring(firstBrace, lastBrace + 1);
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.entities && Array.isArray(parsed.entities)) {
+        await insertEntitiesFromAI(parsed.entities);
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        toast.success(`✅ ${parsed.entities.length} entités importées en ${duration}s`);
+      } else {
+        toast.error("Aucune entité trouvée dans le PDF");
+      }
+    } catch (err: any) {
+      console.error("Erreur détaillée:", err);
+      toast.error(`Erreur: ${err.message}`);
+    }
+  };
+
+  // ==================== IMPORT EXCEL ====================
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type === "application/pdf") { await processFileWithAI(file); e.target.value = ''; return; }
+    if (file.type.startsWith("image/")) { toast.info("Le support des images arrive bientôt. Veuillez utiliser un PDF pour l'instant."); e.target.value = ''; return; }
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+        const insertedEntities: Entity[] = [];
+
+        // Étape 1: Insérer toutes les entités sans parent
+        for (const row of rows) {
+          const entityToInsert = {
+            name: row['Nom'] || '',
+            type: (row['Type'] || 'DIRECTION').toUpperCase(),
+            country_code: row['Pays'] || '',
+            sector: row['Secteur'] || '',
+            parent_id: null,
+            pca_referent: row['Référent PCA'] || '—',
+            status: 'ACTIVE'
+          };
+          const { data: inserted, error } = await (supabase as any)
+            .from('organisations')
+            .insert(entityToInsert)
+            .select()
+            .single();
+          if (error) {
+            console.error(error);
+            toast.error(error.message);
+            continue;
+          }
+          insertedEntities.push({
+            id: inserted.id,
+            name: inserted.name,
+            type: inserted.type,
+            country: inserted.country_code,
+            sector: inserted.sector,
+            parentId: null,
+            referent: inserted.pca_referent || '—',
+            referentBackup: '—',
+            status: 'Actif',
+            pcaStatus: 'Non démarré',
+            maturity: 20,
+          });
+        }
+
+        // Étape 2: Assigner les parents (après toutes les insertions)
+        for (let i = 0; i < rows.length; i++) {
+          const parentName = rows[i]['Entité Parente'];
+          if (!parentName) continue;
+          const currentEntity = insertedEntities[i];
+          const parentEntity = insertedEntities.find((x) => x.name === parentName);
+          if (!parentEntity) continue;
+          await (supabase as any)
+            .from('organisations')
+            .update({ parent_id: parentEntity.id })
+            .eq('id', currentEntity.id);
+          currentEntity.parentId = parentEntity.id;
+        }
+
+        // Étape 3: Mettre à jour l'état local
+        setEntities([...entities, ...insertedEntities]);
+        toast.success(`${insertedEntities.length} entités importées avec succès !`);
+      } catch (err: any) {
+        console.error(err);
+        toast.error(err.message || "Erreur import");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
 
   return (
     <div className="space-y-6">
@@ -432,7 +703,40 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
         <p className="text-muted-foreground mt-1">Hiérarchie des entités, filiales, directions et services</p>
       </div>
 
+<<<<<<< HEAD
       {/* Tree */}
+=======
+      {/* Import */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Plus className="h-4 w-4 text-primary" /> Importer un organigramme</CardTitle>
+          <CardDescription>Importez votre structure depuis un fichier Excel, CSV ou PDF (analyse IA + OCR)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            <input type="file" accept=".xlsx,.xls,.csv,.pdf" onChange={handleFileImport} className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90" />
+            <p className="text-xs text-muted-foreground">Format attendu : Nom | Type | Pays | Secteur | Référent PCA | Entité Parente</p>
+            <Button variant="outline" onClick={downloadTemplate}>📥 Télécharger le modèle Excel</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Création manuelle */}
+      {can("write") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2"><Plus className="h-4 w-4 text-primary" /> Créer une entité</CardTitle>
+            <CardDescription>Renseignez les informations de la nouvelle entité</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {renderFormGrid(form, setForm)}
+            <div className="flex justify-end"><Button onClick={submitInline}><Plus className="h-4 w-4 mr-1" /> Ajouter l'entité</Button></div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Arborescence */}
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
       <Card>
         <CardHeader>
           <CardTitle>Arborescence des entités</CardTitle>
@@ -442,17 +746,23 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
           <div className="hidden md:grid grid-cols-6 gap-2 px-3 pb-2 ml-12 text-xs font-semibold text-muted-foreground border-b border-border">
             <span>Entité</span><span>Type</span><span>Pays</span><span>Secteur</span><span>Référent PCA</span><span>Statut</span>
           </div>
+<<<<<<< HEAD
           <div className="mt-2">
             {tree.map((n) => <Node key={n.id} node={n} depth={0} onDelete={handleDelete} onSelect={openPanel} onAddSub={addSubEntity} canWrite={can("write")} canAdmin={can("admin")} />)}
           </div>
+=======
+          <div className="mt-2">{tree.map((n) => <Node key={n.id} node={n} depth={0} onDelete={handleDelete} onSelect={openPanel} />)}</div>
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
         </CardContent>
       </Card>
 
-      {/* AI button */}
+      {/* Assistant IA – désactivé (commenté) */}
+      {/*
       <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-accent/5">
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
             <div className="flex items-start gap-3">
+<<<<<<< HEAD
               <div className="h-10 w-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
@@ -463,6 +773,10 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
                   {pendingCount > 0 ? ` (${pendingCount} entité(s) en attente)` : " (aucune entité en attente)"}
                 </p>
               </div>
+=======
+              <div className="h-10 w-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0"><Sparkles className="h-5 w-5 text-primary" /></div>
+              <div><h3 className="font-semibold text-foreground">Assistant IA — processus métiers</h3><p className="text-sm text-muted-foreground">L'IA analyse votre organigramme et suggère automatiquement les processus métiers pour chaque direction.</p></div>
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
             </div>
             <Button size="lg" onClick={generateAi} disabled={aiLoading || pendingCount === 0} className="bg-primary hover:bg-primary/90">
               {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -471,9 +785,12 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
           </div>
         </CardContent>
       </Card>
+      */}
 
-      {/* AI results */}
+      {/* Suggestions IA (commentées) */}
+      {/*
       {suggestions && (
+<<<<<<< HEAD
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Processus suggérés par l'IA</CardTitle>
@@ -524,9 +841,13 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
             </div>
           </CardContent>
         </Card>
+=======
+        <Card>...</Card>
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
       )}
+      */}
 
-      {/* Side panel: entity details */}
+      {/* Fiche détail */}
       <Sheet open={!!panelEntity} onOpenChange={(o) => { if (!o) { setPanelId(null); setEditing(false); } }}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {panelEntity && (() => {
@@ -535,24 +856,13 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
               <div className="space-y-5">
                 <SheetHeader>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-primary/15 flex items-center justify-center"><Building2 className="h-5 w-5 text-primary" /></div>
-                      <div>
-                        <SheetTitle>{panelEntity.name}</SheetTitle>
-                        <SheetDescription>{panelEntity.type || "—"} · {panelEntity.sector}</SheetDescription>
-                      </div>
-                    </div>
-                    {!editing && (
-                      <div className="flex gap-1">
-                        {can("write") && <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5 mr-1" /> Éditer</Button>}
-                        {can("admin") && <Button variant="outline" size="sm" className="text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleDelete(panelEntity.id)}><Trash2 className="h-3.5 w-3.5 mr-1" /> Supprimer</Button>}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3"><div className="h-10 w-10 rounded-lg bg-primary/15 flex items-center justify-center"><Building2 className="h-5 w-5 text-primary" /></div><div><SheetTitle>{panelEntity.name}</SheetTitle><SheetDescription>{panelEntity.type || "—"} · {panelEntity.sector}</SheetDescription></div></div>
+                    {!editing && (<div className="flex gap-1">{can("write") && <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5 mr-1" /> Éditer</Button>}{can("admin") && <Button variant="outline" size="sm" className="text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => handleDelete(panelEntity.id)}><Trash2 className="h-3.5 w-3.5 mr-1" /> Supprimer</Button>}</div>)}
                   </div>
                 </SheetHeader>
-
                 {editing ? (
                   <div className="space-y-4">
+<<<<<<< HEAD
                     <div className="grid md:grid-cols-2 gap-3">
                       <div><Label>Nom *</Label><Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
                       <div>
@@ -595,58 +905,17 @@ export const OrgChart = ({ onNavigate: _onNavigate }: { onNavigate?: (s: Section
                       <Button variant="ghost" onClick={() => setEditing(false)}><X className="h-4 w-4 mr-1" /> Annuler</Button>
                       <Button onClick={saveEdit}><Save className="h-4 w-4 mr-1" /> Enregistrer</Button>
                     </div>
+=======
+                    {renderFormGrid(editForm, setEditForm, panelEntity.id)}
+                    <div className="flex justify-end gap-2 pt-2 border-t border-border"><Button variant="ghost" onClick={() => setEditing(false)}><X className="h-4 w-4 mr-1" /> Annuler</Button><Button onClick={saveEdit}><Save className="h-4 w-4 mr-1" /> Enregistrer</Button></div>
+>>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
                   </div>
                 ) : (
                   <>
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase">Détails</h4>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="text-muted-foreground">Type</div><div className="font-medium">{panelEntity.type || "—"}</div>
-                        <div className="text-muted-foreground">Pays</div><div className="font-medium">{panelEntity.country}</div>
-                        <div className="text-muted-foreground">Secteur</div><div className="font-medium">{panelEntity.sector}</div>
-                        <div className="text-muted-foreground">Entité parente</div><div className="font-medium">{panelParent?.name || "Racine"}</div>
-                        <div className="text-muted-foreground">Statut</div><div><StatusBadge status={panelEntity.status} /></div>
-                        <div className="text-muted-foreground">Statut PCA</div><div><PcaBadge s={panelEntity.pcaStatus} /></div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase">Référent PCA</h4>
-                      <div className="rounded-md border border-border p-3 text-sm space-y-1">
-                        <div><span className="text-muted-foreground">Principal:</span> <span className="font-medium">{panelEntity.referent}</span></div>
-                        <div><span className="text-muted-foreground">Suppléant:</span> <span className="font-medium">{panelEntity.referentBackup}</span></div>
-                        <div><span className="text-muted-foreground">Coordonnées:</span> <span className="font-medium">{panelEntity.contact || "—"}</span></div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4>
-                        <span className="text-sm font-bold">{m}%</span>
-                      </div>
-                      <div className="h-3 w-full rounded-full bg-secondary overflow-hidden">
-                        <div className={cn("h-full transition-all", maturityColor(m))} style={{ width: `${m}%` }} />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {m < 50 ? "Niveau faible — actions urgentes requises" : m < 75 ? "Niveau intermédiaire — améliorations recommandées" : "Niveau élevé — bonne maturité"}
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase">Processus associés ({panelProcesses.length})</h4>
-                      {panelProcesses.length === 0 ? (
-                        <p className="text-sm text-muted-foreground italic">Aucun processus associé. Utilisez l'assistant IA pour en générer.</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {panelProcesses.map((p) => (
-                            <div key={p.id} className="flex items-center justify-between p-2 rounded border border-border text-sm">
-                              <span className="truncate">{p.name}</span>
-                              <Badge variant="outline" className="text-xs">RTO {p.rto}h</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <div className="space-y-2"><h4 className="text-xs font-semibold text-muted-foreground uppercase">Détails</h4><div className="grid grid-cols-2 gap-2 text-sm"><div className="text-muted-foreground">Type</div><div className="font-medium">{panelEntity.type || "—"}</div><div className="text-muted-foreground">Pays</div><div className="font-medium">{panelEntity.country}</div><div className="text-muted-foreground">Secteur</div><div className="font-medium">{panelEntity.sector}</div><div className="text-muted-foreground">Entité parente</div><div className="font-medium">{panelParent?.name || "Racine"}</div><div className="text-muted-foreground">Statut</div><div><StatusBadge status={panelEntity.status} /></div><div className="text-muted-foreground">Statut PCA</div><div><PcaBadge s={panelEntity.pcaStatus} /></div></div></div>
+                    <div className="space-y-2"><h4 className="text-xs font-semibold text-muted-foreground uppercase">Référent PCA</h4><div className="rounded-md border border-border p-3 text-sm space-y-1"><div><span className="text-muted-foreground">Principal:</span> <span className="font-medium">{panelEntity.referent}</span></div><div><span className="text-muted-foreground">Suppléant:</span> <span className="font-medium">{panelEntity.referentBackup}</span></div><div><span className="text-muted-foreground">Coordonnées:</span> <span className="font-medium">{panelEntity.contact || "—"}</span></div></div></div>
+                    <div className="space-y-2"><div className="flex items-center justify-between"><h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4><span className="text-sm font-bold">{m}%</span></div><div className="h-3 w-full rounded-full bg-secondary overflow-hidden"><div className={cn("h-full transition-all", maturityColor(m))} style={{ width: `${m}%` }} /></div><p className="text-xs text-muted-foreground">{m < 50 ? "Niveau faible — actions urgentes requises" : m < 75 ? "Niveau intermédiaire — améliorations recommandées" : "Niveau élevé — bonne maturité"}</p></div>
+                    <div className="space-y-2"><h4 className="text-xs font-semibold text-muted-foreground uppercase">Processus associés ({panelProcesses.length})</h4>{panelProcesses.length === 0 ? <p className="text-sm text-muted-foreground italic">Aucun processus associé. Utilisez l'assistant IA pour en générer.</p> : <div className="space-y-1.5">{panelProcesses.map((p) => (<div key={p.id} className="flex items-center justify-between p-2 rounded border border-border text-sm"><span className="truncate">{p.name}</span><Badge variant="outline" className="text-xs">RTO {p.rto}h</Badge></div>))}</div>}</div>
                   </>
                 )}
               </div>

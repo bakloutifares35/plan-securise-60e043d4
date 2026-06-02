@@ -50,12 +50,12 @@ export type Process = {
   description: string;
   status: "Actif" | "Inactif" | "En revue" | "Nouveau";
   impacts: ImpactMatrix;
-  rto: number; // hours
-  rpo: number; // hours
-  mtpd: number; // hours
-  mbco: number; // percentage
+  rto: number;
+  rpo: number;
+  mtpd: number;
+  mbco: number;
   resources: Resource[];
-  dependsOn: string[]; // process ids
+  dependsOn: string[];
   lastUpdated: string;
 };
 
@@ -65,20 +65,48 @@ export const emptyImpacts = (): ImpactMatrix =>
     return acc;
   }, {} as ImpactMatrix);
 
-export const computeMaxScore = (impacts: ImpactMatrix): number => {
-  let max = 0;
-  for (const p of PERIODS) {
-    for (const a of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
-      if (impacts[p.id][a] > max) max = impacts[p.id][a];
+// ✅ FONCTION CORRIGÉE - Supporte les deux formats d'impacts
+export const computeMaxScore = (impacts: any): number => {
+  // Vérification de base
+  if (!impacts) return 0;
+  
+  // Cas 1: impacts est une ImpactMatrix (avec des périodes)
+  if (typeof impacts === 'object') {
+    // Vérifie si c'est une ImpactMatrix (contient P0_4H, P4_8H, etc.)
+    const firstKey = Object.keys(impacts)[0];
+    if (firstKey && (firstKey === "P0_4H" || firstKey === "P4_8H" || firstKey === "P1D")) {
+      let max = 0;
+      for (const p of PERIODS) {
+        const periodData = impacts[p.id];
+        if (periodData && typeof periodData === 'object') {
+          for (const a of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
+            const val = periodData[a];
+            if (typeof val === 'number' && val > max) max = val;
+          }
+        }
+      }
+      return max;
     }
   }
-  return max;
+  
+  // Cas 2: impacts est un objet simple (financial, reputational, etc.)
+  const scores = [
+    impacts.financial || 0,
+    impacts.reputational || 0,
+    impacts.regulatory || 0,
+    impacts.operational || 0,
+    impacts.client || 0
+  ];
+  
+  return Math.max(...scores);
 };
 
 export const periodMaxScore = (impacts: ImpactMatrix, period: TimePeriod): number => {
+  if (!impacts || !impacts[period]) return 0;
   let m = 0;
   for (const a of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
-    if (impacts[period][a] > m) m = impacts[period][a];
+    const val = impacts[period][a];
+    if (typeof val === 'number' && val > m) m = val;
   }
   return m;
 };
