@@ -22,10 +22,6 @@ import Tesseract from 'tesseract.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
-// ==================== CONSTANTES POUR L'ASSISTANT IA (commentées pour l'instant) ====================
-// const PROCESSUS_PAR_DIRECTION: Record<string, any[]> = { ... };
-// const getProcessusForDirection = (dirName: string) => { ... };
-
 const SUB_TYPES: EntityType[] = ["Filiale", "Direction", "Service", "Département"];
 const COMPANY_SIZES = ["Moins de 50", "50-200", "200-500", "500-2000", "Plus de 2000 employés"] as const;
 
@@ -56,7 +52,6 @@ const maturityColor = (m: number) => {
   return "bg-success";
 };
 
-<<<<<<< HEAD
 type SubForm = {
   name: string; type: EntityType; country: string; sector: string;
   referent: string; referentBackup: string; status: EntityStatus;
@@ -74,9 +69,6 @@ const Node = ({
   onAddSub: (parentId: string, form: SubForm) => void;
   canWrite: boolean; canAdmin: boolean;
 }) => {
-=======
-const Node = ({ node, depth, onDelete, onSelect }: { node: Entity; depth: number; onDelete: (id: string) => void; onSelect: (id: string) => void }) => {
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
   const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
   const [sub, setSub] = useState<SubForm>(emptySubForm());
@@ -179,14 +171,10 @@ const Node = ({ node, depth, onDelete, onSelect }: { node: Entity; depth: number
   );
 };
 
-<<<<<<< HEAD
 type SuggestionProc = { name: string; criticality: Criticality; checked: boolean };
 type SuggestionGroup = { entityId: string; entityName: string; processes: SuggestionProc[] };
 
 type EditFormState = {
-=======
-type FormState = {
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
   name: string; type: EntityType | ""; country: string; sector: string;
   referent: string; referentBackup: string; contact: string;
   parentId: string; status: EntityStatus;
@@ -204,7 +192,6 @@ export const OrgChart = () => {
 
   const [panelId, setPanelId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-<<<<<<< HEAD
   const [editForm, setEditForm] = useState<EditFormState>(emptyEditForm);
 
   // Setup form (step 1)
@@ -216,22 +203,12 @@ export const OrgChart = () => {
   // AI state
   const [aiLoading, setAiLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestionGroup[] | null>(null);
-=======
-  const [editForm, setEditForm] = useState<FormState>(emptyForm);
-  const [form, setForm] = useState<FormState>(emptyForm);
-
-  // État pour l'assistant IA (commenté)
-  // const [aiLoading, setAiLoading] = useState(false);
-  // const [suggestions, setSuggestions] = useState<any>(null);
-  // const [picked, setPicked] = useState<Record<string, boolean>>({});
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
 
   const tree = buildTree(entities);
   const panelEntity = entities.find((e) => e.id === panelId) || null;
   const panelProcesses = panelEntity ? processes.filter((p) => p.entityId === panelEntity.id) : [];
   const panelParent = panelEntity ? entities.find((e) => e.id === panelEntity.parentId) : null;
 
-<<<<<<< HEAD
   const addEntity = (e: Entity) => {
     setEntities([...entities, e]);
     setPendingIds((prev) => { const n = new Set(prev); n.add(e.id); return n; });
@@ -262,12 +239,8 @@ export const OrgChart = () => {
   };
 
   const addSubEntity = (parentId: string, sub: SubForm) => {
-=======
-  const submitInline = async () => {
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
     if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
     const e: Entity = {
-<<<<<<< HEAD
       id: `e${Date.now()}`,
       name: sub.name, type: sub.type, country: sub.country, sector: sub.sector,
       parentId, referent: sub.referent || "—", referentBackup: sub.referentBackup || "—",
@@ -275,32 +248,6 @@ export const OrgChart = () => {
     };
     addEntity(e);
     toast.success("Sous-entité ajoutée");
-=======
-      id: crypto.randomUUID(),
-      name: form.name, type: form.type as EntityType, country: form.country, sector: form.sector,
-      parentId: form.parentId || null,
-      referent: form.referent || "—", referentBackup: form.referentBackup || "—",
-      contact: form.contact || undefined,
-      status: form.status, pcaStatus: "Non démarré", maturity: 20,
-    };
-    const { data, error } = await (supabase as any)
-      .from('organisations')
-      .insert({
-        name: e.name,
-        type: e.type?.toUpperCase(),
-        country_code: e.country,
-        sector: e.sector,
-        parent_id: e.parentId || null,
-        pca_referent: e.referent,
-        status: 'ACTIVE'
-      })
-      .select();
-    if (error) { toast.error("Erreur: " + error.message); return; }
-    e.id = data[0].id;
-    setEntities([...entities, e]);
-    setForm(emptyForm);
-    toast.success("Entité créée et sauvegardée");
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
   };
 
   const handleDelete = async (id: string) => {
@@ -360,7 +307,6 @@ export const OrgChart = () => {
     toast.success("Entité mise à jour");
   };
 
-<<<<<<< HEAD
   const generateAi = async () => {
     const targets = entities.filter((e) => pendingIds.has(e.id));
     if (targets.length === 0) {
@@ -405,6 +351,10 @@ export const OrgChart = () => {
     });
   };
 
+  // ============================================================
+  // ANCIENNE FONCTION D'IMPORT IA - DÉSACTIVÉE (plus utilisée)
+  // ============================================================
+  /*
   const importToBia = () => {
     if (!suggestions) return;
     let count = 0;
@@ -422,12 +372,12 @@ export const OrgChart = () => {
           owner: entity?.referent || "—",
           description: `Processus importé depuis l'organigramme pour ${g.entityName}`,
           status: "Nouveau",
-          impacts: emptyImpacts(),
+          impacts: emptyImpacts(),  // ← nécessite import depuis bia.ts
           rto, rpo: Math.max(1, Math.round(rto / 4)), mtpd: rto * 2, mbco: 60,
           resources: [], dependsOn: [],
           lastUpdated: new Date().toISOString().slice(0, 10),
         };
-        upsertProcess(proc);
+        upsertProcess(proc); // ← fonction manquante
         count++;
       });
     });
@@ -435,6 +385,7 @@ export const OrgChart = () => {
     setSuggestions(null);
     setPendingIds(new Set());
   };
+  */
 
   // STEP 1 — Setup wizard if no entity exists
   if (entities.length === 0) {
@@ -484,25 +435,6 @@ export const OrgChart = () => {
   }
 
   const pendingCount = pendingIds.size;
-=======
-  // Fonctions de l'assistant IA (commentées)
-  // const generateAi = () => { ... }
-  // const importToBia = async () => { ... }
-
-  const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId?: string) => (
-    <div className="grid md:grid-cols-3 gap-3">
-      <div><Label>Nom *</Label><Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" /></div>
-      <div><Label>Type</Label><Select value={state.type} onValueChange={(v) => set({ ...state, type: v as EntityType })}><SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger><SelectContent>{ENTITY_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
-      <div><Label>Pays *</Label><Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" /></div>
-      <div><Label>Secteur d'activité *</Label><Select value={state.sector} onValueChange={(v) => set({ ...state, sector: v })}><SelectTrigger><SelectValue placeholder="Secteur" /></SelectTrigger><SelectContent>{SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select></div>
-      <div><Label>Référent PCA</Label><Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" /></div>
-      <div><Label>Référent backup</Label><Input value={state.referentBackup} onChange={(e) => set({ ...state, referentBackup: e.target.value })} placeholder="Contact suppléant" /></div>
-      <div><Label>Coordonnées référent</Label><Input value={state.contact} onChange={(e) => set({ ...state, contact: e.target.value })} placeholder="email ou téléphone" /></div>
-      <div><Label>Entité parente</Label><Select value={state.parentId || "__root__"} onValueChange={(v) => set({ ...state, parentId: v === "__root__" ? "" : v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__root__">— Racine —</SelectItem>{entities.filter((e) => e.id !== excludeId).map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select></div>
-      <div><Label>Statut</Label><Select value={state.status} onValueChange={(v) => set({ ...state, status: v as EntityStatus })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ENTITY_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select></div>
-    </div>
-  );
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
@@ -703,40 +635,7 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
         <p className="text-muted-foreground mt-1">Hiérarchie des entités, filiales, directions et services</p>
       </div>
 
-<<<<<<< HEAD
       {/* Tree */}
-=======
-      {/* Import */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Plus className="h-4 w-4 text-primary" /> Importer un organigramme</CardTitle>
-          <CardDescription>Importez votre structure depuis un fichier Excel, CSV ou PDF (analyse IA + OCR)</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            <input type="file" accept=".xlsx,.xls,.csv,.pdf" onChange={handleFileImport} className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90" />
-            <p className="text-xs text-muted-foreground">Format attendu : Nom | Type | Pays | Secteur | Référent PCA | Entité Parente</p>
-            <Button variant="outline" onClick={downloadTemplate}>📥 Télécharger le modèle Excel</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Création manuelle */}
-      {can("write") && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2"><Plus className="h-4 w-4 text-primary" /> Créer une entité</CardTitle>
-            <CardDescription>Renseignez les informations de la nouvelle entité</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {renderFormGrid(form, setForm)}
-            <div className="flex justify-end"><Button onClick={submitInline}><Plus className="h-4 w-4 mr-1" /> Ajouter l'entité</Button></div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Arborescence */}
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
       <Card>
         <CardHeader>
           <CardTitle>Arborescence des entités</CardTitle>
@@ -746,13 +645,9 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
           <div className="hidden md:grid grid-cols-6 gap-2 px-3 pb-2 ml-12 text-xs font-semibold text-muted-foreground border-b border-border">
             <span>Entité</span><span>Type</span><span>Pays</span><span>Secteur</span><span>Référent PCA</span><span>Statut</span>
           </div>
-<<<<<<< HEAD
           <div className="mt-2">
             {tree.map((n) => <Node key={n.id} node={n} depth={0} onDelete={handleDelete} onSelect={openPanel} onAddSub={addSubEntity} canWrite={can("write")} canAdmin={can("admin")} />)}
           </div>
-=======
-          <div className="mt-2">{tree.map((n) => <Node key={n.id} node={n} depth={0} onDelete={handleDelete} onSelect={openPanel} />)}</div>
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
         </CardContent>
       </Card>
 
@@ -762,7 +657,6 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
             <div className="flex items-start gap-3">
-<<<<<<< HEAD
               <div className="h-10 w-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
@@ -773,10 +667,6 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
                   {pendingCount > 0 ? ` (${pendingCount} entité(s) en attente)` : " (aucune entité en attente)"}
                 </p>
               </div>
-=======
-              <div className="h-10 w-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0"><Sparkles className="h-5 w-5 text-primary" /></div>
-              <div><h3 className="font-semibold text-foreground">Assistant IA — processus métiers</h3><p className="text-sm text-muted-foreground">L'IA analyse votre organigramme et suggère automatiquement les processus métiers pour chaque direction.</p></div>
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
             </div>
             <Button size="lg" onClick={generateAi} disabled={aiLoading || pendingCount === 0} className="bg-primary hover:bg-primary/90">
               {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -790,7 +680,6 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
       {/* Suggestions IA (commentées) */}
       {/*
       {suggestions && (
-<<<<<<< HEAD
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Processus suggérés par l'IA</CardTitle>
@@ -841,9 +730,6 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
             </div>
           </CardContent>
         </Card>
-=======
-        <Card>...</Card>
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
       )}
       */}
 
@@ -862,7 +748,6 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
                 </SheetHeader>
                 {editing ? (
                   <div className="space-y-4">
-<<<<<<< HEAD
                     <div className="grid md:grid-cols-2 gap-3">
                       <div><Label>Nom *</Label><Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
                       <div>
@@ -905,10 +790,6 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
                       <Button variant="ghost" onClick={() => setEditing(false)}><X className="h-4 w-4 mr-1" /> Annuler</Button>
                       <Button onClick={saveEdit}><Save className="h-4 w-4 mr-1" /> Enregistrer</Button>
                     </div>
-=======
-                    {renderFormGrid(editForm, setEditForm, panelEntity.id)}
-                    <div className="flex justify-end gap-2 pt-2 border-t border-border"><Button variant="ghost" onClick={() => setEditing(false)}><X className="h-4 w-4 mr-1" /> Annuler</Button><Button onClick={saveEdit}><Save className="h-4 w-4 mr-1" /> Enregistrer</Button></div>
->>>>>>> 0f66b48 (Ajout du chatbot BCM, configuration des processus, benchmarks secteur, et améliorations BIA/Risk)
                   </div>
                 ) : (
                   <>
