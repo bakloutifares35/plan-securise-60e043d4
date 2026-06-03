@@ -292,7 +292,7 @@ export const ConsolidatedReport = () => {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{p.mbco}%</span>
-                      <Progress value={p.mbco} className="h-2 flex-1" indicatorClassName={getMbcoColor(p.mbco)} />
+                      <Progress value={p.mbco} className="h-2 flex-1" />
                     </div>
                   </TableCell>
                   <TableCell className="text-center">
