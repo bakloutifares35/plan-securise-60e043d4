@@ -7,12 +7,14 @@ import { Benchmark } from "@/components/pca/Benchmark";
 import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
 import { RiskModule } from "@/components/pca/risk/RiskModule";
+import { StrategyModule } from "@/components/pca/strategy/StrategyModule";
 import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
 import { BiaProvider } from "@/contexts/BiaContext";
 import { RiskProvider } from "@/contexts/RiskContext";
+import { StrategyProvider } from "@/contexts/StrategyContext";
 
 const Index = () => {
   const [section, setSection] = useState<Section>("dashboard");
