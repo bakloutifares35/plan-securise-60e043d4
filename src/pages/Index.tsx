@@ -24,6 +24,7 @@ const Index = () => {
       <GovernanceProvider>
         <BiaProvider>
           <RiskProvider>
+            <StrategyProvider>
             <div className="min-h-screen flex bg-[image:var(--gradient-subtle)]">
               <Sidebar active={section} onChange={setSection} />
               <main className="flex-1 min-w-0">
@@ -35,6 +36,7 @@ const Index = () => {
                       <SelectItem value="ai">BCM AI Consultant</SelectItem>
                       <SelectItem value="governance">Gouvernance PCA</SelectItem>
                       <SelectItem value="bia">Business Impact Analysis</SelectItem>
+                      <SelectItem value="strategy">Stratégies de Continuité</SelectItem>
                       <SelectItem value="risk">Analyse des Risques</SelectItem>
                       <SelectItem value="form">Identification des risques</SelectItem>
                       <SelectItem value="plan">Plan de continuité</SelectItem>
@@ -50,10 +52,12 @@ const Index = () => {
                   {section === "benchmark" && <Benchmark />}
                   {section === "governance" && <GovernanceModule />}
                   {section === "bia" && <BiaModule />}
+                  {section === "strategy" && <StrategyModule />}
                   {section === "risk" && <RiskModule />}
                 </div>
               </main>
             </div>
+            </StrategyProvider>
           </RiskProvider>
         </BiaProvider>
       </GovernanceProvider>
