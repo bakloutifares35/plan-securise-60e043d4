@@ -43,7 +43,7 @@ export const GovernanceModule = () => {
         })}
       </div>
 
-      {tab === "orgchart" && <OrgChart onNavigate={((s: string) => { if (s === "entity") setTab("entity"); }) as any} />}
+      {tab === "orgchart" && <OrgChart {...({ onNavigate: (s: string) => { if (s === "entity") setTab("entity"); } } as any)} />}
       {tab === "entity" && <EntityProfile onBack={() => setTab("orgchart")} />}
       {tab === "calendar" && <AnnualCalendar />}
       {tab === "policy" && <PolicyEditor />}
