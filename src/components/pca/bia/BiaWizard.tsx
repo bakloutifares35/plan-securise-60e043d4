@@ -326,7 +326,7 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
   appsCritiques: AppCritique[];
   onAppsChange: (apps: AppCritique[]) => void;
 }) => {
-  const [newResource, setNewResource] = useState<Omit<Resource, "id">>({
+  const [newResource, setNewResource] = useState<any>({
     type: "HR",
     name: "",
     quantity: 1,
