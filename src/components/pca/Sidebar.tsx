@@ -26,6 +26,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
     label: "Opérationnel",
     items: [
       { id: "bia", label: "Business Impact Analysis", icon: Activity },
+      { id: "strategy", label: "Stratégies de Continuité", icon: Compass },
       { id: "risk", label: "Analyse des Risques", icon: AlertOctagon },
       { id: "form", label: "Identification des risques", icon: FileText },
       { id: "plan", label: "Plan de continuité", icon: ListChecks },
