@@ -18,8 +18,20 @@ const TABS: { id: Tab; label: string; icon: typeof Network }[] = [
   { id: "references", label: "Référentiels & rôles", icon: Settings },
 ];
 
-export const GovernanceModule = () => {
+export const GovernanceModule = ({ onNavigateToSection }: { onNavigateToSection?: (section: string, tab?: string, entityId?: string) => void }) => {
   const [tab, setTab] = useState<Tab>("orgchart");
+
+  const handleNavigate = (s: string, entityId?: string) => {
+    if (s === "entity") {
+      setTab("entity");
+    }
+    if (s === "inventory" && onNavigateToSection) {
+      // Stocker l'ID du département pour le filtre
+      if (entityId) localStorage.setItem("currentDepartmentId", entityId);
+      // Naviguer vers la section BIA et l'onglet inventaire
+      onNavigateToSection("bia", "inventory", entityId);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -43,7 +55,7 @@ export const GovernanceModule = () => {
         })}
       </div>
 
-      {tab === "orgchart" && <OrgChart onNavigate={((s: string) => { if (s === "entity") setTab("entity"); }) as any} />}
+      {tab === "orgchart" && <OrgChart onNavigate={handleNavigate} />}
       {tab === "entity" && <EntityProfile onBack={() => setTab("orgchart")} />}
       {tab === "calendar" && <AnnualCalendar />}
       {tab === "policy" && <PolicyEditor />}

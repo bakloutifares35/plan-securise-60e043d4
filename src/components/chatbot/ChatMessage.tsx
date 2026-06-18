@@ -1,4 +1,4 @@
-// components/chatbot/ChatMessage.tsx
+// src/components/chatbot/ChatMessage.tsx
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 
@@ -12,7 +12,7 @@ export const ChatMessage = ({ role, content }: ChatMessageProps) => {
     <div className={cn("flex", role === "user" ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[80%] rounded-lg px-4 py-2 text-sm",
+          "max-w-[85%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap break-words",
           role === "user"
             ? "bg-primary text-primary-foreground"
             : "bg-muted text-foreground"

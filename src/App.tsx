@@ -9,6 +9,7 @@ import { RiskProvider } from "@/contexts/RiskContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { BcmCopilot } from "./components/chatbot/BcmCopilot";
+import TenaciaVoice from "./components/pca/bia/TenaciaVoice"; // 👈 AJOUTE CETTE LIGNE
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ function App() {
               <BrowserRouter>
                 <Routes>
                   <Route path="/" element={<Index />} />
+                  <Route path="/tenacia-voice" element={<TenaciaVoice />} /> {/* 👈 AJOUTE CETTE ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
                 {/* Chatbot flottant disponible sur toutes les pages */}

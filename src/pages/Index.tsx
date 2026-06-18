@@ -8,6 +8,7 @@ import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
 import { RiskModule } from "@/components/pca/risk/RiskModule";
 import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
+import TenaciaVoice from "@/components/pca/bia/TenaciaVoice"; // 👈 AJOUTE CETTE LIGNE
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -16,6 +17,19 @@ import { RiskProvider } from "@/contexts/RiskContext";
 
 const Index = () => {
   const [section, setSection] = useState<Section>("dashboard");
+  const [biaTab, setBiaTab] = useState<string>("dashboard");
+
+  const handleNavigateToSection = (targetSection: string, targetTab?: string, entityId?: string) => {
+    if (targetSection === "bia") {
+      setSection("bia");
+      if (targetTab) {
+        setBiaTab(targetTab);
+      }
+      if (entityId) {
+        localStorage.setItem("currentDepartmentId", entityId);
+      }
+    }
+  };
 
   return (
     <RoleProvider>
@@ -37,6 +51,7 @@ const Index = () => {
                       <SelectItem value="form">Identification des risques</SelectItem>
                       <SelectItem value="plan">Plan de continuité</SelectItem>
                       <SelectItem value="benchmark">Benchmark</SelectItem>
+                      <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem> {/* 👈 AJOUTE CETTE LIGNE */}
                     </SelectContent>
                   </Select>
                 </header>
@@ -46,9 +61,10 @@ const Index = () => {
                   {section === "form" && <RiskForm />}
                   {section === "plan" && <PlanSteps />}
                   {section === "benchmark" && <Benchmark />}
-                  {section === "governance" && <GovernanceModule />}
-                  {section === "bia" && <BiaModule />}
+                  {section === "governance" && <GovernanceModule onNavigateToSection={handleNavigateToSection} />}
+                  {section === "bia" && <BiaModule initialTab={biaTab} />}
                   {section === "risk" && <RiskModule />}
+                  {section === "tenacia" && <TenaciaVoice />} {/* 👈 AJOUTE CETTE LIGNE */}
                 </div>
               </main>
             </div>

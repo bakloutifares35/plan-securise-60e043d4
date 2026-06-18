@@ -1,3 +1,4 @@
+// src/data/governance.ts
 export type EntityType = "Groupe" | "Holding" | "Filiale" | "Direction" | "Service" | "Département";
 
 export type EntityStatus = "Actif" | "Inactif" | "En cours de création";
@@ -7,22 +8,21 @@ export type Entity = {
   name: string;
   type?: EntityType;
   country: string;
-  sector: string;
+  sector: string; // conservé pour compatibilité base, mais plus affiché
   parentId: string | null;
-  referent: string;
-  referentBackup: string;
-  contact?: string;
-  status: EntityStatus;
+  referent: string;           // référent PCA principal
+  referentBackup: string;     // suppléant (nom)
+  referentContact?: string;   // coordonnées du référent principal (texte)
+  suppleantContact?: string;  // coordonnées du suppléant (texte)
+  status: EntityStatus;       // conservé en base mais plus affiché
   pcaStatus: "Validé" | "En cours" | "À réviser" | "Non démarré";
-  maturity?: number; // 0-100
+  maturity?: number;
   processIds?: string[];
   children?: Entity[];
 };
 
 export const ENTITY_TYPES: EntityType[] = ["Groupe", "Holding", "Filiale", "Direction", "Service", "Département"];
-
 export const ENTITY_STATUSES: EntityStatus[] = ["Actif", "Inactif", "En cours de création"];
-
 export const SECTORS = ["Banque & Finance", "Assurance", "Industrie", "Santé", "Retail", "Technologie", "Autre"] as const;
 
 export const defaultMaturity = (s: Entity["pcaStatus"]): number => {
@@ -35,8 +35,8 @@ export const defaultMaturity = (s: Entity["pcaStatus"]): number => {
 };
 
 export const initialEntities: Entity[] = [
-  { id: "e1", name: "Groupe Atlas Holding", type: "Groupe", country: "France", sector: "Holding", parentId: null, referent: "Marie Dubois", referentBackup: "Jean Martin", status: "Actif", pcaStatus: "Validé", maturity: 88 },
-  { id: "e2", name: "Atlas Finance SA", type: "Filiale", country: "France", sector: "Banque & Finance", parentId: "e1", referent: "Pierre Leroy", referentBackup: "Sophie Durand", status: "Actif", pcaStatus: "Validé", maturity: 82 },
+  { id: "e1", name: "Groupe Atlas Holding", type: "Groupe", country: "France", sector: "Holding", parentId: null, referent: "Marie Dubois", referentBackup: "Jean Martin", referentContact: "marie@email.com / 0612345678", suppleantContact: "jean@email.com", status: "Actif", pcaStatus: "Validé", maturity: 88 },
+  { id: "e2", name: "Atlas Finance SA", type: "Filiale", country: "France", sector: "Banque & Finance", parentId: "e1", referent: "Pierre Leroy", referentBackup: "Sophie Durand", referentContact: "pierre@email.com", suppleantContact: "sophie@email.com", status: "Actif", pcaStatus: "Validé", maturity: 82 },
   { id: "e3", name: "Atlas Insurance", type: "Filiale", country: "Belgique", sector: "Assurance", parentId: "e1", referent: "Lucas Bernard", referentBackup: "Emma Petit", status: "Actif", pcaStatus: "En cours", maturity: 62 },
   { id: "e4", name: "Direction IT", type: "Direction", country: "France", sector: "Technologie", parentId: "e2", referent: "Thomas Robert", referentBackup: "Julie Moreau", status: "Actif", pcaStatus: "Validé", maturity: 78 },
   { id: "e5", name: "Service Cybersécurité", type: "Service", country: "France", sector: "Cybersécurité", parentId: "e4", referent: "Antoine Garcia", referentBackup: "Camille Roux", status: "Actif", pcaStatus: "Validé", maturity: 80 },
@@ -80,8 +80,7 @@ export const initialPolicies: PolicyVersion[] = [
     signatory: "Antoine Lefèvre, Directeur Général",
     scope: "Groupe Atlas Holding et filiales",
     nextRevision: "2026-11-12",
-    content:
-      "<h2>Politique de Continuité d'Activité</h2><p>Le présent document définit la politique du Groupe Atlas en matière de continuité d'activité (PCA). Il s'applique à toutes les entités du groupe.</p><h3>1. Objectifs</h3><p>Garantir la continuité des services critiques en cas de sinistre majeur, protéger les collaborateurs et préserver la confiance des parties prenantes.</p><h3>2. Périmètre</h3><p>Toutes les entités juridiques, processus métiers et systèmes d'information du groupe.</p><h3>3. Gouvernance</h3><p>Un comité de pilotage PCA se réunit trimestriellement.</p>",
+    content: "<h2>Politique de Continuité d'Activité</h2><p>Le présent document définit la politique du Groupe Atlas en matière de continuité d'activité (PCA). Il s'applique à toutes les entités du groupe.</p><h3>1. Objectifs</h3><p>Garantir la continuité des services critiques en cas de sinistre majeur, protéger les collaborateurs et préserver la confiance des parties prenantes.</p><h3>2. Périmètre</h3><p>Toutes les entités juridiques, processus métiers et systèmes d'information du groupe.</p><h3>3. Gouvernance</h3><p>Un comité de pilotage PCA se réunit trimestriellement.</p>",
   },
   {
     id: "p1",
@@ -111,8 +110,7 @@ export const initialCommittees: Committee[] = [
     title: "Comité de pilotage PCA T1 2026",
     attendees: ["Antoine Lefèvre", "Marie Dubois", "Pierre Leroy", "Thomas Robert"],
     agenda: ["Revue des incidents T1", "Avancement plan d'action 2026", "Validation budget tests DR"],
-    minutes:
-      "Le comité a validé le plan d'action 2026 et alloué un budget de 250k€ pour les tests de bascule. Un nouveau test cyber est planifié en juillet.",
+    minutes: "Le comité a validé le plan d'action 2026 et alloué un budget de 250k€ pour les tests de bascule. Un nouveau test cyber est planifié en juillet.",
     decisions: [
       { id: "d1", text: "Lancer test DR sur site secondaire", owner: "Thomas Robert", dueDate: "2026-05-22", status: "En cours" },
       { id: "d2", text: "Réviser PCA filiale Maroc", owner: "Yassine El Amrani", dueDate: "2026-06-30", status: "Ouvert" },

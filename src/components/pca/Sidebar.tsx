@@ -1,11 +1,11 @@
-import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon, Sparkles } from "lucide-react";
+import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon, Sparkles, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
 
 export type Section =
   | "dashboard" | "form" | "plan" | "benchmark"
   | "governance" | "entity"
-  | "bia" | "risk" | "ai";
+  | "bia" | "risk" | "ai" | "tenacia"; // 👈 AJOUT DE "tenacia"
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -29,6 +29,13 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
       { id: "risk", label: "Analyse des Risques", icon: AlertOctagon },
       { id: "form", label: "Identification des risques", icon: FileText },
       { id: "plan", label: "Plan de continuité", icon: ListChecks },
+    ],
+  },
+  // 👈 NOUVEAU GROUPE POUR TENACIA VOICE
+  {
+    label: "Innovation",
+    items: [
+      { id: "tenacia", label: "Tenacia Voice AI", icon: Mic },
     ],
   },
 ];
@@ -60,12 +67,15 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
                     className={cn(
                       "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-primary text-primary-foreground shadow-sm"
+                        ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md" // 👈 STYLE SPÉCIAL POUR TENACIA
                         : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                     )}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className={cn("h-4 w-4", isActive && "text-white")} />
                     {it.label}
+                    {it.id === "tenacia" && !isActive && (
+                      <span className="ml-auto text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full">✨ NEW</span>
+                    )}
                   </button>
                 );
               })}

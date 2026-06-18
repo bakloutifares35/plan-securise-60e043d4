@@ -19,8 +19,9 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
+import { VoiceMic } from "./VoiceMic";
 
-// ==================== DESCRIPTIONS DES SCORES POUR CHAQUE AXE ====================
+// ==================== DESCRIPTIONS DES SCORES ====================
 const impactDescriptions: Record<ImpactAxis, Record<number, string>> = {
   financial: {
     1: "Aucune perte financière",
@@ -59,7 +60,6 @@ const impactDescriptions: Record<ImpactAxis, Record<number, string>> = {
   },
 };
 
-// ==================== MATRICE D'IMPACT STATIQUE (dans une modale) ====================
 const StaticImpactMatrix = () => {
   const severityLevels = [
     { label: "Very Severe", color: "bg-red-800 text-white", border: "border-red-900" },
@@ -148,7 +148,6 @@ const StaticImpactMatrix = () => {
   );
 };
 
-// ==================== COMPOSANT TOOLTIP ====================
 const ImpactTooltip = ({ axis }: { axis: ImpactAxis }) => {
   const descriptions = impactDescriptions[axis];
   return (
@@ -178,7 +177,6 @@ const ImpactTooltip = ({ axis }: { axis: ImpactAxis }) => {
   );
 };
 
-// ==================== TYPE POUR LES APPLICATIONS IT CRITIQUES ====================
 type AppCritique = {
   id: string;
   name: string;
@@ -187,7 +185,6 @@ type AppCritique = {
   remplacablePar: string;
 };
 
-// Configuration des étapes
 const STEPS = [
   { id: "general", label: "Général", icon: "📋" },
   { id: "impact", label: "Impact métier", icon: "🎯" },
@@ -196,7 +193,6 @@ const STEPS = [
   { id: "validation", label: "Validation", icon: "✅" }
 ];
 
-// ========== FONCTIONS DE SUGGESTION CORRIGÉES (période la plus courte) ==========
 const getFirstCriticalPeriod = (impacts: any): { periodId: TimePeriod; hours: number; maxScore: number } | null => {
   const candidates: { periodId: TimePeriod; hours: number; maxScore: number }[] = [];
   for (const period of PERIODS) {
@@ -315,11 +311,10 @@ const newProcess = (): Process => ({
   mtpd: 72,
   mbco: 80,
   resources: [],
-  appsCritiques: [] as any, // Correction temporaire : attendre l'ajout dans le type Process
+  appsCritiques: [] as any,
   lastUpdated: new Date().toISOString().slice(0, 10),
 });
 
-// ==================== COMPOSANT RESSOURCES CRITIQUES ====================
 const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: { 
   resources: Resource[]; 
   onChange: (r: Resource[]) => void;
@@ -332,7 +327,7 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
     quantity: 1,
     substitutability: "",
   });
-  const [activeCategory, setActiveCategory] = useState<ResourceType | "APPS">("HR");
+  const [activeCategory, setActiveCategory] = useState<ResourceType | "APPS">("APPS");
 
   const availabilityPeriods = [
     { id: "P0_4H", label: "0-4h", hours: 4 },
@@ -387,9 +382,8 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
   const removeApp = (id: string) => onAppsChange(appsCritiques.filter(a => a.id !== id));
 
   const categories: { type: ResourceType | "APPS"; label: string; icon: string; color: string }[] = [
-    { type: "HR", label: "Ressources humaines", icon: "👥", color: "bg-blue-100 text-blue-700 border-blue-200" },
     { type: "APPS", label: "Applications IT", icon: "💻", color: "bg-purple-100 text-purple-700 border-purple-200" },
-    { type: "Locaux", label: "Locaux", icon: "🏢", color: "bg-green-100 text-green-700 border-green-200" },
+    { type: "HR", label: "Ressources humaines", icon: "👥", color: "bg-blue-100 text-blue-700 border-blue-200" },
     { type: "Equipement", label: "Équipements", icon: "🖨️", color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
     { type: "Fournisseur", label: "Fournisseurs", icon: "🤝", color: "bg-orange-100 text-orange-700 border-orange-200" },
   ];
@@ -431,7 +425,6 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
   };
 
   const removeResource = (id: string) => onChange(resources.filter(r => r.id !== id));
-
   const getResourcesByCategory = (type: ResourceType) => resources.filter(r => r.type === type);
 
   const addHrRow = () => {
@@ -653,20 +646,18 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
             )}
           </div>
         )}
-
-        {activeCategory === "Locaux" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div><Label className="text-xs">Nom du local</Label><Input value={newResource.name} onChange={(e) => setNewResource({ ...newResource, name: e.target.value, type: "Locaux" })} placeholder="Ex: Bâtiment A, Salle serveur..." className="h-9 text-sm" /></div>
-            <div><Label className="text-xs">Quantité</Label><Input type="number" min={1} value={newResource.quantity} onChange={(e) => setNewResource({ ...newResource, quantity: Number(e.target.value), type: "Locaux" })} className="h-9 text-sm" /></div>
-            <div><Label className="text-xs">Remplaçable par</Label><Input value={newResource.substitutability} onChange={(e) => setNewResource({ ...newResource, substitutability: e.target.value, type: "Locaux" })} placeholder="Ex: Site de secours..." className="h-9 text-sm" /></div>
-          </div>
-        )}
         
         {activeCategory === "Equipement" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div><Label className="text-xs">Nom de l'équipement</Label><Input value={newResource.name} onChange={(e) => setNewResource({ ...newResource, name: e.target.value, type: "Equipement" })} placeholder="Ex: Scanner, Imprimante 3D..." className="h-9 text-sm" /></div>
             <div><Label className="text-xs">Quantité</Label><Input type="number" min={1} value={newResource.quantity} onChange={(e) => setNewResource({ ...newResource, quantity: Number(e.target.value), type: "Equipement" })} className="h-9 text-sm" /></div>
             <div><Label className="text-xs">Remplaçable par</Label><Input value={newResource.substitutability} onChange={(e) => setNewResource({ ...newResource, substitutability: e.target.value, type: "Equipement" })} placeholder="Ex: Équipement de secours..." className="h-9 text-sm" /></div>
+            <div className="flex justify-end mt-3 col-span-3">
+              <Button onClick={addResource} size="sm" className="gap-1">
+                <Plus className="h-3 w-3" />
+                Ajouter
+              </Button>
+            </div>
           </div>
         )}
 
@@ -675,20 +666,16 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
             <div><Label className="text-xs">Nom du fournisseur</Label><Input value={newResource.name} onChange={(e) => setNewResource({ ...newResource, name: e.target.value, type: "Fournisseur" })} placeholder="Ex: AWS, OVH, Salesforce..." className="h-9 text-sm" /></div>
             <div><Label className="text-xs">Quantité</Label><Input type="number" min={1} value={newResource.quantity} onChange={(e) => setNewResource({ ...newResource, quantity: Number(e.target.value), type: "Fournisseur" })} className="h-9 text-sm" /></div>
             <div><Label className="text-xs">Remplaçable par</Label><Input value={newResource.substitutability} onChange={(e) => setNewResource({ ...newResource, substitutability: e.target.value, type: "Fournisseur" })} placeholder="Ex: Fournisseur alternatif..." className="h-9 text-sm" /></div>
-          </div>
-        )}
-        
-        {(activeCategory === "Locaux" || activeCategory === "Equipement" || activeCategory === "Fournisseur") && (
-          <div className="flex justify-end mt-3">
-            <Button onClick={addResource} size="sm" className="gap-1">
-              <Plus className="h-3 w-3" />
-              Ajouter
-            </Button>
+            <div className="flex justify-end mt-3 col-span-3">
+              <Button onClick={addResource} size="sm" className="gap-1">
+                <Plus className="h-3 w-3" />
+                Ajouter
+              </Button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Affichage des ressources par catégorie */}
       <div className="space-y-4">
         {categories.map((cat) => {
           let categoryResources = [];
@@ -795,7 +782,6 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
   );
 };
 
-// ==================== SUMMARY VIEW (SANS DÉPARTEMENT) ====================
 const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: { 
   data: Process; 
   entityName: string; 
@@ -820,7 +806,6 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
 
   const resourcesByType = {
     HR: data.resources.filter(r => r.type === "HR"),
-    Locaux: data.resources.filter(r => r.type === "Locaux"),
     Equipement: data.resources.filter(r => r.type === "Equipement"),
     Fournisseur: data.resources.filter(r => r.type === "Fournisseur"),
   };
@@ -851,7 +836,6 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
               <span className="text-muted-foreground">Entité</span>
               <span className="font-medium">{entityName || "—"}</span>
             </div>
-            {/* Ligne Département supprimée */}
             <div className="flex justify-between py-1">
               <span className="text-muted-foreground">Responsable</span>
               <span className="font-medium">{data.owner || "—"}</span>
@@ -975,27 +959,6 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
               </div>
             )}
 
-            {resourcesByType.Locaux.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-green-100 text-green-700 px-3 py-2 border-b flex items-center gap-2">
-                  <span>🏢</span>
-                  <span className="font-semibold text-sm">Locaux</span>
-                  <Badge variant="outline" className="ml-auto text-xs">{resourcesByType.Locaux.length}</Badge>
-                </div>
-                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
-                  {resourcesByType.Locaux.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-2 bg-muted/20 rounded-lg">
-                      <div>
-                        <p className="font-medium text-sm">{r.name}</p>
-                        <p className="text-xs text-muted-foreground">{r.quantity} unité(s)</p>
-                      </div>
-                      {r.substitutability && <Badge variant="outline" className="text-xs">🔄 {r.substitutability}</Badge>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {resourcesByType.Equipement.length > 0 && (
               <div className="border rounded-lg overflow-hidden">
                 <div className="bg-yellow-100 text-yellow-700 px-3 py-2 border-b flex items-center gap-2">
@@ -1105,7 +1068,6 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
   );
 };
 
-// ==================== BIA WIZARD (SANS DÉPARTEMENT) AVEC AJOUT POUR CHATBOT ====================
 export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: () => void }) => {
   const { processes, upsertProcess } = useBia();
   const { entities } = useGovernance();
@@ -1120,7 +1082,6 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
   const [step, setStep] = useState(0);
   const [data, setData] = useState<any>(initial);
 
-  // ========== AJOUT POUR LE CHATBOT (stocke le processus en cours) ==========
   useEffect(() => {
     if (data.id) {
       localStorage.setItem("currentProcessId", data.id);
@@ -1131,7 +1092,6 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
       }
     }
   }, [data.id, data.name, data.entityId, entities]);
-  // ========== FIN AJOUT ==========
 
   const update = (key: string, value: any) => {
     setData((d: any) => ({ ...d, [key]: value }));
@@ -1212,7 +1172,6 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
               <div className="grid gap-4 md:grid-cols-2">
                 <div><Label>Nom du processus *</Label><Input value={data.name} onChange={(e) => update("name", e.target.value)} placeholder="Ex: Traitement des commandes" /></div>
                 <div><Label>Entité *</Label><Select value={data.entityId} onValueChange={(v) => update("entityId", v)}><SelectTrigger><SelectValue placeholder="Sélectionner une entité" /></SelectTrigger><SelectContent>{entities.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select></div>
-                {/* Champ Département supprimé */}
                 <div><Label>Responsable *</Label><Input value={data.owner} onChange={(e) => update("owner", e.target.value)} placeholder="Nom du responsable" /></div>
                 <div className="md:col-span-2"><Label>Description</Label><Textarea value={data.description} onChange={(e) => update("description", e.target.value)} rows={3} placeholder="Décrivez le processus..." /></div>
               </div>
@@ -1242,7 +1201,6 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                 Évaluez l'impact (1 = négligeable, 5 = catastrophique) pour chaque axe et période d'indisponibilité.
               </p>
 
-              {/* 5 boutons Mode rapide avec libellés */}
               <div className="flex flex-wrap gap-2">
                 {[
                   { score: 1, label: "Mineur", color: "bg-green-500" },
@@ -1268,7 +1226,6 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                 </p>
               </div>
 
-              {/* Matrice complète toujours affichée */}
               <div className="overflow-auto border rounded-lg">
                 <Table>
                   <TableHeader>
@@ -1405,6 +1362,46 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
         <Button variant="outline" disabled={step === 0} onClick={() => setStep(s => s - 1)}><ArrowLeft className="h-4 w-4 mr-2" />Précédent</Button>
         {step < STEPS.length - 1 ? <Button onClick={() => setStep(s => s + 1)} disabled={!canNext()}>Suivant <ArrowRight className="h-4 w-4 ml-2" /></Button> : <Button onClick={submit} className="bg-success hover:bg-success/90"><Check className="h-4 w-4 mr-2" />Enregistrer le BIA</Button>}
       </div>
+
+      {/* Assistant vocal avec mode guidé */}
+      {step < 4 && (
+        <VoiceMic
+          onNameChange={(name) => update("name", name)}
+          onOwnerChange={(owner) => update("owner", owner)}
+          onEntityChange={(entity) => {
+            const found = entities.find(e => e.name === entity || e.id === entity);
+            if (found) update("entityId", found.id);
+            else toast({ title: "Entité non trouvée", description: `"${entity}" n'existe pas dans la liste`, variant: "destructive" });
+          }}
+          onDescriptionChange={(desc) => update("description", desc)}
+          onRTOChange={(rto) => update("rto", rto)}
+          onRPOChange={(rpo) => update("rpo", rpo)}
+          onImpactFill={(score) => fillAllImpacts(score)}
+          onNextStep={() => {
+            if (step < STEPS.length - 1) setStep(step + 1);
+          }}
+          onAddResource={(resource) => {
+            const newResource = {
+              id: `r_${Date.now()}`,
+              type: "HR",
+              name: resource.name,
+              quantity: 1,
+              hrPeople: [{
+                id: `p_${Date.now()}`,
+                name: resource.name,
+                role: resource.role,
+                phone: "",
+                email: "",
+                selected: true,
+                availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
+              }]
+            };
+            update("resources", [...data.resources, newResource]);
+            toast({ title: "Ressource ajoutée", description: `${resource.name} (${resource.role})` });
+          }}
+          currentStep={step}
+        />
+      )}
     </div>
   );
 };
