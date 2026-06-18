@@ -6,7 +6,7 @@ import { PlanSteps } from "@/components/pca/PlanSteps";
 import { Benchmark } from "@/components/pca/Benchmark";
 import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
-import { RiskModule } from "@/components/pca/risk/RiskModule";
+import { RiskMethodGate } from "@/components/pca/risk/RiskMethodGate";
 import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
 import TenaciaVoice from "@/components/pca/bia/TenaciaVoice"; // 👈 AJOUTE CETTE LIGNE
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -63,7 +63,7 @@ const Index = () => {
                   {section === "benchmark" && <Benchmark />}
                   {section === "governance" && <GovernanceModule onNavigateToSection={handleNavigateToSection} />}
                   {section === "bia" && <BiaModule initialTab={biaTab} />}
-                  {section === "risk" && <RiskModule />}
+                  {section === "risk" && <RiskMethodGate />}
                   {section === "tenacia" && <TenaciaVoice />} {/* 👈 AJOUTE CETTE LIGNE */}
                 </div>
               </main>
