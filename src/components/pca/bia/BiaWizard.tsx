@@ -311,6 +311,7 @@ const newProcess = (): Process => ({
   mtpd: 72,
   mbco: 80,
   resources: [],
+  dependsOn: [],
   appsCritiques: [] as any,
   lastUpdated: new Date().toISOString().slice(0, 10),
 });

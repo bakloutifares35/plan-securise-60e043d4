@@ -34,7 +34,9 @@ export type Resource = {
   type: ResourceType;
   name: string;
   quantity: number;
-  substitutability: "Aucune" | "Faible" | "Moyenne" | "Forte";
+  substitutability: "Aucune" | "Faible" | "Moyenne" | "Forte" | string;
+  rto?: number;
+  hrPeople?: any[];
 };
 
 export type ImpactMatrix = Record<TimePeriod, Record<ImpactAxis, number>>;
@@ -57,6 +59,7 @@ export type Process = {
   resources: Resource[];
   dependsOn: string[];
   lastUpdated: string;
+  appsCritiques?: any[];
 };
 
 export const emptyImpacts = (): ImpactMatrix =>

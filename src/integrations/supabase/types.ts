@@ -14,7 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      risques: {
+        Row: {
+          analysis_data: Json | null
+          category: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          method_used: string | null
+          owner: string | null
+          severity: string | null
+          status: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          analysis_data?: Json | null
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          method_used?: string | null
+          owner?: string | null
+          severity?: string | null
+          status?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          analysis_data?: Json | null
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          method_used?: string | null
+          owner?: string | null
+          severity?: string | null
+          status?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

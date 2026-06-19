@@ -2,15 +2,15 @@ export interface VoiceCommandResult {
   success: boolean;
   message: string;
   actions: Array<{
-    type: "setName" | "setOwner" | "setEntity" | "setDescription" | "setRTO" | "setRPO" | "setImpact" | "nextStep" | "answer";
+    type: "setName" | "setOwner" | "setEntity" | "setDescription" | "setRTO" | "setRPO" | "setImpact" | "nextStep" | "answer" | "addResource";
     value: any;
   }>;
-  askQuestion?: string;
+  askQuestion?: string | null;
   expectedAnswer?: string;
 }
 
 type DialogState = {
-  waitingFor: "name" | "owner" | "entity" | "description" | "impact" | "rto" | "rpo" | "nextStepConfirm" | null;
+  waitingFor: "name" | "owner" | "entity" | "description" | "impact" | "rto" | "rpo" | "nextStepConfirm" | "nextStepConfirm2" | "nextStepConfirm3" | null;
   step: number;
 };
 

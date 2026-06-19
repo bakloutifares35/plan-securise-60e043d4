@@ -22,7 +22,7 @@ type ProcessTemplate = {
   description: string;
   suggested_rto_hours: number;
   suggested_rpo_hours: number;
-  criticality: "Critique" | "Majeur" | "Modéré";
+  criticality: "Critique" | "Majeur" | "Modéré" | "Mineur";
 };
 
 const sectorBenchmarks: Record<string, {
