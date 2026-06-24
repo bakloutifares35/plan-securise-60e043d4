@@ -22,7 +22,7 @@ import Tesseract from 'tesseract.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
-// ✅ FIX: Helper pour détecter un département peu importe la casse
+// ✅ Helper pour détecter un département
 const isDept = (type?: string) => 
   ["département", "departement", "dept"].includes((type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
 
@@ -128,7 +128,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   const panelEntity = entities.find((e) => e.id === panelId) || null;
   const panelParent = panelEntity ? entities.find((e) => e.id === panelEntity.parentId) : null;
 
-  // ✅ FIX: Utilise isDept() au lieu de === "Département"
   const departmentProcesses = (() => {
     if (!panelEntity || !isDept(panelEntity.type)) return [];
     const byId = processes.filter(p => p.entityId === panelEntity.id);
@@ -255,11 +254,165 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     XLSX.writeFile(wb, 'modele_organigramme.xlsx');
   };
 
+  // ✅ NOUVELLE FONCTION : Insertion des entités depuis l'IA
+  const insertEntitiesFromAI = async (entitiesFromAI: Array<{name: string, type: string, parent: string | null}>) => {
+    console.log("🟢 insertEntitiesFromAI - Début, entités:", entitiesFromAI.length);
+    const insertedIds = new Map();
+    for (const entity of entitiesFromAI) {
+      console.log("🟢 Insertion:", entity.name);
+      const { data, error } = await (supabase as any).from('organisations').insert({
+        name: entity.name, type: (entity.type || 'DIRECTION').toUpperCase(),
+        country_code: 'FR', parent_id: null, pca_referent: 'À définir',
+        referent_contact: null, referent_backup: '—', referent_backup_contact: null,
+        pca_status: 'Non démarré', maturity: 20, sector: 'Général', status: 'ACTIVE',
+      }).select().single();
+      if (error) console.error(`❌ Erreur ${entity.name}:`, error);
+      else { insertedIds.set(entity.name, data.id); console.log("✅ Insertion OK:", data.id); }
+    }
+    for (const entity of entitiesFromAI) {
+      if (entity.parent && insertedIds.has(entity.parent)) {
+        console.log("🟢 Mise à jour parent:", entity.name, "→", entity.parent);
+        await (supabase as any).from('organisations').update({ parent_id: insertedIds.get(entity.parent) }).eq('id', insertedIds.get(entity.name));
+      }
+    }
+    const { data: allEntities } = await (supabase as any).from('organisations').select('*');
+    if (allEntities) {
+      setEntities(allEntities.map((e: any) => ({
+        id: e.id, name: e.name, type: e.type, country: e.country_code,
+        parentId: e.parent_id, referent: e.pca_referent || '—',
+        referentContact: e.referent_contact, referentBackup: e.referent_backup || '—',
+        suppleantContact: e.referent_backup_contact,
+        status: 'Actif', pcaStatus: e.pca_status || 'Non démarré', maturity: e.maturity || 20,
+      })));
+    }
+    console.log("✅ insertEntitiesFromAI - Terminé");
+  };
+
+  // ✅ NOUVELLE FONCTION : Traitement PDF avec logs
+  const processFileWithAI = async (file: File) => {
+    console.log("🔵 === DÉBUT TRAITEMENT PDF ===");
+    console.log("🔵 Fichier:", file.name, "Taille:", file.size);
+    const startTime = Date.now();
+    
+    try {
+      // 1. Lire le PDF
+      console.log("🔵 1. Lecture du PDF...");
+      const arrayBuffer = await file.arrayBuffer();
+      console.log("🔵 1. OK - Taille:", arrayBuffer.byteLength);
+      
+      // 2. Ouvrir le PDF
+      console.log("🔵 2. Ouverture du PDF...");
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      console.log("🔵 2. OK - Nombre de pages:", pdf.numPages);
+      
+      // 3. Extraire le texte de la page 1
+      console.log("🔵 3. Extraction du texte...");
+      const page = await pdf.getPage(1);
+      const textContent = await page.getTextContent();
+      let extractedText = textContent.items.map((item: any) => item.str).join(' ');
+      console.log("🔵 3. OK - Longueur:", extractedText.length);
+      console.log("🔵 3. Début du texte:", extractedText.substring(0, 300));
+      
+      // 4. OCR si pas de texte
+      if (!extractedText || extractedText.trim().length < 10) {
+        console.log("🟡 4. Texte trop court → OCR...");
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const { data: { text } } = await Tesseract.recognize(canvas.toDataURL('image/png'), 'fra');
+        extractedText = text;
+        console.log("🟡 4. OCR OK - Longueur:", extractedText.length);
+      }
+      
+      // 5. Envoyer à Ollama
+      console.log("🔵 5. Envoi à Ollama...");
+      const prompt = `Extrais l'organigramme de ce texte: "${extractedText.substring(0, 3000)}"
+RÈGLES: "Niveau 1 : X" → X est la RACINE (parent = null). TOUS les noms après les tirets "-" sont les ENFANTS de la racine.
+Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DIRECTION","parent":null},{"name":"Direction Financière","type":"DIRECTION","parent":"Direction Skillia"}]}`;
+      
+      console.log("🔵 5. Prompt envoyé (longueur):", prompt.length);
+      
+      const response = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "mistral",
+          prompt: prompt,
+          options: { temperature: 0, num_predict: 500 },
+          stream: false
+        })
+      });
+      
+      console.log("🔵 6. Réponse reçue - Status:", response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("🔴 Erreur HTTP:", errorText);
+        toast.error("Erreur Ollama: " + response.status);
+        return;
+      }
+      
+      const result = await response.json();
+      console.log("🔵 7. Réponse brute:", result);
+      console.log("🔵 7. Réponse.response:", result.response);
+      
+      // 8. Nettoyer et parser le JSON
+      console.log("🔵 8. Nettoyage du JSON...");
+      let cleanResponse = result.response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      console.log("🔵 8. Après nettoyage:", cleanResponse.substring(0, 200));
+      
+      const jsonStart = cleanResponse.indexOf('{');
+      const jsonEnd = cleanResponse.lastIndexOf('}');
+      if (jsonStart === -1 || jsonEnd === -1) {
+        console.error("🔴 Pas de JSON trouvé");
+        toast.error("Format de réponse invalide");
+        return;
+      }
+      
+      const jsonStr = cleanResponse.substring(jsonStart, jsonEnd + 1);
+      console.log("🔵 8. JSON extrait:", jsonStr.substring(0, 200));
+      
+      const parsed = JSON.parse(jsonStr);
+      console.log("🔵 9. JSON parsé:", parsed);
+      
+      if (parsed.entities?.length) {
+        console.log("🔵 10. Entités trouvées:", parsed.entities.length);
+        await insertEntitiesFromAI(parsed.entities);
+        toast.success(`✅ ${parsed.entities.length} entités importées en ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      } else {
+        console.warn("🟡 Aucune entité trouvée");
+        toast.error("Aucune entité trouvée dans le PDF");
+      }
+      
+    } catch (err: any) {
+      console.error("🔴 ERREUR COMPLÈTE:", err);
+      toast.error(`❌ Erreur: ${err.message}`);
+    }
+    
+    console.log("🔵 === FIN TRAITEMENT PDF ===");
+  };
+
+  // ✅ Fonction d'import de fichier
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type === "application/pdf") { await processFileWithAI(file); e.target.value = ''; return; }
-    if (file.type.startsWith("image/")) { toast.info("Le support des images arrive bientôt."); e.target.value = ''; return; }
+    console.log("📁 Import du fichier:", file.name, "Type:", file.type);
+    
+    if (file.type === "application/pdf") {
+      console.log("📄 Traitement PDF...");
+      await processFileWithAI(file);
+      e.target.value = '';
+      return;
+    }
+    
+    if (file.type.startsWith("image/")) {
+      toast.info("Le support des images arrive bientôt.");
+      e.target.value = '';
+      return;
+    }
+    
+    // Import Excel
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
@@ -267,6 +420,8 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         const workbook = XLSX.read(data, { type: 'binary' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+        console.log("📊 Excel - Lignes:", rows.length);
+        
         const insertedEntities: any[] = [];
         for (const row of rows) {
           const { data: inserted, error } = await (supabase as any).from('organisations').insert({
@@ -305,72 +460,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
-  };
-
-  const insertEntitiesFromAI = async (entitiesFromAI: Array<{name: string, type: string, parent: string | null}>) => {
-    const insertedIds = new Map();
-    for (const entity of entitiesFromAI) {
-      const { data, error } = await (supabase as any).from('organisations').insert({
-        name: entity.name, type: (entity.type || 'DIRECTION').toUpperCase(),
-        country_code: 'FR', parent_id: null, pca_referent: 'À définir',
-        referent_contact: null, referent_backup: '—', referent_backup_contact: null,
-        pca_status: 'Non démarré', maturity: 20, sector: 'Général', status: 'ACTIVE',
-      }).select().single();
-      if (error) console.error(`Erreur ${entity.name}:`, error);
-      else { insertedIds.set(entity.name, data.id); }
-    }
-    for (const entity of entitiesFromAI) {
-      if (entity.parent && insertedIds.has(entity.parent)) {
-        await (supabase as any).from('organisations').update({ parent_id: insertedIds.get(entity.parent) }).eq('id', insertedIds.get(entity.name));
-      }
-    }
-    const { data: allEntities } = await (supabase as any).from('organisations').select('*');
-    if (allEntities) {
-      setEntities(allEntities.map((e: any) => ({
-        id: e.id, name: e.name, type: e.type, country: e.country_code,
-        parentId: e.parent_id, referent: e.pca_referent || '—',
-        referentContact: e.referent_contact, referentBackup: e.referent_backup || '—',
-        suppleantContact: e.referent_backup_contact,
-        status: 'Actif', pcaStatus: e.pca_status || 'Non démarré', maturity: e.maturity || 20,
-      })));
-    }
-  };
-
-  const processFileWithAI = async (file: File) => {
-    const startTime = Date.now();
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const page = await pdf.getPage(1);
-      const textContent = await page.getTextContent();
-      let extractedText = textContent.items.map((item: any) => item.str).join(' ');
-      if (!extractedText || extractedText.trim().length < 10) {
-        const viewport = page.getViewport({ scale: 2.0 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width; canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-        const { data: { text } } = await Tesseract.recognize(canvas.toDataURL('image/png'), 'fra');
-        extractedText = text;
-      }
-      const response = await fetch("http://localhost:11434/api/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "mistral",
-          prompt: `Extrais l'organigramme de ce texte: "${extractedText}"
-RÈGLES: "Niveau 1 : X" → X est la RACINE (parent = null). TOUS les noms après les tirets "-" sont les ENFANTS de la racine.
-Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DIRECTION","parent":null},{"name":"Direction Financière","type":"DIRECTION","parent":"Direction Skillia"}]}`,
-          options: { temperature: 0, num_predict: 500 }, stream: false
-        })
-      });
-      const result = await response.json();
-      let cleanResponse = result.response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      const jsonStr = cleanResponse.substring(cleanResponse.indexOf('{'), cleanResponse.lastIndexOf('}') + 1);
-      const parsed = JSON.parse(jsonStr);
-      if (parsed.entities?.length) {
-        await insertEntitiesFromAI(parsed.entities);
-        toast.success(`✅ ${parsed.entities.length} entités importées en ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-      } else toast.error("Aucune entité trouvée dans le PDF");
-    } catch (err: any) { toast.error(`Erreur: ${err.message}`); }
   };
 
   const navigateToInventory = () => {
@@ -433,7 +522,6 @@ Retourne UNIQUEMENT le JSON: {"entities":[{"name":"Direction Skillia","type":"DI
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {panelEntity && (() => {
             const m = panelEntity.maturity ?? defaultMaturity(panelEntity.pcaStatus);
-            // ✅ FIX: Utilise isDept() au lieu de === "Département"
             const isDepartment = isDept(panelEntity.type);
             return (
               <div className="space-y-5">

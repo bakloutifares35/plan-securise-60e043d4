@@ -21,7 +21,7 @@ export const BiaProvider = ({ children }: { children: ReactNode }) => {
     try {
       const { data, error } = await (supabase as any)
         .from("processus_metier")
-        .select("*")
+        .select("*") // ✅ Récupère TOUS les champs, y compris apps_critiques
         .order("created_at", { ascending: true });
 
       if (error) {
@@ -46,10 +46,11 @@ export const BiaProvider = ({ children }: { children: ReactNode }) => {
           resources: row.resources || [],
           dependsOn: row.depends_on || [],
           lastUpdated: row.last_bia_date || new Date().toISOString().slice(0, 10),
+          // ✅ AJOUT : récupérer les apps critiques
+          appsCritiques: row.apps_critiques || []
         }));
         setProcesses(mapped);
       } else {
-        // Si pas de données, garde la liste vide
         setProcesses([]);
       }
     } catch (err) {
@@ -66,7 +67,6 @@ export const BiaProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const upsertProcess = async (p: Process) => {
-    // Vérifier si c'est un nouvel ID (commence par "proc-" ou "pr_")
     const isNew = p.id.startsWith("proc-") || p.id.startsWith("pr_");
 
     const payload = {
@@ -84,6 +84,8 @@ export const BiaProvider = ({ children }: { children: ReactNode }) => {
       resources: p.resources || [],
       depends_on: p.dependsOn || [],
       last_bia_date: p.lastUpdated || new Date().toISOString().slice(0, 10),
+      // ✅ AJOUT : sauvegarder les apps critiques
+      apps_critiques: p.appsCritiques || []
     };
 
     if (isNew) {
@@ -116,6 +118,8 @@ export const BiaProvider = ({ children }: { children: ReactNode }) => {
           resources: data.resources || [],
           dependsOn: data.depends_on || [],
           lastUpdated: data.last_bia_date || new Date().toISOString().slice(0, 10),
+          // ✅ AJOUT
+          appsCritiques: data.apps_critiques || []
         };
 
         setProcesses((prev) => [...prev, mapped]);
@@ -153,6 +157,8 @@ export const BiaProvider = ({ children }: { children: ReactNode }) => {
         resources: data.resources || [],
         dependsOn: data.depends_on || [],
         lastUpdated: data.last_bia_date || new Date().toISOString().slice(0, 10),
+        // ✅ AJOUT
+        appsCritiques: data.apps_critiques || []
       };
 
       setProcesses((prev) => {

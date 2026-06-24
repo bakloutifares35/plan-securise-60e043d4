@@ -7,12 +7,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, ArrowRight, Check, AlertTriangle, Plus, Trash2, ShieldAlert, TrendingUp, Server } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Plus, Trash2, ShieldAlert, TrendingUp, Server, Users, Building2, Package, Edit2 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import {
-  PERIODS, AXIS_LABELS, RESOURCE_LABELS, emptyImpacts, computeMaxScore, periodMaxScore,
-  scoreToCriticality, criticalityColor, scoreCellColor,
+  PERIODS, AXIS_LABELS, emptyImpacts, computeMaxScore,
+  scoreToCriticality, criticalityColor,
   type Process, type ImpactAxis, type TimePeriod, type Resource, type ResourceType,
 } from "@/data/bia";
 import { toast } from "@/hooks/use-toast";
@@ -20,6 +20,17 @@ import { cn } from "@/lib/utils";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
 import { VoiceMic } from "./VoiceMic";
+
+// ==================== CONSTANTES GLOBALES ====================
+const AVAILABILITY_PERIODS = [
+  { id: "P0_4H", label: "0-4h" },
+  { id: "P4_8H", label: "4-8h" },
+  { id: "P1D", label: "1j" },
+  { id: "P2D", label: "2j" },
+  { id: "P1W", label: "1sem" },
+  { id: "P2W", label: "2sem" },
+  { id: "P1M", label: "1mois" },
+];
 
 // ==================== DESCRIPTIONS DES SCORES ====================
 const impactDescriptions: Record<ImpactAxis, Record<number, string>> = {
@@ -316,60 +327,106 @@ const newProcess = (): Process => ({
   lastUpdated: new Date().toISOString().slice(0, 10),
 });
 
-const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: { 
+// ==================== RESSOURCES EDITOR COMPLET ====================
+const ResourcesEditor = ({ 
+  resources, 
+  onChange, 
+  appsCritiques, 
+  onAppsChange,
+  allProcesses,
+  departmentId,
+  processName,
+  currentStep,
+}: { 
   resources: Resource[]; 
   onChange: (r: Resource[]) => void;
   appsCritiques: AppCritique[];
   onAppsChange: (apps: AppCritique[]) => void;
+  allProcesses: Process[];
+  departmentId: string;
+  processName: string;
+  currentStep: number;
 }) => {
-  const [newResource, setNewResource] = useState<Omit<Resource, "id">>({
-    type: "HR",
-    name: "",
-    quantity: 1,
-    substitutability: "",
-  });
-  const [activeCategory, setActiveCategory] = useState<ResourceType | "APPS">("APPS");
+  // ════════════════════════════════════════════════════
+  // ✅ ONGLETS PRINCIPAUX : "Apps IT" et "Ressources partagées"
+  // ════════════════════════════════════════════════════
+  const [activeTab, setActiveTab] = useState<"apps" | "shared">("apps");
+  
+  // Sous-onglets pour les ressources partagées
+  const [sharedSubTab, setSharedSubTab] = useState<"HR" | "Equipement" | "Fournisseur">("HR");
 
-  const availabilityPeriods = [
-    { id: "P0_4H", label: "0-4h", hours: 4 },
-    { id: "P4_8H", label: "4-8h", hours: 8 },
-    { id: "P1D", label: "1j", hours: 24 },
-    { id: "P2D", label: "2j", hours: 48 },
-    { id: "P1W", label: "1sem", hours: 168 },
-    { id: "P2W", label: "2sem", hours: 336 },
-    { id: "P1M", label: "1mois", hours: 720 },
-  ];
+  // États pour les formulaires d'ajout
+  const [showAppForm, setShowAppForm] = useState(false);
+  const [showHRForm, setShowHRForm] = useState(false);
+  const [showEquipmentForm, setShowEquipmentForm] = useState(false);
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
 
-  const [hrPeople, setHrPeople] = useState<{ 
-    id: string; 
-    name: string; 
-    role: string; 
-    phone: string;
-    email: string;
-    selected: boolean;
-    availability: Record<string, boolean>;
-  }[]>([
-    { 
-      id: `p_${Date.now()}`, 
-      name: "", 
-      role: "", 
-      phone: "",
-      email: "",
-      selected: false,
-      availability: {
-        P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false
-      }
-    }
-  ]);
+  // États pour l'édition
+  const [editingResource, setEditingResource] = useState<any>(null);
+  const [editingApp, setEditingApp] = useState<any>(null);
 
+  // Nouvelle application IT
   const [newApp, setNewApp] = useState<Omit<AppCritique, "id">>({
     name: "",
     rto_hours: 4,
     rpo_hours: 1,
     remplacablePar: "",
   });
-  const [showAppForm, setShowAppForm] = useState(false);
 
+  // Nouvelle ressource HR (avec disponibilités)
+  const [newHR, setNewHR] = useState({
+    name: "",
+    role: "",
+    phone: "",
+    email: "",
+    availability: {
+      P0_4H: false,
+      P4_8H: false,
+      P1D: false,
+      P2D: false,
+      P1W: false,
+      P2W: false,
+      P1M: false
+    }
+  });
+
+  // Nouvel équipement
+  const [newEquipment, setNewEquipment] = useState({
+    name: "",
+    quantity: 1,
+    substitutability: ""
+  });
+
+  // Nouveau fournisseur (avec RTO/RPO)
+  const [newSupplier, setNewSupplier] = useState({
+    name: "",
+    rpo_hours: 1,
+    substitutability: ""
+  });
+
+  // ✅ Récupérer TOUTES les ressources du département (depuis tous les processus)
+  const departmentResources = useMemo(() => {
+    const deptProcesses = allProcesses.filter(p => p.entityId === departmentId);
+    const allResources: Resource[] = [];
+    const seen = new Set<string>();
+
+    for (const proc of deptProcesses) {
+      for (const r of proc.resources || []) {
+        const key = r.type + r.name;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allResources.push(r);
+        }
+      }
+    }
+    return allResources;
+  }, [allProcesses, departmentId]);
+
+  // Filtrer les ressources du département par type
+  const getDepartmentResourcesByType = (type: ResourceType) => 
+    departmentResources.filter(r => r.type === type);
+
+  // ============ APPLICATIONS IT ============
   const addApp = () => {
     if (!newApp.name.trim()) {
       toast({ title: "Champ requis", description: "Veuillez saisir un nom d'application" });
@@ -378,411 +435,537 @@ const ResourcesEditor = ({ resources, onChange, appsCritiques, onAppsChange }: {
     onAppsChange([...appsCritiques, { ...newApp, id: `app_${Date.now()}` }]);
     setNewApp({ name: "", rto_hours: 4, rpo_hours: 1, remplacablePar: "" });
     setShowAppForm(false);
+    toast({ title: "Application ajoutée", description: newApp.name });
   };
 
-  const removeApp = (id: string) => onAppsChange(appsCritiques.filter(a => a.id !== id));
-
-  const categories: { type: ResourceType | "APPS"; label: string; icon: string; color: string }[] = [
-    { type: "APPS", label: "Applications IT", icon: "💻", color: "bg-purple-100 text-purple-700 border-purple-200" },
-    { type: "HR", label: "Ressources humaines", icon: "👥", color: "bg-blue-100 text-blue-700 border-blue-200" },
-    { type: "Equipement", label: "Équipements", icon: "🖨️", color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
-    { type: "Fournisseur", label: "Fournisseurs", icon: "🤝", color: "bg-orange-100 text-orange-700 border-orange-200" },
-  ];
-
-  const addResource = () => {
-    if (activeCategory === "HR") {
-      const selectedPeople = hrPeople.filter(p => p.selected && p.name.trim());
-      if (selectedPeople.length === 0) {
-        toast({ title: "Aucune personne sélectionnée", description: "Veuillez cocher au moins une personne" });
-        return;
-      }
-      onChange([...resources, { 
-        ...newResource, 
-        id: `r_${Date.now()}`,
-        type: "HR",
-        hrPeople: selectedPeople
-      } as any]);
-      setHrPeople([{ 
-        id: `p_${Date.now()}`, 
-        name: "", 
-        role: "", 
-        phone: "",
-        email: "",
-        selected: false,
-        availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
-      }]);
-    } else if (activeCategory !== "APPS") {
-      if (!newResource.name.trim()) {
-        toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
-        return;
-      }
-      onChange([...resources, { 
-        ...newResource, 
-        id: `r_${Date.now()}`,
-        type: activeCategory as ResourceType
-      }]);
-      setNewResource({ type: activeCategory as ResourceType, name: "", quantity: 1, substitutability: "" });
-    }
+  const removeApp = (id: string) => {
+    onAppsChange(appsCritiques.filter(a => a.id !== id));
+    toast({ title: "Application supprimée" });
   };
 
-  const removeResource = (id: string) => onChange(resources.filter(r => r.id !== id));
-  const getResourcesByCategory = (type: ResourceType) => resources.filter(r => r.type === type);
-
-  const addHrRow = () => {
-    setHrPeople([...hrPeople, { 
-      id: `p_${Date.now()}`, 
-      name: "", 
-      role: "", 
-      phone: "",
-      email: "",
-      selected: false,
-      availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
-    }]);
+  const startEditApp = (app: any) => {
+    setEditingApp({ ...app });
   };
 
-  const removeHrRow = (index: number) => {
-    if (hrPeople.length === 1) {
-      toast({ title: "Impossible", description: "Gardez au moins une ligne" });
+  const saveEditApp = () => {
+    if (!editingApp) return;
+    if (!editingApp.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
       return;
     }
-    setHrPeople(hrPeople.filter((_, i) => i !== index));
+    onAppsChange(appsCritiques.map(a => a.id === editingApp.id ? editingApp : a));
+    setEditingApp(null);
+    toast({ title: "Application modifiée", description: editingApp.name });
   };
 
-  const updateHrRow = (index: number, field: string, value: any) => {
-    const updated = [...hrPeople];
-    updated[index] = { ...updated[index], [field]: value };
-    setHrPeople(updated);
+  // ============ RESSOURCES HUMAINES ============
+  const addHR = () => {
+    if (!newHR.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
+      return;
+    }
+    const hasAvailability = Object.values(newHR.availability).some(v => v === true);
+    if (!hasAvailability) {
+      toast({ title: "Attention", description: "Veuillez sélectionner au moins une période de disponibilité" });
+      return;
+    }
+    const newResourceItem: any = {
+      id: `hr_${Date.now()}`,
+      type: "HR",
+      name: newHR.name,
+      role: newHR.role || "—",
+      phone: newHR.phone || "",
+      email: newHR.email || "",
+      availability: newHR.availability,
+      quantity: 1,
+    };
+    onChange([...resources, newResourceItem]);
+    setNewHR({
+      name: "",
+      role: "",
+      phone: "",
+      email: "",
+      availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
+    });
+    setShowHRForm(false);
+    toast({ title: "Ressource RH ajoutée", description: newHR.name });
   };
 
-  const updateAvailability = (personIndex: number, periodId: string, checked: boolean) => {
-    const updated = [...hrPeople];
-    updated[personIndex].availability[periodId] = checked;
-    setHrPeople(updated);
+  // ============ ÉQUIPEMENTS ============
+  const addEquipment = () => {
+    if (!newEquipment.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom d'équipement" });
+      return;
+    }
+    const newResourceItem: any = {
+      id: `eq_${Date.now()}`,
+      type: "Equipement",
+      name: newEquipment.name,
+      quantity: newEquipment.quantity || 1,
+      substitutability: newEquipment.substitutability || "",
+    };
+    onChange([...resources, newResourceItem]);
+    setNewEquipment({ name: "", quantity: 1, substitutability: "" });
+    setShowEquipmentForm(false);
+    toast({ title: "Équipement ajouté", description: newEquipment.name });
   };
 
-  const toggleSelectAll = () => {
-    const allSelected = hrPeople.length > 0 && hrPeople.every(p => p.selected);
-    setHrPeople(hrPeople.map(p => ({ ...p, selected: !allSelected })));
+  // ============ FOURNISSEURS (avec RPO uniquement) ============
+  const addSupplier = () => {
+    if (!newSupplier.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom de fournisseur" });
+      return;
+    }
+    const newResourceItem: any = {
+      id: `sup_${Date.now()}`,
+      type: "Fournisseur",
+      name: newSupplier.name,
+      rpo_hours: newSupplier.rpo_hours || 1,
+      substitutability: newSupplier.substitutability || "",
+      quantity: 1,
+    };
+    onChange([...resources, newResourceItem]);
+    setNewSupplier({ name: "", rpo_hours: 1, substitutability: "" });
+    setShowSupplierForm(false);
+    toast({ title: "Fournisseur ajouté", description: newSupplier.name });
   };
 
-  const hasAvailability = (person: any) => {
-    return Object.values(person.availability).some(v => v === true);
+  // ============ SUPPRESSION (supprime même si la ressource est dans d'autres processus) ============
+  const removeResource = (id: string) => {
+    const resource = resources.find(r => r.id === id);
+    onChange(resources.filter(r => r.id !== id));
+    toast({ title: "Ressource supprimée du processus", description: resource?.name });
   };
 
+  // ============ ÉDITION RESSOURCE ============
+  const startEditResource = (resource: any) => {
+    setEditingResource({ ...resource });
+  };
+
+  const saveEditResource = () => {
+    if (!editingResource) return;
+    if (!editingResource.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
+      return;
+    }
+    onChange(resources.map(r => r.id === editingResource.id ? editingResource : r));
+    setEditingResource(null);
+    toast({ title: "Ressource modifiée", description: editingResource.name });
+  };
+
+  // ============ RENDU ============
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="font-semibold">Ressources critiques</Label>
-          <p className="text-xs text-muted-foreground">Éléments nécessaires au fonctionnement du processus</p>
+    <div className="space-y-6">
+      {/* ════════════════════════════════════════════════ */}
+      {/* ✅ TITRE DU PROCESSUS - taille moyenne, sans badge */}
+      {/* ════════════════════════════════════════════════ */}
+      <div className="bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 rounded-xl p-4 border border-primary/20">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-1 rounded-full bg-primary" />
+          <div>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Processus en cours</p>
+            <h2 className="text-xl md:text-2xl font-bold text-primary tracking-tight">
+              {processName || "Nouveau processus"}
+            </h2>
+          </div>
         </div>
       </div>
 
+      {/* ════════════════════════════════════════════════ */}
+      {/* ✅ ONGLETS PRINCIPAUX */}
+      {/* ════════════════════════════════════════════════ */}
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {categories.map((cat) => {
-          let count = 0;
-          if (cat.type === "APPS") {
-            count = appsCritiques.length;
-          } else {
-            count = getResourcesByCategory(cat.type as ResourceType).length;
-          }
-          return (
+        <button
+          onClick={() => setActiveTab("apps")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "apps"
+              ? "bg-purple-100 text-purple-700 ring-2 ring-purple-300"
+              : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
+          }`}
+        >
+          <Server className="h-4 w-4" />
+          Applications IT
+          <Badge variant="secondary" className="text-xs">{appsCritiques.length}</Badge>
+        </button>
+        <button
+          onClick={() => setActiveTab("shared")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "shared"
+              ? "bg-blue-100 text-blue-700 ring-2 ring-blue-300"
+              : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
+          }`}
+        >
+          <Users className="h-4 w-4" />
+          Ressources partagées
+          <Badge variant="secondary" className="text-xs">{departmentResources.length}</Badge>
+        </button>
+      </div>
+
+      {/* ════════════════════════════════════════════════ */}
+      {/* ✅ SECTION A — APPLICATIONS IT */}
+      {/* ════════════════════════════════════════════════ */}
+      {activeTab === "apps" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Applications UNIQUEMENT utilisées par ce processus avec leurs RTO/RPO spécifiques.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setShowAppForm(!showAppForm)}>
+              <Plus className="h-3 w-3 mr-1" />
+              Ajouter
+            </Button>
+          </div>
+
+          {showAppForm && (
+            <div className="mb-4 p-4 bg-white/50 rounded-lg border border-purple-200">
+              <div className="grid grid-cols-4 gap-3">
+                <div className="col-span-1">
+                  <Label className="text-xs">Nom *</Label>
+                  <Input value={newApp.name} onChange={(e) => setNewApp({ ...newApp, name: e.target.value })} placeholder="Ex: SWIFT, SAP..." className="h-8 text-sm" />
+                </div>
+                <div>
+                  <Label className="text-xs">RTO (h)</Label>
+                  <Input type="number" value={newApp.rto_hours} onChange={(e) => setNewApp({ ...newApp, rto_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} />
+                </div>
+                <div>
+                  <Label className="text-xs">RPO (h)</Label>
+                  <Input type="number" value={newApp.rpo_hours} onChange={(e) => setNewApp({ ...newApp, rpo_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} />
+                </div>
+                <div>
+                  <Label className="text-xs">Remplaçable par</Label>
+                  <Input value={newApp.remplacablePar} onChange={(e) => setNewApp({ ...newApp, remplacablePar: e.target.value })} placeholder="Ex: solution manuelle..." className="h-8 text-sm" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-3">
+                <Button variant="ghost" size="sm" onClick={() => setShowAppForm(false)}>Annuler</Button>
+                <Button size="sm" onClick={addApp}>Ajouter</Button>
+              </div>
+            </div>
+          )}
+
+          {appsCritiques.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucune application IT critique pour ce processus.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Application</TableHead>
+                  <TableHead className="text-center">RTO</TableHead>
+                  <TableHead className="text-center">RPO</TableHead>
+                  <TableHead>Remplaçable par</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {appsCritiques.map((app) => (
+                  <TableRow key={app.id}>
+                    {editingApp?.id === app.id ? (
+                      <>
+                        <TableCell><Input value={editingApp.name} onChange={(e) => setEditingApp({ ...editingApp, name: e.target.value })} className="h-8 text-sm" /></TableCell>
+                        <TableCell className="text-center"><Input type="number" value={editingApp.rto_hours} onChange={(e) => setEditingApp({ ...editingApp, rto_hours: Number(e.target.value) })} className="h-8 text-sm w-20 mx-auto" min={0} step={0.5} /></TableCell>
+                        <TableCell className="text-center"><Input type="number" value={editingApp.rpo_hours} onChange={(e) => setEditingApp({ ...editingApp, rpo_hours: Number(e.target.value) })} className="h-8 text-sm w-20 mx-auto" min={0} step={0.5} /></TableCell>
+                        <TableCell><Input value={editingApp.remplacablePar} onChange={(e) => setEditingApp({ ...editingApp, remplacablePar: e.target.value })} className="h-8 text-sm" /></TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 text-green-600" onClick={saveEditApp}><Check className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7" onClick={() => setEditingApp(null)}>✕</Button>
+                        </TableCell>
+                      </>
+                    ) : (
+                      <>
+                        <TableCell className="font-medium">{app.name}</TableCell>
+                        <TableCell className="text-center"><Badge className="bg-red-50 text-red-700">{app.rto_hours}h</Badge></TableCell>
+                        <TableCell className="text-center"><Badge className="bg-orange-50 text-orange-700">{app.rpo_hours}h</Badge></TableCell>
+                        <TableCell>{app.remplacablePar || "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditApp(app)}><Edit2 className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeApp(app.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                          </div>
+                        </TableCell>
+                      </>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════ */}
+      {/* ✅ SECTION B — RESSOURCES PARTAGÉES */}
+      {/* ════════════════════════════════════════════════ */}
+      {activeTab === "shared" && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Toutes les ressources partagées par les processus du département.</p>
+
+          {/* Sous-onglets */}
+          <div className="flex flex-wrap gap-2 border-b border-border pb-2">
             <button
-              key={cat.type}
-              onClick={() => setActiveCategory(cat.type)}
+              onClick={() => setSharedSubTab("HR")}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
-                activeCategory === cat.type
-                  ? `${cat.color} ring-2 ring-offset-1 ring-primary/30`
+                sharedSubTab === "HR"
+                  ? "bg-blue-100 text-blue-700 ring-2 ring-blue-300"
                   : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
               }`}
             >
-              <span>{cat.icon}</span>
-              <span>{cat.label}</span>
-              {count > 0 && (
-                <Badge variant="secondary" className="text-xs h-5 w-5 p-0 flex items-center justify-center rounded-full">
-                  {count}
-                </Badge>
-              )}
+              <Users className="h-4 w-4" /> RH <Badge variant="secondary" className="text-xs">{getDepartmentResourcesByType("HR").length}</Badge>
             </button>
-          );
-        })}
-      </div>
+            <button
+              onClick={() => setSharedSubTab("Equipement")}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                sharedSubTab === "Equipement"
+                  ? "bg-yellow-100 text-yellow-700 ring-2 ring-yellow-300"
+                  : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
+              }`}
+            >
+              <Package className="h-4 w-4" /> Équipements <Badge variant="secondary" className="text-xs">{getDepartmentResourcesByType("Equipement").length}</Badge>
+            </button>
+            <button
+              onClick={() => setSharedSubTab("Fournisseur")}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                sharedSubTab === "Fournisseur"
+                  ? "bg-orange-100 text-orange-700 ring-2 ring-orange-300"
+                  : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
+              }`}
+            >
+              <Building2 className="h-4 w-4" /> Fournisseurs <Badge variant="secondary" className="text-xs">{getDepartmentResourcesByType("Fournisseur").length}</Badge>
+            </button>
+          </div>
 
-      <div className="bg-muted/20 rounded-lg p-4">
-        {activeCategory === "HR" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">📋 Personnel / Équipe de crise</Label>
-              <Button onClick={addHrRow} variant="outline" size="sm" className="gap-1">
-                <Plus className="h-3 w-3" />
-                Ajouter une personne
-              </Button>
-            </div>
-            
-            <div className="overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead className="w-10 text-center">
-                      <input type="checkbox" checked={hrPeople.length > 0 && hrPeople.every(p => p.selected)} onChange={toggleSelectAll} className="h-4 w-4 rounded" />
-                    </TableHead>
-                    <TableHead className="min-w-[120px]">Nom complet</TableHead>
-                    <TableHead className="min-w-[120px]">Rôle</TableHead>
-                    <TableHead className="min-w-[100px]">Téléphone</TableHead>
-                    <TableHead className="min-w-[120px]">Email</TableHead>
-                    {availabilityPeriods.map((period) => (<TableHead key={period.id} className="text-center min-w-[45px] text-[10px]">{period.label}</TableHead>))}
-                    <TableHead className="w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {hrPeople.map((person, idx) => (
-                    <TableRow key={person.id} className={person.selected ? "bg-primary/5" : ""}>
-                      <TableCell className="text-center">
-                        <input type="checkbox" checked={person.selected} onChange={(e) => updateHrRow(idx, "selected", e.target.checked)} className="h-4 w-4 rounded" />
-                      </TableCell>
-                      <TableCell><Input value={person.name} onChange={(e) => updateHrRow(idx, "name", e.target.value)} placeholder="Jean Dupont" className="h-8 text-sm" /></TableCell>
-                      <TableCell><Input value={person.role} onChange={(e) => updateHrRow(idx, "role", e.target.value)} placeholder="Responsable" className="h-8 text-sm" /></TableCell>
-                      <TableCell><Input value={person.phone} onChange={(e) => updateHrRow(idx, "phone", e.target.value)} placeholder="+33 6 12 34 56 78" className="h-8 text-sm" type="tel" /></TableCell>
-                      <TableCell><Input value={person.email} onChange={(e) => updateHrRow(idx, "email", e.target.value)} placeholder="nom@email.com" className="h-8 text-sm" type="email" /></TableCell>
-                      {availabilityPeriods.map((period) => (
-                        <TableCell key={period.id} className="text-center">
-                          <input type="checkbox" checked={person.availability[period.id]} onChange={(e) => updateAvailability(idx, period.id, e.target.checked)} className="h-4 w-4 rounded" />
-                        </TableCell>
+          {/* ── RESSOURCES HUMAINES ── */}
+          {sharedSubTab === "HR" && (
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => setShowHRForm(!showHRForm)}>
+                  <Plus className="h-3 w-3 mr-1" /> Ajouter une RH
+                </Button>
+              </div>
+
+              {showHRForm && (
+                <div className="p-4 bg-white/50 rounded-lg border border-blue-200">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><Label className="text-xs">Nom *</Label><Input value={newHR.name} onChange={(e) => setNewHR({ ...newHR, name: e.target.value })} placeholder="Jean Dupont" className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Rôle</Label><Input value={newHR.role} onChange={(e) => setNewHR({ ...newHR, role: e.target.value })} placeholder="Responsable" className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Téléphone</Label><Input value={newHR.phone} onChange={(e) => setNewHR({ ...newHR, phone: e.target.value })} placeholder="+33 6..." className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Email</Label><Input value={newHR.email} onChange={(e) => setNewHR({ ...newHR, email: e.target.value })} placeholder="nom@email.com" className="h-8 text-sm" /></div>
+                  </div>
+                  <div className="mt-3">
+                    <Label className="text-xs font-medium">Périodes de disponibilité</Label>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {AVAILABILITY_PERIODS.map((period) => (
+                        <label key={period.id} className="flex items-center gap-1 text-xs">
+                          <input type="checkbox" checked={newHR.availability[period.id]} onChange={(e) => setNewHR({ ...newHR, availability: { ...newHR.availability, [period.id]: e.target.checked } })} className="rounded" /> {period.label}
+                        </label>
                       ))}
-                      <TableCell>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeHrRow(idx)} disabled={hrPeople.length === 1}>
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            
-            {hrPeople.some(p => p.name.trim() && !hasAvailability(p)) && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-700">
-                ⚠️ Certaines personnes n'ont aucune période de disponibilité cochée
-              </div>
-            )}
-            
-            <div className="flex justify-end pt-2">
-              <Button onClick={addResource} size="sm" className="gap-1 bg-primary">
-                <Plus className="h-3 w-3" />
-                Enregistrer l'équipe sélectionnée
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground text-center">
-              💡 Cochez les personnes et leurs périodes de disponibilité
-            </p>
-          </div>
-        )}
-
-        {activeCategory === "APPS" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">💻 Applications IT critiques</Label>
-              <Button variant="outline" size="sm" onClick={() => setShowAppForm(!showAppForm)}>
-                <Plus className="h-3 w-3 mr-1" />
-                Ajouter une application
-              </Button>
-            </div>
-
-            {showAppForm && (
-              <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                <div className="grid grid-cols-4 gap-3">
-                  <div className="col-span-1">
-                    <Label className="text-xs">Nom de l'application</Label>
-                    <Input value={newApp.name} onChange={(e) => setNewApp({ ...newApp, name: e.target.value })} placeholder="Ex: SWIFT, SAP..." className="h-8 text-sm" />
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-xs">RTO (heures)</Label>
-                    <Input type="number" value={newApp.rto_hours} onChange={(e) => setNewApp({ ...newApp, rto_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">RPO (heures)</Label>
-                    <Input type="number" value={newApp.rpo_hours} onChange={(e) => setNewApp({ ...newApp, rpo_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Remplaçable par</Label>
-                    <Input value={newApp.remplacablePar} onChange={(e) => setNewApp({ ...newApp, remplacablePar: e.target.value })} placeholder="Ex: Application X, solution manuelle..." className="h-8 text-sm" />
+                  <div className="flex justify-end gap-2 mt-3">
+                    <Button variant="ghost" size="sm" onClick={() => setShowHRForm(false)}>Annuler</Button>
+                    <Button size="sm" onClick={addHR}>Ajouter</Button>
                   </div>
                 </div>
-                <div className="flex justify-end gap-2 mt-3">
-                  <Button variant="ghost" size="sm" onClick={() => setShowAppForm(false)}>Annuler</Button>
-                  <Button size="sm" onClick={addApp}>Ajouter</Button>
-                </div>
-              </div>
-            )}
+              )}
 
-            {appsCritiques.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic text-center py-4">Aucune application critique. Cliquez sur "Ajouter" pour en ajouter.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Application</TableHead>
-                    <TableHead className="text-center">RTO</TableHead>
-                    <TableHead className="text-center">RPO</TableHead>
-                    <TableHead>Remplaçable par</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {appsCritiques.map((app) => (
-                    <TableRow key={app.id}>
-                      <TableCell className="font-medium">{app.name}</TableCell>
-                      <TableCell className="text-center"><Badge className="bg-red-50 text-red-700">{app.rto_hours}h</Badge></TableCell>
-                      <TableCell className="text-center"><Badge className="bg-orange-50 text-orange-700">{app.rpo_hours}h</Badge></TableCell>
-                      <TableCell>{app.remplacablePar || "—"}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeApp(app.id)}>
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
-        )}
-        
-        {activeCategory === "Equipement" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div><Label className="text-xs">Nom de l'équipement</Label><Input value={newResource.name} onChange={(e) => setNewResource({ ...newResource, name: e.target.value, type: "Equipement" })} placeholder="Ex: Scanner, Imprimante 3D..." className="h-9 text-sm" /></div>
-            <div><Label className="text-xs">Quantité</Label><Input type="number" min={1} value={newResource.quantity} onChange={(e) => setNewResource({ ...newResource, quantity: Number(e.target.value), type: "Equipement" })} className="h-9 text-sm" /></div>
-            <div><Label className="text-xs">Remplaçable par</Label><Input value={newResource.substitutability} onChange={(e) => setNewResource({ ...newResource, substitutability: e.target.value, type: "Equipement" })} placeholder="Ex: Équipement de secours..." className="h-9 text-sm" /></div>
-            <div className="flex justify-end mt-3 col-span-3">
-              <Button onClick={addResource} size="sm" className="gap-1">
-                <Plus className="h-3 w-3" />
-                Ajouter
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {activeCategory === "Fournisseur" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div><Label className="text-xs">Nom du fournisseur</Label><Input value={newResource.name} onChange={(e) => setNewResource({ ...newResource, name: e.target.value, type: "Fournisseur" })} placeholder="Ex: AWS, OVH, Salesforce..." className="h-9 text-sm" /></div>
-            <div><Label className="text-xs">Quantité</Label><Input type="number" min={1} value={newResource.quantity} onChange={(e) => setNewResource({ ...newResource, quantity: Number(e.target.value), type: "Fournisseur" })} className="h-9 text-sm" /></div>
-            <div><Label className="text-xs">Remplaçable par</Label><Input value={newResource.substitutability} onChange={(e) => setNewResource({ ...newResource, substitutability: e.target.value, type: "Fournisseur" })} placeholder="Ex: Fournisseur alternatif..." className="h-9 text-sm" /></div>
-            <div className="flex justify-end mt-3 col-span-3">
-              <Button onClick={addResource} size="sm" className="gap-1">
-                <Plus className="h-3 w-3" />
-                Ajouter
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-4">
-        {categories.map((cat) => {
-          let categoryResources = [];
-          let isApps = cat.type === "APPS";
-          
-          if (isApps) {
-            if (appsCritiques.length === 0) return null;
-            categoryResources = appsCritiques;
-          } else {
-            categoryResources = getResourcesByCategory(cat.type as ResourceType);
-            if (categoryResources.length === 0) return null;
-          }
-          
-          return (
-            <div key={cat.type} className="border rounded-lg overflow-hidden">
-              <div className={`px-3 py-2 ${cat.color} border-b flex items-center gap-2`}>
-                <span>{cat.icon}</span>
-                <span className="font-semibold text-sm">{cat.label}</span>
-                <Badge variant="outline" className="ml-auto text-xs">{categoryResources.length} ressource(s)</Badge>
-              </div>
-              <div className="p-2">
-                {categoryResources.map((r) => (
-                  <div key={(r as any).id} className="p-2 hover:bg-muted/20 rounded-lg transition-colors">
-                    {cat.type === "HR" && (r as any).hrPeople ? (
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-sm">✓ Personnel sélectionné ({ (r as any).hrPeople.length })</span>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource((r as any).id)}>
-                            <Trash2 className="h-3 w-3 text-destructive" />
-                          </Button>
-                        </div>
-                        <div className="overflow-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Nom</TableHead>
-                                <TableHead>Rôle</TableHead>
-                                <TableHead>Téléphone</TableHead>
-                                <TableHead>Email</TableHead>
-                                {availabilityPeriods.map((period) => (<TableHead key={period.id} className="text-center text-[10px]">{period.label}</TableHead>))}
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {(r as any).hrPeople.map((person: any) => (
-                                <TableRow key={person.id} className="bg-green-50/30">
-                                  <TableCell className="py-1 font-medium text-sm">{person.name || "—"}</TableCell>
-                                  <TableCell className="py-1 text-sm">{person.role || "—"}</TableCell>
-                                  <TableCell className="py-1 text-sm">{person.phone || "—"}</TableCell>
-                                  <TableCell className="py-1 text-sm">{person.email || "—"}</TableCell>
-                                  {availabilityPeriods.map((period) => (
-                                    <TableCell key={period.id} className="text-center py-1">
-                                      {person.availability?.[period.id] ? <span className="text-green-600">✓</span> : <span className="text-gray-300">—</span>}
-                                    </TableCell>
-                                  ))}
-                                </TableRow>
+              {getDepartmentResourcesByType("HR").length === 0 ? (
+                <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucune ressource humaine dans ce département.</p>
+              ) : (
+                <div className="space-y-2">
+                  {getDepartmentResourcesByType("HR").map((r) => (
+                    <div key={r.id} className="p-3 bg-blue-50/30 rounded-lg border border-blue-100/50">
+                      {editingResource?.id === r.id ? (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div><Label className="text-xs">Nom</Label><Input value={editingResource.name} onChange={(e) => setEditingResource({ ...editingResource, name: e.target.value })} className="h-8 text-sm" /></div>
+                            <div><Label className="text-xs">Rôle</Label><Input value={editingResource.role} onChange={(e) => setEditingResource({ ...editingResource, role: e.target.value })} className="h-8 text-sm" /></div>
+                            <div><Label className="text-xs">Téléphone</Label><Input value={editingResource.phone} onChange={(e) => setEditingResource({ ...editingResource, phone: e.target.value })} className="h-8 text-sm" /></div>
+                            <div><Label className="text-xs">Email</Label><Input value={editingResource.email} onChange={(e) => setEditingResource({ ...editingResource, email: e.target.value })} className="h-8 text-sm" /></div>
+                          </div>
+                          <div className="mt-2">
+                            <Label className="text-xs font-medium">Périodes de disponibilité</Label>
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              {AVAILABILITY_PERIODS.map((period) => (
+                                <label key={period.id} className="flex items-center gap-1 text-xs">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={editingResource.availability?.[period.id] || false} 
+                                    onChange={(e) => setEditingResource({ 
+                                      ...editingResource, 
+                                      availability: { ...editingResource.availability, [period.id]: e.target.checked } 
+                                    })} 
+                                    className="rounded" 
+                                  /> {period.label}
+                                </label>
                               ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </div>
-                    ) : cat.type === "APPS" ? (
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <span className="font-medium text-sm">{(r as AppCritique).name}</span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            <Badge className="bg-red-50 text-red-700 text-xs">RTO: {(r as AppCritique).rto_hours}h</Badge>
-                            <Badge className="bg-orange-50 text-orange-700 text-xs">RPO: {(r as AppCritique).rpo_hours}h</Badge>
-                            {(r as AppCritique).remplacablePar && <Badge className="bg-blue-50 text-blue-700 text-xs">🔄 {(r as AppCritique).remplacablePar}</Badge>}
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-2 mt-2">
+                            <Button variant="ghost" size="sm" onClick={() => setEditingResource(null)}>Annuler</Button>
+                            <Button size="sm" onClick={saveEditResource}>Enregistrer</Button>
                           </div>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeApp((r as AppCritique).id)}>
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <span className="font-medium text-sm">{(r as Resource).name}</span>
-                          <div className="flex gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs">{(r as Resource).quantity} unité{(r as Resource).quantity > 1 ? 's' : ''}</Badge>
-                            {(r as Resource).substitutability && <Badge className="bg-blue-50 text-blue-700 text-xs">🔄 {(r as Resource).substitutability}</Badge>}
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-sm">{r.name}</p>
+                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                              <span>👔 {(r as any).role || "—"}</span>
+                              {(r as any).phone && <span>📞 {(r as any).phone}</span>}
+                              {(r as any).email && <span>✉️ {(r as any).email}</span>}
+                            </div>
+                            {(r as any).availability && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {AVAILABILITY_PERIODS.map((period) => (
+                                  <Badge key={period.id} variant={(r as any).availability[period.id] ? "default" : "outline"} className="text-[10px]">{period.label}</Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditResource(r)}><Edit2 className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource(r.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
                           </div>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource((r as Resource).id)}>
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          );
-        })}
-      </div>
+          )}
 
-      {resources.length === 0 && appsCritiques.length === 0 && (
-        <div className="text-center py-6 text-muted-foreground border border-dashed rounded-lg">
-          <p className="text-sm">Aucune ressource ajoutée</p>
-          <p className="text-xs">Utilisez les formulaires ci-dessus pour ajouter des ressources</p>
+          {/* ── ÉQUIPEMENTS ── */}
+          {sharedSubTab === "Equipement" && (
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => setShowEquipmentForm(!showEquipmentForm)}>
+                  <Plus className="h-3 w-3 mr-1" /> Ajouter un équipement
+                </Button>
+              </div>
+
+              {showEquipmentForm && (
+                <div className="p-4 bg-white/50 rounded-lg border border-yellow-200">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div><Label className="text-xs">Nom *</Label><Input value={newEquipment.name} onChange={(e) => setNewEquipment({ ...newEquipment, name: e.target.value })} placeholder="Scanner, Serveur..." className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Quantité</Label><Input type="number" min={1} value={newEquipment.quantity} onChange={(e) => setNewEquipment({ ...newEquipment, quantity: Number(e.target.value) })} className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">Remplaçable par</Label><Input value={newEquipment.substitutability} onChange={(e) => setNewEquipment({ ...newEquipment, substitutability: e.target.value })} placeholder="Équipement de secours..." className="h-8 text-sm" /></div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-3">
+                    <Button variant="ghost" size="sm" onClick={() => setShowEquipmentForm(false)}>Annuler</Button>
+                    <Button size="sm" onClick={addEquipment}>Ajouter</Button>
+                  </div>
+                </div>
+              )}
+
+              {getDepartmentResourcesByType("Equipement").length === 0 ? (
+                <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucun équipement dans ce département.</p>
+              ) : (
+                <div className="space-y-2">
+                  {getDepartmentResourcesByType("Equipement").map((r) => (
+                    <div key={r.id} className="flex items-center justify-between p-3 bg-yellow-50/30 rounded-lg border border-yellow-100/50">
+                      {editingResource?.id === r.id ? (
+                        <div className="w-full space-y-2">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div><Label className="text-xs">Nom</Label><Input value={editingResource.name} onChange={(e) => setEditingResource({ ...editingResource, name: e.target.value })} className="h-8 text-sm" /></div>
+                            <div><Label className="text-xs">Quantité</Label><Input type="number" value={editingResource.quantity} onChange={(e) => setEditingResource({ ...editingResource, quantity: Number(e.target.value) })} className="h-8 text-sm" min={1} /></div>
+                            <div><Label className="text-xs">Remplaçable par</Label><Input value={editingResource.substitutability} onChange={(e) => setEditingResource({ ...editingResource, substitutability: e.target.value })} className="h-8 text-sm" /></div>
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => setEditingResource(null)}>Annuler</Button>
+                            <Button size="sm" onClick={saveEditResource}>Enregistrer</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="font-medium text-sm">{r.name}</p>
+                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                              <span>📦 {r.quantity} unité(s)</span>
+                              {r.substitutability && <span>🔄 {r.substitutability}</span>}
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditResource(r)}><Edit2 className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource(r.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── FOURNISSEURS (avec RPO uniquement) ── */}
+          {sharedSubTab === "Fournisseur" && (
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => setShowSupplierForm(!showSupplierForm)}>
+                  <Plus className="h-3 w-3 mr-1" /> Ajouter un fournisseur
+                </Button>
+              </div>
+
+              {showSupplierForm && (
+                <div className="p-4 bg-white/50 rounded-lg border border-orange-200">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-1"><Label className="text-xs">Nom *</Label><Input value={newSupplier.name} onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })} placeholder="AWS, OVH..." className="h-8 text-sm" /></div>
+                    <div><Label className="text-xs">RPO (h)</Label><Input type="number" value={newSupplier.rpo_hours} onChange={(e) => setNewSupplier({ ...newSupplier, rpo_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} /></div>
+                    <div><Label className="text-xs">Remplaçable par</Label><Input value={newSupplier.substitutability} onChange={(e) => setNewSupplier({ ...newSupplier, substitutability: e.target.value })} placeholder="Fournisseur alternatif..." className="h-8 text-sm" /></div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-3">
+                    <Button variant="ghost" size="sm" onClick={() => setShowSupplierForm(false)}>Annuler</Button>
+                    <Button size="sm" onClick={addSupplier}>Ajouter</Button>
+                  </div>
+                </div>
+              )}
+
+              {getDepartmentResourcesByType("Fournisseur").length === 0 ? (
+                <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucun fournisseur dans ce département.</p>
+              ) : (
+                <div className="space-y-2">
+                  {getDepartmentResourcesByType("Fournisseur").map((r) => (
+                    <div key={r.id} className="flex items-center justify-between p-3 bg-orange-50/30 rounded-lg border border-orange-100/50">
+                      {editingResource?.id === r.id ? (
+                        <div className="w-full space-y-2">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div><Label className="text-xs">Nom</Label><Input value={editingResource.name} onChange={(e) => setEditingResource({ ...editingResource, name: e.target.value })} className="h-8 text-sm" /></div>
+                            <div><Label className="text-xs">RPO (h)</Label><Input type="number" value={editingResource.rpo_hours} onChange={(e) => setEditingResource({ ...editingResource, rpo_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} /></div>
+                            <div><Label className="text-xs">Remplaçable par</Label><Input value={editingResource.substitutability} onChange={(e) => setEditingResource({ ...editingResource, substitutability: e.target.value })} className="h-8 text-sm" /></div>
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => setEditingResource(null)}>Annuler</Button>
+                            <Button size="sm" onClick={saveEditResource}>Enregistrer</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="font-medium text-sm">{r.name}</p>
+                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                              {(r as any).rpo_hours && <span>📊 RPO: {(r as any).rpo_hours}h</span>}
+                              {r.substitutability && <span>🔄 {r.substitutability}</span>}
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditResource(r)}><Edit2 className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource(r.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
+// ============ SUMMARY VIEW ============
 const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: { 
   data: Process; 
   entityName: string; 
@@ -926,35 +1109,62 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
+            {appsCritiques && appsCritiques.length > 0 && (
+              <div className="border rounded-lg overflow-hidden md:col-span-2">
+                <div className="bg-purple-100 text-purple-700 px-3 py-2 border-b flex items-center gap-2">
+                  <Server className="h-4 w-4" />
+                  <span className="font-semibold text-sm">Applications IT (ce processus)</span>
+                  <Badge variant="outline" className="ml-auto text-xs">{appsCritiques.length}</Badge>
+                </div>
+                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
+                  {appsCritiques.map((app) => (
+                    <div key={app.id} className="p-2 bg-purple-50/30 rounded-lg border border-purple-100/50">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-medium text-sm">{app.name}</p>
+                        <div className="flex gap-1">
+                          <Badge className="bg-red-50 text-red-700 text-xs">RTO: {app.rto_hours}h</Badge>
+                          <Badge className="bg-orange-50 text-orange-700 text-xs">RPO: {app.rpo_hours}h</Badge>
+                        </div>
+                      </div>
+                      {app.remplacablePar && (
+                        <p className="text-xs text-muted-foreground">🔄 Remplaçable par : {app.remplacablePar}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {resourcesByType.HR.length > 0 && (
               <div className="border rounded-lg overflow-hidden">
                 <div className="bg-blue-100 text-blue-700 px-3 py-2 border-b flex items-center gap-2">
-                  <span>👥</span>
+                  <Users className="h-4 w-4" />
                   <span className="font-semibold text-sm">Ressources humaines</span>
                   <Badge variant="outline" className="ml-auto text-xs">{resourcesByType.HR.length}</Badge>
                 </div>
                 <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
                   {resourcesByType.HR.map((r) => (
-                    (r as any).hrPeople ? (
-                      (r as any).hrPeople.map((person: any) => (
-                        <div key={person.id} className="p-2 bg-muted/20 rounded-lg">
-                          <p className="font-medium text-sm">{person.name || "—"}</p>
-                          <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mt-1">
-                            <span>👔 {person.role || "—"}</span>
-                            <span>📞 {person.phone || "—"}</span>
-                            <span className="col-span-2">✉️ {person.email || "—"}</span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div key={r.id} className="p-2 bg-muted/20 rounded-lg">
-                        <p className="font-medium text-sm">{r.name}</p>
-                        <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
-                          <span>{r.quantity} unité(s)</span>
-                          {r.substitutability && <span>🔄 {r.substitutability}</span>}
-                        </div>
+                    <div key={r.id} className="p-2 bg-blue-50/30 rounded-lg border border-blue-100/50">
+                      <p className="font-medium text-sm">{r.name}</p>
+                      <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mt-1">
+                        <span>👔 {(r as any).role || "—"}</span>
+                        <span>📞 {(r as any).phone || "—"}</span>
+                        <span className="col-span-2">✉️ {(r as any).email || "—"}</span>
                       </div>
-                    )
+                      {(r as any).availability && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {AVAILABILITY_PERIODS.map((period) => (
+                            <Badge
+                              key={period.id}
+                              variant={(r as any).availability[period.id] ? "default" : "outline"}
+                              className="text-[10px]"
+                            >
+                              {period.label}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -963,13 +1173,13 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
             {resourcesByType.Equipement.length > 0 && (
               <div className="border rounded-lg overflow-hidden">
                 <div className="bg-yellow-100 text-yellow-700 px-3 py-2 border-b flex items-center gap-2">
-                  <span>🖨️</span>
+                  <Package className="h-4 w-4" />
                   <span className="font-semibold text-sm">Équipements</span>
                   <Badge variant="outline" className="ml-auto text-xs">{resourcesByType.Equipement.length}</Badge>
                 </div>
                 <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
                   {resourcesByType.Equipement.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-2 bg-muted/20 rounded-lg">
+                    <div key={r.id} className="flex items-center justify-between p-2 bg-yellow-50/30 rounded-lg border border-yellow-100/50">
                       <div>
                         <p className="font-medium text-sm">{r.name}</p>
                         <p className="text-xs text-muted-foreground">{r.quantity} unité(s)</p>
@@ -984,50 +1194,21 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
             {resourcesByType.Fournisseur.length > 0 && (
               <div className="border rounded-lg overflow-hidden">
                 <div className="bg-orange-100 text-orange-700 px-3 py-2 border-b flex items-center gap-2">
-                  <span>🤝</span>
+                  <Building2 className="h-4 w-4" />
                   <span className="font-semibold text-sm">Fournisseurs</span>
                   <Badge variant="outline" className="ml-auto text-xs">{resourcesByType.Fournisseur.length}</Badge>
                 </div>
                 <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
                   {resourcesByType.Fournisseur.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-2 bg-muted/20 rounded-lg">
+                    <div key={r.id} className="flex items-center justify-between p-2 bg-orange-50/30 rounded-lg border border-orange-100/50">
                       <div>
                         <p className="font-medium text-sm">{r.name}</p>
-                        <p className="text-xs text-muted-foreground">{r.quantity} fournisseur(s)</p>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground mt-1">
+                          {(r as any).rpo_hours && <Badge variant="outline" className="text-[10px]">RPO: {(r as any).rpo_hours}h</Badge>}
+                          {r.substitutability && <span>🔄 {r.substitutability}</span>}
+                        </div>
                       </div>
                       {r.substitutability && <Badge variant="outline" className="text-xs">🔄 {r.substitutability}</Badge>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {appsCritiques && appsCritiques.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-purple-100 text-purple-700 px-3 py-2 border-b flex items-center gap-2">
-                  <Server className="h-4 w-4" />
-                  <span className="font-semibold text-sm">Applications IT</span>
-                  <Badge variant="outline" className="ml-auto text-xs">{appsCritiques.length}</Badge>
-                </div>
-                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
-                  {appsCritiques.map((app) => (
-                    <div key={app.id} className="p-2 bg-muted/20 rounded-lg">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-medium text-sm">{app.name}</p>
-                        <Badge variant="outline" className="text-xs bg-red-50 text-red-700">
-                          RTO: {app.rto_hours}h
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm mt-1">
-                        <div>
-                          <p className="text-xs text-muted-foreground">RPO</p>
-                          <p className="text-sm font-medium">{app.rpo_hours} heures</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Remplaçable par</p>
-                          <p className="text-sm truncate">{app.remplacablePar || "—"}</p>
-                        </div>
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -1069,6 +1250,7 @@ const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: {
   );
 };
 
+// ============ COMPOSANT PRINCIPAL BiaWizard ============
 export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: () => void }) => {
   const { processes, upsertProcess } = useBia();
   const { entities } = useGovernance();
@@ -1128,11 +1310,20 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
   };
 
   const submit = async () => {
-    await upsertProcess({ ...data, lastUpdated: new Date().toISOString().slice(0, 10) });
+    const processToSave = {
+      ...data,
+      lastUpdated: new Date().toISOString().slice(0, 10),
+      appsCritiques: data.appsCritiques || []
+    };
+    
+    console.log("💾 Sauvegarde du processus:", processToSave.name);
+    console.log("📱 Apps critiques:", processToSave.appsCritiques);
+    
+    await upsertProcess(processToSave);
     toast({ title: "BIA enregistré", description: `${data.name} — Criticité: ${criticality}` });
     onDone();
   };
-  
+
   const applySuggestions = () => {
     update("rto", suggestedRTO);
     update("rpo", suggestedRPO);
@@ -1144,7 +1335,6 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-foreground">{processId ? "Modifier l'analyse d'impact" : "Nouvelle analyse d'impact métier"}</h1>
-          {data.name && (<div className="mt-2 flex items-center gap-2 bg-primary/10 rounded-lg px-4 py-2 border border-primary/20"><div className="h-3 w-3 rounded-full bg-primary animate-pulse" /><p className="text-sm">Processus en cours : <span className="font-bold text-primary">{data.name}</span></p></div>)}
           <p className="text-muted-foreground mt-2">Remplissez les étapes pour évaluer la criticité de votre processus</p>
         </div>
         <Button variant="outline" onClick={onDone}><ArrowLeft className="h-4 w-4 mr-2" />Retour</Button>
@@ -1154,7 +1344,12 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
         <div className="flex items-center justify-between mb-2"><span className="text-sm font-medium">Progression</span><span className="text-sm text-muted-foreground">Étape {step + 1} / {STEPS.length}</span></div>
         <div className="flex gap-2">{STEPS.map((s, i) => (<button key={s.id} onClick={() => i <= step && setStep(i)} className={`flex-1 h-2 rounded-full transition-all ${i < step ? "bg-success" : i === step ? "bg-primary" : "bg-secondary"}`} title={s.label} />))}</div>
         <div className="flex justify-between mt-2 text-xs text-muted-foreground">{STEPS.map((s, i) => (<span key={s.id} className={i === step ? "text-primary font-medium" : ""}>{s.icon} {s.label}</span>))}</div>
-        {data.name && (<div className="mt-3 pt-2 border-t border-border/50 flex items-center justify-between"><span className="text-xs text-muted-foreground">Processus actuel</span><span className="text-xs font-medium text-primary truncate max-w-[200px]">{data.name}</span></div>)}
+        {data.name && (
+          <div className="mt-3 pt-2 border-t border-border/50 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Processus actuel</span>
+            <span className="text-sm font-bold text-primary truncate max-w-[200px]">{data.name}</span>
+          </div>
+        )}
       </div>
 
       <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg p-4 border border-primary/20">
@@ -1343,6 +1538,10 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                 onChange={(r) => update("resources", r)} 
                 appsCritiques={data.appsCritiques || []}
                 onAppsChange={(apps) => update("appsCritiques", apps)}
+                allProcesses={processes}
+                departmentId={data.entityId}
+                processName={data.name}
+                currentStep={step}
               />
             </div>
           )}
