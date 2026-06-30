@@ -7,8 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   Plus, Pencil, Trash2, Search, 
-  ChevronDown, ChevronRight, Download, 
-  Building2, Server, Clock, Shield, Users, Package, Handshake
+  ChevronDown, ChevronRight, Download, ArrowLeft,
+  Building2, Server, Clock, Shield, Users, Package, Handshake, Building, Layers
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -90,7 +90,6 @@ const ProcessDetailModal = ({
   const score = computeMaxScore(process.impacts);
   const criticality = scoreToCriticality(score);
   
-  // ✅ Récupération robuste des apps critiques
   const appsCritiques = (() => {
     if (process.appsCritiques && Array.isArray(process.appsCritiques) && process.appsCritiques.length > 0) {
       return process.appsCritiques;
@@ -122,7 +121,6 @@ const ProcessDetailModal = ({
         </DialogHeader>
 
         <div className="space-y-5">
-
           {/* Infos générales */}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="bg-muted/30 rounded-lg p-3">
@@ -154,7 +152,7 @@ const ProcessDetailModal = ({
             </div>
           </div>
 
-          {/* Section A — Applications IT avec RTO/RPO */}
+          {/* Section A — Applications IT */}
           <div>
             <div className="flex items-center gap-2 mb-3">
               <div className="h-6 w-6 rounded-full bg-purple-500 text-white flex items-center justify-center text-xs font-bold">A</div>
@@ -164,8 +162,6 @@ const ProcessDetailModal = ({
             {appsCritiques.length === 0 ? (
               <p className="text-sm text-muted-foreground italic bg-muted/20 rounded-lg p-3 text-center">
                 Aucune application IT déclarée.
-                <br />
-                <span className="text-xs text-muted-foreground/70">Ajoutez-en dans le BIA Wizard → Étape 4 → Applications IT</span>
               </p>
             ) : (
               <div className="border rounded-xl overflow-hidden">
@@ -202,7 +198,7 @@ const ProcessDetailModal = ({
             )}
           </div>
 
-          {/* ✅ Section B — RH UNIQUEMENT AFFECTÉES À CE PROCESSUS (version tableau) */}
+          {/* Section B — RH du processus */}
           <div>
             <div className="flex items-center gap-2 mb-3">
               <div className="h-6 w-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">B</div>
@@ -212,24 +208,20 @@ const ProcessDetailModal = ({
               </Badge>
             </div>
             <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3">
-              Ces personnes sont affectées à <strong>ce processus</strong>. Les ✓/✗ montrent leurs disponibilités par période.
+              Ces personnes sont affectées à <strong>ce processus</strong>.
             </p>
 
             {(() => {
-              // ✅ Récupérer UNIQUEMENT les RH de ce processus
               const hrResources = (process.resources || []).filter((r: any) => r.type === "HR");
               
               if (hrResources.length === 0) {
                 return (
                   <p className="text-sm text-muted-foreground italic bg-muted/20 rounded-lg p-3 text-center">
                     Aucune ressource humaine affectée à ce processus.
-                    <br />
-                    <span className="text-xs text-muted-foreground/70">Ajoutez-en dans le BIA Wizard → Étape 4 → RH</span>
                   </p>
                 );
               }
 
-              // Extraire les personnes des ressources HR
               const hrPeople: any[] = [];
               for (const r of hrResources) {
                 if ((r as any).hrPeople) {
@@ -296,7 +288,6 @@ const ProcessDetailModal = ({
 
           {/* Section C — Équipements et Fournisseurs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Équipements */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <div className="h-6 w-6 rounded-full bg-yellow-500 text-white flex items-center justify-center text-xs font-bold">C</div>
@@ -329,7 +320,6 @@ const ProcessDetailModal = ({
               )}
             </div>
 
-            {/* Fournisseurs */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <div className="h-6 w-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold">D</div>
@@ -365,17 +355,222 @@ const ProcessDetailModal = ({
             </div>
           </div>
 
-          {/* Description */}
           {process.description && (
             <div className="bg-muted/20 rounded-lg p-3">
               <p className="text-xs text-muted-foreground mb-1 font-semibold">Description</p>
               <p className="text-sm">{process.description}</p>
             </div>
           )}
-
         </div>
       </DialogContent>
     </Dialog>
+  );
+};
+
+// ── Cartes (version grise avec ombres et animations) ──
+const EntityCard = ({ 
+  entity, 
+  onClick,
+  type = "enterprise",
+  processCount = 0,
+  critCount = 0,
+  departmentCount = 0, // Nouveau : nombre de départements sous la direction
+}: { 
+  entity: any; 
+  onClick: () => void;
+  type?: "enterprise" | "direction" | "department";
+  processCount?: number;
+  critCount?: number;
+  departmentCount?: number; // Ajouté
+}) => {
+  const icons = {
+    enterprise: <Building2 className="h-8 w-8" />,
+    direction: <Building className="h-8 w-8" />,
+    department: <Layers className="h-8 w-8" />
+  };
+
+  const labels = {
+    enterprise: "Entreprise",
+    direction: "Direction",
+    department: "Département"
+  };
+
+  // Couleurs grises avec dégradés subtils
+  const colors = {
+    enterprise: "bg-gradient-to-br from-[#e8ecf1] to-[#d5dbe3] hover:from-[#eef1f6] hover:to-[#dce1ea]",
+    direction: "bg-gradient-to-br from-[#e2e7ef] to-[#d0d7e2] hover:from-[#e8ecf4] hover:to-[#d6dde8]",
+    department: "bg-gradient-to-br from-[#dce2ec] to-[#c9d1dd] hover:from-[#e2e8f2] hover:to-[#cfd7e3]"
+  };
+
+  return (
+    <div 
+      className={`${colors[type]} rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.10)] transition-all duration-300 cursor-pointer transform hover:scale-[1.02] hover:-translate-y-1 p-6 text-[#1e293b] flex flex-col items-center justify-center min-h-[140px] border border-white/40 backdrop-blur-sm`}
+      onClick={onClick}
+    >
+      <div className="mb-2 text-[#475569]">
+        {icons[type]}
+      </div>
+      <h3 className="text-lg font-bold text-center text-[#0f172a]">{entity.name}</h3>
+      <p className="text-xs text-[#64748b] mt-1">{labels[type]}</p>
+      
+      {/* Badges d'information */}
+      <div className="flex flex-wrap gap-2 mt-3 justify-center">
+        {type === "enterprise" && (
+          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
+            {departmentCount || 0} direction(s)
+          </span>
+        )}
+        {type === "direction" && (
+          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
+            {departmentCount || 0} département(s)
+          </span>
+        )}
+        {processCount > 0 && (
+          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
+            {processCount} processus
+          </span>
+        )}
+        {critCount > 0 && (
+          <span className="bg-red-200/60 px-3 py-0.5 rounded-full text-xs font-medium text-red-700 shadow-sm border border-red-200/40">
+            ⚠️ {critCount} critique(s)
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── ProcessList (tableau) ─────────────────────────────────────────────────────
+const ProcessList = ({ 
+  processes, 
+  department, 
+  onBack, 
+  onSelectProcess,
+  onEdit,
+  onDelete,
+  canDelete,
+  searchQuery,
+  setSearchQuery,
+  selectedCriticality,
+  setSelectedCriticality,
+}: {
+  processes: any[];
+  department: any;
+  onBack: () => void;
+  onSelectProcess: (proc: any) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string, name: string) => void;
+  canDelete: boolean;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  selectedCriticality: string;
+  setSelectedCriticality: (c: string) => void;
+}) => {
+  const getDeptResources = (deptId: string, deptName: string) => {
+    return getDepartmentResources(processes, deptId, deptName);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={onBack} className="gap-1">
+          <ArrowLeft className="h-4 w-4" />
+          Retour
+        </Button>
+        <h2 className="text-xl font-bold">{department?.name || "Département"}</h2>
+        <Badge variant="outline">{processes.length} processus</Badge>
+      </div>
+
+      {/* Filtres */}
+      <div className="flex flex-col md:flex-row gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Rechercher un processus..." 
+            value={searchQuery} 
+            onChange={e => setSearchQuery(e.target.value)} 
+            className="pl-9" 
+          />
+        </div>
+        <select 
+          value={selectedCriticality} 
+          onChange={e => setSelectedCriticality(e.target.value)} 
+          className="h-10 px-3 rounded-md border bg-background text-sm"
+        >
+          <option value="all">Toutes les criticités</option>
+          <option value="Critique">Critique</option>
+          <option value="Majeur">Majeur</option>
+          <option value="Modéré">Modéré</option>
+          <option value="Mineur">Mineur</option>
+        </select>
+      </div>
+
+      {/* Tableau des processus */}
+      {processes.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <p>Aucun processus dans ce département.</p>
+        </div>
+      ) : (
+        <div className="border rounded-xl overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/10">
+                <TableHead>Processus</TableHead>
+                <TableHead>Responsable</TableHead>
+                <TableHead className="text-center">RTO</TableHead>
+                <TableHead className="text-center">RPO</TableHead>
+                <TableHead>Criticité</TableHead>
+                <TableHead>Apps IT</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {processes.map(p => {
+                const crit = scoreToCriticality(computeMaxScore(p.impacts));
+                const apps = (p as any).appsCritiques || [];
+                return (
+                  <TableRow
+                    key={p.id}
+                    className="cursor-pointer hover:bg-primary/5 transition-colors"
+                    onClick={() => onSelectProcess(p)}
+                  >
+                    <TableCell className="font-medium text-primary hover:underline">{p.name}</TableCell>
+                    <TableCell className="text-sm">{p.owner}</TableCell>
+                    <TableCell className="text-center"><Badge className="bg-red-50 text-red-700 border-red-200 text-xs">{p.rto}h</Badge></TableCell>
+                    <TableCell className="text-center"><Badge className="bg-orange-50 text-orange-700 border-orange-200 text-xs">{p.rpo}h</Badge></TableCell>
+                    <TableCell><Badge className={criticalityColor(crit)}>{crit}</Badge></TableCell>
+                    <TableCell>
+                      {apps.length > 0
+                        ? <div className="flex flex-wrap gap-1">
+                            {apps.map((app: any) => (
+                              <Badge key={app.id} className="bg-purple-50 text-purple-700 border-purple-200 text-xs gap-1">
+                                <Server className="h-3 w-3" /> {app.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        : <span className="text-muted-foreground text-xs">—</span>
+                      }
+                    </TableCell>
+                    <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit(p.id)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        {canDelete && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onDelete(p.id, p.name)}>
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -384,18 +579,28 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   const { processes, deleteProcess } = useBia();
   const { entities } = useGovernance();
   const { can } = useRole();
+
+  // États de navigation
+  const [selectedRoot, setSelectedRoot] = useState<string | null>(null);
+  const [selectedDirection, setSelectedDirection] = useState<string | null>(null);
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
+  const [viewLevel, setViewLevel] = useState<"enterprises" | "directions" | "departments" | "processes">("enterprises");
+  
+  // États de recherche/filtre
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCriticality, setSelectedCriticality] = useState<string>("all");
-  const [expandedRoots, setExpandedRoots] = useState<Set<string>>(new Set());
-  const [expandedDirections, setExpandedDirections] = useState<Set<string>>(new Set());
-  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<"hierarchy" | "table">("hierarchy");
+
   const [selectedProcess, setSelectedProcess] = useState<any>(null);
   const [selectedProcessDeptProcs, setSelectedProcessDeptProcs] = useState<any[]>([]);
 
   const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "—";
   const rootEntities = useMemo(() => entities.filter(e => e.parentId === null), [entities]);
   const getChildren = (parentId: string) => entities.filter(e => e.parentId === parentId);
+
+  // Compter les départements d'une direction (enfants directs)
+  const getDepartmentCount = (entityId: string) => {
+    return getChildren(entityId).length;
+  };
 
   const getProcessesForDept = (deptId: string, deptName: string) => {
     let procs = processes.filter(p => p.department === deptName || p.entityId === deptId);
@@ -414,33 +619,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     return procs;
   };
 
-  const filteredProcesses = useMemo(() => {
-    let procs = [...processes];
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      procs = procs.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.department.toLowerCase().includes(q) ||
-        p.owner.toLowerCase().includes(q) ||
-        entityName(p.entityId).toLowerCase().includes(q)
-      );
-    }
-    if (selectedCriticality !== "all") {
-      procs = procs.filter(p => scoreToCriticality(computeMaxScore(p.impacts)) === selectedCriticality);
-    }
-    return procs;
-  }, [processes, searchQuery, selectedCriticality, entities]);
-
-  const stats = {
-    total: processes.length,
-    filtered: filteredProcesses.length,
-    critiques: filteredProcesses.filter(p => computeMaxScore(p.impacts) >= 4).length,
-    majeurs: filteredProcesses.filter(p => computeMaxScore(p.impacts) >= 3 && computeMaxScore(p.impacts) < 4).length,
-    moderes: filteredProcesses.filter(p => computeMaxScore(p.impacts) >= 2 && computeMaxScore(p.impacts) < 3).length,
-    mineurs: filteredProcesses.filter(p => computeMaxScore(p.impacts) < 2).length,
-    avgScore: filteredProcesses.length ? filteredProcesses.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / filteredProcesses.length : 0
-  };
-
   const handleDelete = (id: string, name: string) => {
     if (confirm(`Supprimer le processus "${name}" ?`)) {
       deleteProcess(id);
@@ -448,149 +626,60 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     }
   };
 
-  const openProcessModal = (proc: any, deptId: string, deptName: string) => {
-    const deptProcs = processes.filter(p => p.department === deptName || p.entityId === deptId);
+  const openProcessModal = (proc: any) => {
+    const deptProcs = processes.filter(p => p.department === proc.department || p.entityId === proc.entityId);
     setSelectedProcessDeptProcs(deptProcs);
     setSelectedProcess(proc);
   };
 
-  const toggleRoot = (id: string) => { const s = new Set(expandedRoots); s.has(id) ? s.delete(id) : s.add(id); setExpandedRoots(s); };
-  const toggleDirection = (id: string) => { const s = new Set(expandedDirections); s.has(id) ? s.delete(id) : s.add(id); setExpandedDirections(s); };
-  const toggleDept = (id: string) => { const s = new Set(expandedDepts); s.has(id) ? s.delete(id) : s.add(id); setExpandedDepts(s); };
-  const expandAll = () => { setExpandedRoots(new Set(rootEntities.map(e => e.id))); setExpandedDirections(new Set(entities.filter(e => e.parentId !== null).map(e => e.id))); setExpandedDepts(new Set(entities.filter(e => e.parentId !== null).map(e => e.id))); };
-  const collapseAll = () => { setExpandedRoots(new Set()); setExpandedDirections(new Set()); setExpandedDepts(new Set()); };
-
-  const exportToCSV = () => {
-    const headers = ["Nom", "Direction", "Département", "Responsable", "Criticité", "RTO", "RPO", "MTPD", "MBCO", "Statut"];
-    const rows = filteredProcesses.map(p => {
-      const dept = entities.find(e => e.id === p.entityId || e.name === p.department);
-      const dir = dept ? entities.find(e => e.id === dept.parentId) : null;
-      return [p.name, dir?.name || "—", p.department, p.owner, scoreToCriticality(computeMaxScore(p.impacts)), p.rto, p.rpo, p.mtpd, p.mbco, p.status];
-    });
-    const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "inventaire_processus.csv"; a.click();
-    URL.revokeObjectURL(url);
-    toast({ title: "Export CSV", description: `${filteredProcesses.length} processus exportés` });
+  const getProcessCount = (entityId: string) => {
+    const deptIds = getChildren(entityId).map(d => d.id);
+    let count = 0;
+    for (const dept of getChildren(entityId)) {
+      count += processes.filter(p => p.department === dept.name || p.entityId === dept.id).length;
+    }
+    count += processes.filter(p => p.entityId === entityId).length;
+    return count;
   };
 
-  const getDeptAvgScore = (procs: typeof processes) => {
-    if (!procs.length) return 0;
-    return (procs.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / procs.length).toFixed(1);
+  const getCritCount = (entityId: string) => {
+    let count = 0;
+    for (const dept of getChildren(entityId)) {
+      count += processes.filter(p => 
+        (p.department === dept.name || p.entityId === dept.id) && 
+        computeMaxScore(p.impacts) >= 4
+      ).length;
+    }
+    count += processes.filter(p => p.entityId === entityId && computeMaxScore(p.impacts) >= 4).length;
+    return count;
   };
 
-  // ── Render département avec ressources ──
-  const renderDepartmentWithResources = (dept: any, procs: any[]) => {
-    const isDeptExpanded = expandedDepts.has(dept.id);
-    const avgScore = getDeptAvgScore(procs);
-    const critCount = procs.filter(p => computeMaxScore(p.impacts) >= 4).length;
-    const deptResources = getDepartmentResources(processes, dept.id, dept.name);
+  // Navigation
+  const goToRoot = () => {
+    setViewLevel("enterprises");
+    setSelectedRoot(null);
+    setSelectedDirection(null);
+    setSelectedDepartment(null);
+    setSearchQuery("");
+    setSelectedCriticality("all");
+  };
 
-    return (
-      <div key={dept.id} className="border-b last:border-b-0">
-        <button onClick={() => toggleDept(dept.id)} className="w-full flex items-center justify-between p-3 bg-muted/10 hover:bg-muted/20 transition-colors">
-          <div className="flex items-center gap-2">
-            {isDeptExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <span className="font-medium">{dept.name}</span>
-            <Badge variant="outline" className="text-xs">{procs.length} processus</Badge>
-            {critCount > 0 && <Badge className="bg-red-100 text-red-700 text-xs">⚠️ {critCount}</Badge>}
-          </div>
-          <span className="text-xs text-muted-foreground">Score moyen: {avgScore}/5</span>
-        </button>
+  const selectRoot = (id: string) => {
+    setSelectedRoot(id);
+    setViewLevel("directions");
+    setSelectedDirection(null);
+    setSelectedDepartment(null);
+  };
 
-        {isDeptExpanded && (
-          <div className="pl-6 pb-2">
-            {/* Ressources du département */}
-            <div className="flex flex-wrap gap-4 p-3 bg-amber-50/50 rounded-lg border border-amber-200 mb-3">
-              <div className="flex items-center gap-1 text-sm">
-                <Users className="h-4 w-4 text-blue-600" />
-                <span className="font-medium text-blue-700">RH :</span>
-                <span className="text-sm">
-                  {deptResources.hr.length > 0 
-                    ? deptResources.hr.map(p => p.name).join(", ")
-                    : "Aucune"}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 text-sm">
-                <Package className="h-4 w-4 text-yellow-600" />
-                <span className="font-medium text-yellow-700">Équipements :</span>
-                <span className="text-sm">
-                  {deptResources.equipment.length > 0
-                    ? deptResources.equipment.map(e => e.name).join(", ")
-                    : "Aucun"}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 text-sm">
-                <Handshake className="h-4 w-4 text-orange-600" />
-                <span className="font-medium text-orange-700">Fournisseurs :</span>
-                <span className="text-sm">
-                  {deptResources.suppliers.length > 0
-                    ? deptResources.suppliers.map(s => s.name).join(", ")
-                    : "Aucun"}
-                </span>
-              </div>
-            </div>
+  const selectDirection = (id: string) => {
+    setSelectedDirection(id);
+    setViewLevel("departments");
+    setSelectedDepartment(null);
+  };
 
-            {/* Processus */}
-            {procs.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground text-sm">Aucun processus</div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/10">
-                    <TableHead>Processus</TableHead>
-                    <TableHead>Responsable</TableHead>
-                    <TableHead className="text-center">RTO</TableHead>
-                    <TableHead className="text-center">RPO</TableHead>
-                    <TableHead>Criticité</TableHead>
-                    <TableHead>Apps IT</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {procs.map(p => {
-                    const crit = scoreToCriticality(computeMaxScore(p.impacts));
-                    const apps = (p as any).appsCritiques || [];
-                    return (
-                      <TableRow
-                        key={p.id}
-                        className="cursor-pointer hover:bg-primary/5 transition-colors"
-                        onClick={() => openProcessModal(p, dept.id, dept.name)}
-                      >
-                        <TableCell className="font-medium text-primary hover:underline">{p.name}</TableCell>
-                        <TableCell className="text-sm">{p.owner}</TableCell>
-                        <TableCell className="text-center"><Badge className="bg-red-50 text-red-700 border-red-200 text-xs">{p.rto}h</Badge></TableCell>
-                        <TableCell className="text-center"><Badge className="bg-orange-50 text-orange-700 border-orange-200 text-xs">{p.rpo}h</Badge></TableCell>
-                        <TableCell><Badge className={criticalityColor(crit)}>{crit}</Badge></TableCell>
-                        <TableCell>
-                          {apps.length > 0
-                            ? <div className="flex flex-wrap gap-1">
-                                {apps.map((app: any) => (
-                                  <Badge key={app.id} className="bg-purple-50 text-purple-700 border-purple-200 text-xs gap-1">
-                                    <Server className="h-3 w-3" /> {app.name} <span className="text-[10px] opacity-70">(RTO {app.rto_hours}h)</span>
-                                  </Badge>
-                                ))}
-                              </div>
-                            : <span className="text-muted-foreground text-xs">—</span>
-                          }
-                        </TableCell>
-                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                          <div className="flex justify-end gap-1">
-                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit(p.id)}><Pencil className="h-3.5 w-3.5" /></Button>
-                            {can("admin") && <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(p.id, p.name)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </div>
-        )}
-      </div>
-    );
+  const selectDepartment = (id: string) => {
+    setSelectedDepartment(id);
+    setViewLevel("processes");
   };
 
   return (
@@ -601,191 +690,182 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
           <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
             <Building2 className="h-7 w-7 text-primary" /> Inventaire des processus
           </h1>
-          <p className="text-muted-foreground mt-1">Hiérarchie : Entreprise → Direction → Département → Processus</p>
+          <p className="text-muted-foreground mt-1">
+            {viewLevel === "enterprises" && "Sélectionnez une entreprise pour voir ses directions"}
+            {viewLevel === "directions" && "Sélectionnez une direction pour voir ses départements"}
+            {viewLevel === "departments" && "Sélectionnez un département pour voir ses processus"}
+            {viewLevel === "processes" && `Processus de "${entities.find(e => e.id === selectedDepartment)?.name || ""}"`}
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={exportToCSV} className="gap-2"><Download className="h-4 w-4" /> Exporter CSV</Button>
-          {can("write") && <Button onClick={onCreate} className="gap-2"><Plus className="h-4 w-4" /> Nouveau processus</Button>}
+          {viewLevel !== "enterprises" && (
+            <Button variant="outline" onClick={goToRoot} className="gap-1">
+              <ArrowLeft className="h-4 w-4" />
+              Retour
+            </Button>
+          )}
+          {can("write") && viewLevel === "processes" && (
+            <Button onClick={onCreate} className="gap-2">
+              <Plus className="h-4 w-4" /> Nouveau processus
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Cartes statistiques */}
       <div className="grid gap-3 md:grid-cols-6">
-        <Card className="bg-blue-500/10"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-bold">{stats.filtered}</p></CardContent></Card>
-        <Card className="bg-red-500/10"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Critiques</p><p className="text-xl font-bold text-red-600">{stats.critiques}</p></CardContent></Card>
-        <Card className="bg-orange-500/10"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Majeurs</p><p className="text-xl font-bold text-orange-600">{stats.majeurs}</p></CardContent></Card>
-        <Card className="bg-yellow-500/10"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Modérés</p><p className="text-xl font-bold text-yellow-600">{stats.moderes}</p></CardContent></Card>
-        <Card className="bg-green-500/10"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Mineurs</p><p className="text-xl font-bold text-green-600">{stats.mineurs}</p></CardContent></Card>
-        <Card className="bg-purple-500/10"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Score moyen</p><p className="text-xl font-bold">{stats.avgScore.toFixed(1)}/5</p></CardContent></Card>
+        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-bold">{processes.length}</p></CardContent></Card>
+        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Critiques</p><p className="text-xl font-bold text-red-600">{processes.filter(p => computeMaxScore(p.impacts) >= 4).length}</p></CardContent></Card>
+        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Majeurs</p><p className="text-xl font-bold text-orange-600">{processes.filter(p => computeMaxScore(p.impacts) >= 3 && computeMaxScore(p.impacts) < 4).length}</p></CardContent></Card>
+        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Modérés</p><p className="text-xl font-bold text-yellow-600">{processes.filter(p => computeMaxScore(p.impacts) >= 2 && computeMaxScore(p.impacts) < 3).length}</p></CardContent></Card>
+        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Mineurs</p><p className="text-xl font-bold text-green-600">{processes.filter(p => computeMaxScore(p.impacts) < 2).length}</p></CardContent></Card>
+        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Score moyen</p><p className="text-xl font-bold">{processes.length ? (processes.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / processes.length).toFixed(1) : "0"}/5</p></CardContent></Card>
       </div>
 
-      {/* Filtres */}
-      <Card><CardContent className="p-4">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Rechercher par processus, département, responsable..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9" />
-          </div>
-          <select value={selectedCriticality} onChange={e => setSelectedCriticality(e.target.value)} className="h-10 px-3 rounded-md border bg-background text-sm">
-            <option value="all">Toutes les criticités</option>
-            <option value="Critique">Critique</option>
-            <option value="Majeur">Majeur</option>
-            <option value="Modéré">Modéré</option>
-            <option value="Mineur">Mineur</option>
-          </select>
-          <div className="flex gap-1 flex-wrap">
-            <Button variant={viewMode === "hierarchy" ? "default" : "outline"} size="sm" onClick={() => setViewMode("hierarchy")}>Vue hiérarchique</Button>
-            <Button variant={viewMode === "table" ? "default" : "outline"} size="sm" onClick={() => setViewMode("table")}>Vue tableau</Button>
-            <Button variant="outline" size="sm" onClick={expandAll}>Tout développer</Button>
-            <Button variant="outline" size="sm" onClick={collapseAll}>Tout réduire</Button>
-          </div>
-        </div>
-      </CardContent></Card>
-
       {/* Contenu principal */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {viewMode === "hierarchy" ? "Hiérarchie par Entreprise → Direction → Département → Processus" : "Inventaire détaillé des processus"}
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">Cliquez sur un processus pour voir ses détails.</p>
-        </CardHeader>
-        <CardContent>
-          {viewMode === "hierarchy" ? (
+      <Card className="border-gray-200/50 shadow-[0_8px_30px_rgb(0,0,0,0.05)]">
+        <CardContent className="p-6">
+          {/* Écran 1 : Entreprises */}
+          {viewLevel === "enterprises" && (
             <div className="space-y-4">
-              {rootEntities.map(root => {
-                const isRootExpanded = expandedRoots.has(root.id);
-                const directions = getChildren(root.id);
-                const visibleDirections = directions.filter(dir => {
-                  if (!searchQuery && selectedCriticality === "all") return true;
-                  const depts = getChildren(dir.id);
-                  return depts.some(dept => getProcessesForDept(dept.id, dept.name).length > 0);
-                });
-                if (visibleDirections.length === 0 && (searchQuery || selectedCriticality !== "all")) return null;
-                const totalProcesses = directions.reduce((acc, dir) => acc + getChildren(dir.id).reduce((sum, dept) => sum + getProcessesForDept(dept.id, dept.name).length, 0), 0);
-                const totalCritiques = directions.reduce((acc, dir) => acc + getChildren(dir.id).reduce((sum, dept) => sum + getProcessesForDept(dept.id, dept.name).filter(p => computeMaxScore(p.impacts) >= 4).length, 0), 0);
-
-                return (
-                  <div key={root.id} className="border rounded-xl overflow-hidden">
-                    <button onClick={() => toggleRoot(root.id)} className="w-full flex items-center justify-between p-4 bg-primary/10 hover:bg-primary/15 transition-colors">
-                      <div className="flex items-center gap-3">
-                        {isRootExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                        <Building2 className="h-5 w-5 text-primary" />
-                        <span className="font-bold text-lg">{root.name}</span>
-                        <Badge variant="outline">{totalProcesses} processus</Badge>
-                        {totalCritiques > 0 && <Badge className="bg-red-100 text-red-700">⚠️ {totalCritiques} critique(s)</Badge>}
-                      </div>
-                    </button>
-
-                    {isRootExpanded && (
-                      <div className="border-t">
-                        {visibleDirections.length === 0 ? (
-                          <div className="p-4 text-center text-muted-foreground text-sm">Aucune direction</div>
-                        ) : visibleDirections.map(dir => {
-                          const isDirExpanded = expandedDirections.has(dir.id);
-                          const departments = getChildren(dir.id);
-                          const visibleDepts = departments.filter(dept => {
-                            if (!searchQuery && selectedCriticality === "all") return true;
-                            return getProcessesForDept(dept.id, dept.name).length > 0;
-                          });
-                          const dirTotalProcs = departments.reduce((acc, dept) => acc + getProcessesForDept(dept.id, dept.name).length, 0);
-                          const dirCritiques = departments.reduce((acc, dept) => acc + getProcessesForDept(dept.id, dept.name).filter(p => computeMaxScore(p.impacts) >= 4).length, 0);
-
-                          return (
-                            <div key={dir.id} className="border-b last:border-b-0">
-                              <button onClick={() => toggleDirection(dir.id)} className="w-full flex items-center justify-between p-3 bg-muted/20 pl-10 hover:bg-muted/30 transition-colors">
-                                <div className="flex items-center gap-2">
-                                  {isDirExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                  <span className="font-semibold">{dir.name}</span>
-                                  <Badge variant="outline" className="text-xs">{dirTotalProcs} processus</Badge>
-                                  {dirCritiques > 0 && <Badge className="bg-red-100 text-red-700 text-xs">⚠️ {dirCritiques}</Badge>}
-                                </div>
-                              </button>
-
-                              {isDirExpanded && (
-                                <div className="pl-10">
-                                  {visibleDepts.length === 0 ? (
-                                    <div className="p-4 text-center text-muted-foreground text-sm">Aucun département</div>
-                                  ) : visibleDepts.map(dept => {
-                                    const procs = getProcessesForDept(dept.id, dept.name);
-                                    return renderDepartmentWithResources(dept, procs);
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {rootEntities.length === 0 && (
-                <p className="text-center text-muted-foreground py-8 text-sm">Aucune entreprise racine trouvée. Créez d'abord votre organigramme dans Gouvernance M1.</p>
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold">🏢 Entreprises</h2>
+                <span className="text-sm text-muted-foreground">{rootEntities.length} entreprise(s)</span>
+              </div>
+              {rootEntities.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Building2 className="h-12 w-12 mx-auto text-muted-foreground/30" />
+                  <p className="mt-4">Aucune entreprise trouvée.</p>
+                  <p className="text-sm">Créez une entité racine dans Gouvernance M1.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {rootEntities.map(root => (
+                    <EntityCard
+                      key={root.id}
+                      entity={root}
+                      type="enterprise"
+                      processCount={getProcessCount(root.id)}
+                      critCount={getCritCount(root.id)}
+                      departmentCount={getDepartmentCount(root.id)} // Nombre de directions
+                      onClick={() => selectRoot(root.id)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
-          ) : (
-            <div className="overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Processus</TableHead>
-                    <TableHead>Direction</TableHead>
-                    <TableHead>Département</TableHead>
-                    <TableHead>Responsable</TableHead>
-                    <TableHead className="text-center">RTO</TableHead>
-                    <TableHead className="text-center">RPO</TableHead>
-                    <TableHead>Criticité</TableHead>
-                    <TableHead>Apps IT</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredProcesses.map(p => {
-                    const dept = entities.find(e => e.id === p.entityId || e.name === p.department);
-                    const dir = dept ? entities.find(e => e.id === dept?.parentId) : null;
-                    const crit = scoreToCriticality(computeMaxScore(p.impacts));
-                    const apps = (p as any).appsCritiques || [];
+          )}
+
+          {/* Écran 2 : Directions */}
+          {viewLevel === "directions" && selectedRoot && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold">📊 Directions de {entityName(selectedRoot)}</h2>
+                  <Badge variant="outline">{getChildren(selectedRoot).length} direction(s)</Badge>
+                </div>
+              </div>
+              {getChildren(selectedRoot).length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Building className="h-12 w-12 mx-auto text-muted-foreground/30" />
+                  <p className="mt-4">Aucune direction trouvée.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {getChildren(selectedRoot).map(dir => (
+                    <EntityCard
+                      key={dir.id}
+                      entity={dir}
+                      type="direction"
+                      processCount={getProcessCount(dir.id)}
+                      critCount={getCritCount(dir.id)}
+                      departmentCount={getDepartmentCount(dir.id)} // Nombre de départements sous la direction
+                      onClick={() => selectDirection(dir.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Écran 3 : Départements */}
+          {viewLevel === "departments" && selectedDirection && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold">📋 Départements de {entityName(selectedDirection)}</h2>
+                  <Badge variant="outline">{getChildren(selectedDirection).length} département(s)</Badge>
+                </div>
+              </div>
+              {getChildren(selectedDirection).length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Layers className="h-12 w-12 mx-auto text-muted-foreground/30" />
+                  <p className="mt-4">Aucun département trouvé.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {getChildren(selectedDirection).map(dept => {
+                    const deptResources = getDepartmentResources(processes, dept.id, dept.name);
+                    const procs = getProcessesForDept(dept.id, dept.name);
                     return (
-                      <TableRow
-                        key={p.id}
-                        className="cursor-pointer hover:bg-primary/5"
-                        onClick={() => openProcessModal(p, dept?.id || "", dept?.name || p.department)}
+                      <div
+                        key={dept.id}
+                        className="bg-gradient-to-br from-[#dce2ec] to-[#c9d1dd] hover:from-[#e2e8f2] hover:to-[#cfd7e3] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.10)] transition-all duration-300 cursor-pointer transform hover:scale-[1.02] hover:-translate-y-1 p-6 text-[#1e293b] flex flex-col border border-white/40 backdrop-blur-sm"
+                        onClick={() => selectDepartment(dept.id)}
                       >
-                        <TableCell className="font-medium text-primary hover:underline">{p.name}</TableCell>
-                        <TableCell className="text-sm">{dir?.name || "—"}</TableCell>
-                        <TableCell className="text-sm">{p.department}</TableCell>
-                        <TableCell className="text-sm">{p.owner}</TableCell>
-                        <TableCell className="text-center"><Badge className="bg-red-50 text-red-700 border-red-200 text-xs">{p.rto}h</Badge></TableCell>
-                        <TableCell className="text-center"><Badge className="bg-orange-50 text-orange-700 border-orange-200 text-xs">{p.rpo}h</Badge></TableCell>
-                        <TableCell><Badge className={criticalityColor(crit)}>{crit}</Badge></TableCell>
-                        <TableCell>
-                          {apps.length > 0
-                            ? <div className="flex flex-wrap gap-1">
-                                {apps.map((app: any) => (
-                                  <Badge key={app.id} className="bg-purple-50 text-purple-700 border-purple-200 text-xs gap-1">
-                                    <Server className="h-3 w-3" /> {app.name}
-                                  </Badge>
-                                ))}
-                              </div>
-                            : <span className="text-muted-foreground text-xs">—</span>
-                          }
-                        </TableCell>
-                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                          <div className="flex justify-end gap-1">
-                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit(p.id)}><Pencil className="h-3.5 w-3.5" /></Button>
-                            {can("admin") && <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(p.id, p.name)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>}
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                        <div className="mb-2 text-[#475569]">
+                          <Layers className="h-8 w-8" />
+                        </div>
+                        <h3 className="text-lg font-bold text-[#0f172a]">{dept.name}</h3>
+                        <p className="text-xs text-[#64748b] mt-1">Département</p>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
+                            {procs.length} processus
+                          </span>
+                          {procs.filter(p => computeMaxScore(p.impacts) >= 4).length > 0 && (
+                            <span className="bg-red-200/60 px-3 py-0.5 rounded-full text-xs font-medium text-red-700 shadow-sm border border-red-200/40">
+                              ⚠️ {procs.filter(p => computeMaxScore(p.impacts) >= 4).length}
+                            </span>
+                          )}
+                        </div>
+                        {/* Aperçu des ressources */}
+                        <div className="mt-3 text-xs text-[#475569] space-y-0.5">
+                          {deptResources.hr.length > 0 && (
+                            <div className="bg-white/30 px-2 py-0.5 rounded-full inline-block">👥 {deptResources.hr.map(h => h.name).join(", ")}</div>
+                          )}
+                          {deptResources.equipment.length > 0 && (
+                            <div className="bg-white/30 px-2 py-0.5 rounded-full inline-block ml-1">🖥️ {deptResources.equipment.map(e => e.name).join(", ")}</div>
+                          )}
+                          {deptResources.suppliers.length > 0 && (
+                            <div className="bg-white/30 px-2 py-0.5 rounded-full inline-block ml-1">🤝 {deptResources.suppliers.map(s => s.name).join(", ")}</div>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
-                  {filteredProcesses.length === 0 && (
-                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Aucun processus trouvé</TableCell></TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Écran 4 : Processus (tableau) */}
+          {viewLevel === "processes" && selectedDepartment && (
+            <ProcessList
+              processes={getProcessesForDept(selectedDepartment, entities.find(e => e.id === selectedDepartment)?.name || "")}
+              department={entities.find(e => e.id === selectedDepartment)}
+              onBack={() => {
+                setViewLevel("departments");
+                setSelectedDepartment(null);
+              }}
+              onSelectProcess={openProcessModal}
+              onEdit={onEdit}
+              onDelete={handleDelete}
+              canDelete={can("admin")}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              selectedCriticality={selectedCriticality}
+              setSelectedCriticality={setSelectedCriticality}
+            />
           )}
         </CardContent>
       </Card>
