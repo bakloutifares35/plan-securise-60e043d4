@@ -5,7 +5,7 @@ import { RoleSwitcher } from "./RoleSwitcher";
 export type Section =
   | "dashboard" | "form" | "plan" | "benchmark"
   | "governance" | "entity"
-  | "bia" | "risk" | "ai" | "tenacia"; // 👈 AJOUT DE "tenacia"
+  | "bia" | "risk" | "ai" | "tenacia";
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -31,7 +31,6 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
       { id: "plan", label: "Plan de continuité", icon: ListChecks },
     ],
   },
-  // 👈 NOUVEAU GROUPE POUR TENACIA VOICE
   {
     label: "Innovation",
     items: [
@@ -42,20 +41,48 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
 
 export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: Section) => void }) => {
   return (
-    <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-card">
-      <div className="flex items-center gap-2 px-6 py-5 border-b border-border">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary-glow">
-          <ShieldCheck className="h-5 w-5 text-primary-foreground" />
+    <aside
+      className="hidden md:flex w-64 shrink-0 flex-col"
+      style={{ backgroundColor: "#172030", color: "#F8F6F2" }}
+    >
+      <div
+        className="flex items-center gap-3 px-6 py-6"
+        style={{ borderBottom: "1px solid rgba(248,246,242,0.08)" }}
+      >
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-md"
+          style={{ backgroundColor: "#2A5141" }}
+        >
+          <ShieldCheck className="h-5 w-5" style={{ color: "#F8F6F2" }} />
         </div>
         <div>
-          <p className="text-sm font-semibold text-foreground">PCA Manager</p>
-          <p className="text-xs text-muted-foreground">Continuité d'activité</p>
+          <p
+            className="text-xl leading-none"
+            style={{ fontFamily: "'Playfair Display', serif", fontWeight: 500, color: "#F8F6F2" }}
+          >
+            Resillia
+          </p>
+          <p className="text-[10px] mt-1" style={{ color: "rgba(248,246,242,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Continuité d'activité
+          </p>
         </div>
       </div>
-      <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+
+      <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
         {groups.map((g) => (
           <div key={g.label}>
-            <p className="px-3 mb-1.5 text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">{g.label}</p>
+            <p
+              className="px-3 mb-2"
+              style={{
+                fontSize: "9px",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "rgba(248,246,242,0.35)",
+                fontWeight: 600,
+              }}
+            >
+              {g.label}
+            </p>
             <div className="space-y-0.5">
               {g.items.map((it) => {
                 const Icon = it.icon;
@@ -65,16 +92,32 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
                     key={it.id}
                     onClick={() => onChange(it.id)}
                     className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md" // 👈 STYLE SPÉCIAL POUR TENACIA
-                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      "w-full flex items-center gap-3 pl-3 pr-3 py-2 rounded-r-md transition-colors text-left"
                     )}
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      color: isActive ? "#F8F6F2" : "rgba(248,246,242,0.6)",
+                      backgroundColor: isActive ? "#2A5141" : "transparent",
+                      borderLeft: isActive ? "2px solid #2A5141" : "2px solid transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) (e.currentTarget as HTMLButtonElement).style.color = "#F8F6F2";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) (e.currentTarget as HTMLButtonElement).style.color = "rgba(248,246,242,0.6)";
+                    }}
                   >
-                    <Icon className={cn("h-4 w-4", isActive && "text-white")} />
-                    {it.label}
+                    <Icon className="h-4 w-4" />
+                    <span className="flex-1">{it.label}</span>
                     {it.id === "tenacia" && !isActive && (
-                      <span className="ml-auto text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full">✨ NEW</span>
+                      <span
+                        className="text-[9px] px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: "rgba(42,81,65,0.4)", color: "#E4F2E8", letterSpacing: "0.06em" }}
+                      >
+                        NEW
+                      </span>
                     )}
                   </button>
                 );
@@ -83,9 +126,20 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
           </div>
         ))}
       </nav>
-      <RoleSwitcher />
-      <div className="p-3 border-t border-border text-xs text-muted-foreground text-center">
-        © 2026 PCA Manager
+
+      <div style={{ borderTop: "1px solid rgba(248,246,242,0.08)" }}>
+        <RoleSwitcher />
+      </div>
+      <div
+        className="px-4 py-3 text-center"
+        style={{
+          fontSize: "10px",
+          color: "rgba(248,246,242,0.4)",
+          borderTop: "1px solid rgba(248,246,242,0.08)",
+          letterSpacing: "0.06em",
+        }}
+      >
+        © 2026 Resillia
       </div>
     </aside>
   );
