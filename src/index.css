@@ -100,7 +100,7 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border) / 0.1);
   }
 
   html, body {
