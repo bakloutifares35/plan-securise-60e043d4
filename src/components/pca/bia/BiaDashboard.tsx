@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -11,33 +10,30 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
+  Tooltip,
+  ResponsiveContainer,
 } from "recharts";
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
-  Calendar,
   TrendingUp,
-  Building2,
   FileText,
   Download,
   ShieldAlert,
   Clock,
-  Flag,
+  ChevronRight,
+  Zap,
+  Target,
+  Building2,
+  PieChart as PieChartIcon,
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
-import { computeMaxScore, scoreToCriticality, criticalityColor, type Criticality } from "@/data/bia";
+import { computeMaxScore, scoreToCriticality, type Criticality } from "@/data/bia";
 
 const LEVELS: Criticality[] = ["Critique", "Majeur", "Modéré", "Mineur"];
 
@@ -92,47 +88,73 @@ export const BiaDashboard = () => {
     const coverage = currentCampaign
       ? Math.round((currentCampaign.processesCovered / currentCampaign.totalProcesses) * 100)
       : 0;
-    const inProgress = campaigns.filter((c) => c.status === "En cours").length;
-    return { totals, criticalCount, total, avgScore, coverage, inProgress, stale, rtoIssues };
+    return { totals, criticalCount, total, avgScore, coverage, stale, rtoIssues };
   }, [filteredProcesses, campaigns]);
 
-  // Données pour la liste des actions prioritaires
-  const priorityActions = useMemo(() => {
+  const topProcesses = useMemo(() => {
     return filteredProcesses
       .map((p) => {
         const score = computeMaxScore(p.impacts);
         const criticality = scoreToCriticality(score);
-        const daysSinceUpdate = (Date.now() - new Date(p.lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
-        const isStale = daysSinceUpdate > 365;
-        const hasRtoIssue = p.rto > p.mtpd;
-        const needsPca = score >= 3;
-        let action = "";
-        let urgency = "low";
-        if (needsPca && (hasRtoIssue || isStale)) {
-          action = "PCA urgent + révision BIA";
-          urgency = "high";
-        } else if (needsPca) {
-          action = "Documenter PCA";
-          urgency = "medium";
-        } else if (hasRtoIssue) {
-          action = "Revoir RTO/MTPD";
-          urgency = "medium";
-        } else if (isStale) {
-          action = "Mettre à jour le BIA";
-          urgency = "low";
-        } else {
-          action = "À surveiller";
-          urgency = "none";
-        }
-        return { ...p, score, criticality, isStale, hasRtoIssue, needsPca, action, urgency };
+        const entity = entities.find(e => e.id === p.entityId);
+        return { ...p, score, criticality, entityName: entity?.name || "Sans direction" };
       })
-      .filter((p) => p.action !== "À surveiller")
-      .sort((a, b) => {
-        if (a.urgency === "high" && b.urgency !== "high") return -1;
-        if (a.urgency !== "high" && b.urgency === "high") return 1;
-        return b.score - a.score;
-      })
-      .slice(0, 6);
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }, [filteredProcesses, entities]);
+
+  const attentionPoints = useMemo(() => {
+    const points = [];
+    const now = Date.now();
+    
+    const pendingBia = filteredProcesses.filter(p => p.status !== "Validé");
+    if (pendingBia.length > 0) {
+      points.push({
+        icon: AlertTriangle,
+        color: "text-amber-500",
+        bg: "bg-amber-50",
+        text: `BIA du processus ${pendingBia[0].name} non validé`,
+        action: "Réviser"
+      });
+    }
+
+    const expiredPra = filteredProcesses.filter(p => {
+      const days = (now - new Date(p.lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
+      return days > 365;
+    });
+    if (expiredPra.length > 0) {
+      points.push({
+        icon: Clock,
+        color: "text-rose-500",
+        bg: "bg-rose-50",
+        text: `PRA ${expiredPra[0].name} expiré`,
+        action: "Voir"
+      });
+    }
+
+    const successfulTests = filteredProcesses.filter(p => p.status === "Testé");
+    if (successfulTests.length > 0) {
+      points.push({
+        icon: CheckCircle2,
+        color: "text-emerald-500",
+        bg: "bg-emerald-50",
+        text: `Test PRA ${successfulTests[0].name} réussi`,
+        action: "Consulter"
+      });
+    }
+
+    const noPca = filteredProcesses.filter(p => !p.hasPca);
+    if (noPca.length > 0) {
+      points.push({
+        icon: ShieldAlert,
+        color: "text-orange-500",
+        bg: "bg-orange-50",
+        text: `${noPca.length} processus sans PCA`,
+        action: "Créer"
+      });
+    }
+
+    return points.slice(0, 4);
   }, [filteredProcesses]);
 
   const pieData = LEVELS.map((level) => ({
@@ -141,240 +163,236 @@ export const BiaDashboard = () => {
     color: COLORS[level],
   })).filter((d) => d.value > 0);
 
-  // CORRECTION : Utiliser le nom de l'entité au lieu du champ department (qui a été supprimé)
-  const directionData = useMemo(() => {
-    const dirMap = new Map<string, number>();
-    for (const p of filteredProcesses) {
-      // Trouver l'entité correspondante
-      const entity = entities.find(e => e.id === p.entityId);
-      const dirName = entity?.name || "Sans direction";
-      dirMap.set(dirName, (dirMap.get(dirName) || 0) + 1);
-    }
-    return Array.from(dirMap.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-  }, [filteredProcesses, entities]); // Ajouter 'entities' comme dépendance
+  const criticalCount = stats.criticalCount;
 
-  const cards = [
-    { label: "Processus inventoriés", value: stats.total, icon: Activity, cls: "bg-primary/10 text-primary", trend: null },
-    { label: "Processus critiques", value: stats.criticalCount, icon: AlertTriangle, cls: "bg-destructive/10 text-destructive", trend: "prioritaire" },
-    { label: "Score moyen", value: `${stats.avgScore}/5`, icon: TrendingUp, cls: "bg-success/10 text-success", trend: stats.avgScore },
-    { label: "Couverture BIA", value: `${stats.coverage}%`, icon: CheckCircle2, cls: "bg-accent/10 text-accent", trend: stats.coverage },
-  ];
+  const levelColors = {
+    "Critique": "bg-rose-100 text-rose-700 border-rose-200",
+    "Majeur": "bg-orange-100 text-orange-700 border-orange-200",
+    "Modéré": "bg-amber-100 text-amber-700 border-amber-200",
+    "Mineur": "bg-green-100 text-green-700 border-green-200",
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground">Tableau de bord BIA</h1>
-          <p className="text-muted-foreground mt-1">Vue d'ensemble des analyses d'impact métier</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Exporter
-          </Button>
-          <Button size="sm" className="gap-2">
-            <FileText className="h-4 w-4" />
-            Nouveau BIA
-          </Button>
-        </div>
-      </div>
+    <div className="h-screen bg-slate-50/50 p-6 overflow-hidden">
+      <div className="h-full flex flex-col gap-4">
 
-      <div className="flex flex-wrap gap-3">
-        <Select value={selectedEntity} onValueChange={setSelectedEntity}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Toutes les entités" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toutes les entités</SelectItem>
-            {entities.map((e) => (
-              <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={selectedCriticality} onValueChange={setSelectedCriticality}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Criticité" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toutes</SelectItem>
-            <SelectItem value="Critique">Critique</SelectItem>
-            <SelectItem value="Majeur">Majeur</SelectItem>
-            <SelectItem value="Modéré">Modéré</SelectItem>
-            <SelectItem value="Mineur">Mineur</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {stats.stale > 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm">
-          <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
+        {/* ===== HEADER ===== */}
+        <div className="flex items-center justify-between flex-shrink-0">
           <div>
-            <p className="font-medium text-foreground">{stats.stale} processus n'ont pas été mis à jour depuis plus de 12 mois.</p>
-            <p className="text-muted-foreground">Une réévaluation BIA est recommandée.</p>
-            <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-warning">
-              Voir les processus concernés
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
+              Tableau de bord BIA
+            </h1>
+            <p className="text-sm text-slate-500">
+              Vue globale de la continuité métier
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={selectedEntity} onValueChange={setSelectedEntity}>
+              <SelectTrigger className="w-[150px] h-8 text-xs">
+                <SelectValue placeholder="Entité" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes</SelectItem>
+                {entities.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedCriticality} onValueChange={setSelectedCriticality}>
+              <SelectTrigger className="w-[120px] h-8 text-xs">
+                <SelectValue placeholder="Criticité" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes</SelectItem>
+                <SelectItem value="Critique">Critique</SelectItem>
+                <SelectItem value="Majeur">Majeur</SelectItem>
+                <SelectItem value="Modéré">Modéré</SelectItem>
+                <SelectItem value="Mineur">Mineur</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5">
+              <Download className="h-3.5 w-3.5" />
+              Exporter
+            </Button>
+            <Button size="sm" className="h-8 gap-1.5 bg-slate-900 hover:bg-slate-800">
+              <FileText className="h-3.5 w-3.5" />
+              Nouveau BIA
             </Button>
           </div>
         </div>
-      )}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        {cards.map((c) => {
-          const Icon = c.icon;
-          return (
-            <Card key={c.label}>
-              <CardContent className="p-5 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground">{c.label}</p>
-                  <p className="text-2xl font-bold text-foreground mt-1">{c.value}</p>
-                </div>
-                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${c.cls}`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Répartition par criticité</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  label
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Processus par direction (top 5)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {directionData.length === 0 ? (
-              <div className="flex items-center justify-center h-[250px] text-muted-foreground">
-                Aucune donnée
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart layout="vertical" data={directionData} margin={{ left: 80 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={100} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#3b82f6" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Actions prioritaires */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-base">Actions prioritaires</CardTitle>
-            <p className="text-sm text-muted-foreground">Processus nécessitant une attention immédiate</p>
-          </div>
-          <Badge variant="outline" className="gap-1">
-            <Flag className="h-3 w-3" /> {priorityActions.length} action(s)
-          </Badge>
-        </CardHeader>
-        <CardContent>
-          {priorityActions.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <CheckCircle2 className="h-10 w-10 mx-auto mb-2 text-green-500" />
-              <p>Aucune action urgente détectée</p>
-              <p className="text-xs">Tous les processus sont à jour et conformes</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {priorityActions.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 hover:bg-muted/30 transition-colors"
-                >
-                  <div className="min-w-[180px] flex-1">
-                    <p className="font-medium text-sm">{p.name}</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <Badge className={criticalityColor(p.criticality)}>{p.criticality}</Badge>
-                      <Badge variant="outline" className="text-xs">
-                        Score {p.score}/5
-                      </Badge>
+        {/* ===== LIGNE 1: KPI ===== */}
+        <div className="grid grid-cols-4 gap-4 flex-shrink-0">
+          {[
+            { label: "Processus analysés", value: stats.total, icon: Activity, color: "text-blue-600", bg: "bg-blue-50", sub: "+2 ce mois" },
+            { label: "Processus critiques", value: stats.criticalCount, icon: AlertTriangle, color: "text-rose-600", bg: "bg-rose-50", sub: criticalCount > 0 ? "Attention" : "OK" },
+            { label: "Score moyen", value: `${stats.avgScore}/5`, icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50", sub: "↑ +0.4" },
+            { label: "Couverture BIA", value: `${stats.coverage}%`, icon: CheckCircle2, color: "text-indigo-600", bg: "bg-indigo-50", sub: "Objectif 90%" },
+          ].map((kpi, index) => {
+            const Icon = kpi.icon;
+            return (
+              <Card key={index} className="border-0 shadow-sm">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        {kpi.label}
+                      </p>
+                      <p className="text-2xl font-bold text-slate-900 mt-1">
+                        {kpi.value}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">{kpi.sub}</p>
+                    </div>
+                    <div className={`h-9 w-9 rounded-xl ${kpi.bg} flex items-center justify-center flex-shrink-0 ml-3`}>
+                      <Icon className={`h-4 w-4 ${kpi.color}`} />
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    {p.hasRtoIssue && (
-                      <Badge variant="destructive" className="gap-1">
-                        <Clock className="h-3 w-3" /> RTO &gt; MTPD
-                      </Badge>
-                    )}
-                    {p.isStale && (
-                      <Badge variant="secondary" className="gap-1 bg-amber-100 text-amber-700">
-                        <Calendar className="h-3 w-3" /> BIA obsolète
-                      </Badge>
-                    )}
-                    {p.needsPca && (
-                      <Badge variant="default" className="gap-1 bg-red-100 text-red-700">
-                        <ShieldAlert className="h-3 w-3" /> PCA requis
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-muted-foreground">{p.action}</span>
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                      Détail
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {stats.rtoIssues > 0 && (
-            <div className="mt-4 text-xs text-muted-foreground border-t pt-3">
-              ⚠️ {stats.rtoIssues} processus ont un RTO supérieur au MTPD
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
 
-      {stats.criticalCount > 0 && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4 flex items-start gap-3">
-            <ShieldAlert className="h-5 w-5 text-red-600 mt-0.5" />
-            <div>
-              <p className="font-semibold text-red-800">{stats.criticalCount} processus critique(s) nécessitent un PCA prioritaire</p>
-              <p className="text-sm text-red-700 mt-1">Les processus critiques doivent être documentés dans un plan de continuité avant la prochaine revue.</p>
-              <Button variant="outline" size="sm" className="mt-2 border-red-300 text-red-700">
-                Voir les processus critiques
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+        {/* ===== LIGNE 2: Top processus + Répartition ===== */}
+        <div className="grid grid-cols-5 gap-4 flex-1 min-h-0">
+          {/* Top processus - 65% */}
+          <Card className="col-span-3 border-0 shadow-sm flex flex-col">
+            <CardHeader className="pb-2 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <Target className="h-4 w-4 text-slate-400" />
+                  Top processus critiques
+                </CardTitle>
+                <Button variant="ghost" size="sm" className="h-7 text-xs text-slate-500">
+                  Voir tout <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-0 px-4 pb-4">
+              <div className="h-full flex flex-col">
+                {/* Header */}
+                <div className="grid grid-cols-5 gap-2 py-1.5 border-b border-slate-100">
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider col-span-2">Processus</span>
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Direction</span>
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Criticité</span>
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider text-right">Score</span>
+                </div>
+                {/* Rows */}
+                <div className="flex-1 divide-y divide-slate-50">
+                  {topProcesses.map((p, index) => (
+                    <div key={index} className="grid grid-cols-5 gap-2 py-2 items-center hover:bg-slate-50/50 rounded-lg transition-colors -mx-1 px-1">
+                      <span className="text-sm font-medium text-slate-900 truncate col-span-2">{p.name}</span>
+                      <span className="text-sm text-slate-500 truncate flex items-center gap-1">
+                        <Building2 className="h-3 w-3" />
+                        {p.entityName}
+                      </span>
+                      <Badge className={`${levelColors[p.criticality as keyof typeof levelColors]} text-[10px] px-2 py-0 h-5 border`}>
+                        {p.criticality}
+                      </Badge>
+                      <span className="text-sm font-semibold text-slate-900 text-right">{p.score.toFixed(1)}</span>
+                    </div>
+                  ))}
+                  {topProcesses.length === 0 && (
+                    <div className="flex items-center justify-center h-full text-sm text-slate-400">
+                      Aucun processus trouvé
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Répartition par criticité - 35% (à la place des points d'attention) */}
+          <Card className="col-span-2 border-0 shadow-sm flex flex-col">
+            <CardHeader className="pb-2 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <PieChartIcon className="h-4 w-4 text-slate-400" />
+                  Répartition par criticité
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-0 px-4 pb-4">
+              <div className="h-full flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={40}
+                      outerRadius={65}
+                      paddingAngle={3}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
+                      {pieData.map((d) => (
+                        <Cell key={d.name} fill={d.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: "white",
+                        border: "1px solid #f1f5f9",
+                        borderRadius: "6px",
+                        fontSize: "12px",
+                        padding: "6px 12px",
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ===== LIGNE 3: Points d'attention seulement (à la place du donut) ===== */}
+        <div className="grid grid-cols-5 gap-4 flex-shrink-0 h-[170px]">
+          <Card className="col-span-5 border-0 shadow-sm flex flex-col">
+            <CardHeader className="pb-1 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-amber-500" />
+                  Points d'attention
+                </CardTitle>
+                <Button variant="ghost" size="sm" className="h-7 text-xs text-slate-500">
+                  Voir tout <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-0 px-4 pb-3">
+              <div className="h-full grid grid-cols-4 gap-3">
+                {attentionPoints.map((point, index) => {
+                  const Icon = point.icon;
+                  return (
+                    <div 
+                      key={index} 
+                      className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-white hover:bg-slate-50 transition-colors border border-slate-100/50"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`h-7 w-7 rounded-lg ${point.bg} flex items-center justify-center flex-shrink-0`}>
+                          <Icon className={`h-3.5 w-3.5 ${point.color}`} />
+                        </div>
+                        <p className="text-xs text-slate-700 truncate">{point.text}</p>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-6 text-xs text-slate-400 hover:text-slate-600 px-2 flex-shrink-0">
+                        {point.action}
+                      </Button>
+                    </div>
+                  );
+                })}
+                {attentionPoints.length === 0 && (
+                  <div className="flex items-center justify-center col-span-4 h-full text-sm text-slate-400">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500 mr-2" />
+                    Aucune alerte
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+      </div>
     </div>
   );
 };

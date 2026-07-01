@@ -1,34 +1,77 @@
-import { LayoutDashboard, FileText, ListChecks, BarChart3, ShieldCheck, Activity, Building2, AlertOctagon, Sparkles, Mic } from "lucide-react";
+import { 
+  LayoutDashboard, 
+  FileText, 
+  ListChecks, 
+  BarChart3, 
+  ShieldCheck, 
+  Activity, 
+  Building2, 
+  AlertOctagon, 
+  Sparkles, 
+  Mic,
+  GitBranch,
+  Users,
+  Calendar,
+  FileBarChart,
+  ClipboardList,
+  PlayCircle,
+  TrendingUp,
+  PieChart,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
 
 export type Section =
-  | "dashboard" | "form" | "plan" | "benchmark"
-  | "governance" | "entity"
-  | "bia" | "risk" | "ai" | "tenacia";
+  | "dashboard" 
+  | "form" 
+  | "plan" 
+  | "benchmark"
+  | "governance" 
+  | "entity"
+  | "bia" 
+  | "risk" 
+  | "ai" 
+  | "tenacia"
+  | "exercices"
+  | "ressources"
+  | "rapports"
+  | "scenarios";
 
+// ===== STRUCTURE COMME VIGILIA AVEC GOUVERNANCE, BENCHMARK ET TENACIA =====
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
-    label: "Pilotage",
+    label: "Vue d'ensemble",
     items: [
       { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-      { id: "ai", label: "BCM AI Consultant", icon: Sparkles },
-      { id: "benchmark", label: "Benchmark", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "Gouvernance (M1)",
-    items: [
       { id: "governance", label: "Gouvernance PCA", icon: Building2 },
+      { id: "bia", label: "Processus & BIA", icon: ClipboardList },
+      { id: "risk", label: "Risques", icon: AlertTriangle },
+      { id: "scenarios", label: "Scénarios", icon: GitBranch },
+      { id: "plan", label: "Plans de continuité", icon: ListChecks },
+      { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
+      { id: "ressources", label: "Ressources", icon: Users },
+      { id: "rapports", label: "Rapports", icon: FileBarChart },
     ],
   },
   {
-    label: "Opérationnel",
+    label: "Planifier",
     items: [
-      { id: "bia", label: "Business Impact Analysis", icon: Activity },
-      { id: "risk", label: "Analyse des Risques", icon: AlertOctagon },
-      { id: "form", label: "Identification des risques", icon: FileText },
-      { id: "plan", label: "Plan de continuité", icon: ListChecks },
+      { id: "plan", label: "Plans de continuité", icon: ListChecks },
+      { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
+    ],
+  },
+  {
+    label: "Référentiels",
+    items: [
+      { id: "benchmark", label: "Benchmark", icon: BarChart3 },
+      { id: "ressources", label: "Ressources", icon: Users },
+    ],
+  },
+  {
+    label: "Piloter",
+    items: [
+      { id: "rapports", label: "Rapports", icon: FileBarChart },
     ],
   },
   {
