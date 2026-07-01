@@ -13,7 +13,16 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['"Playfair Display"', 'ui-serif', 'Georgia', 'serif'],
+        display: ['"Playfair Display"', 'ui-serif', 'Georgia', 'serif'],
+      },
       colors: {
+        'resillia-creme': '#FFF8F2',
+        'resillia-navy': '#172030',
+        'resillia-vert': '#2A5141',
+        'resillia-ardoise': '#3B4454',
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
