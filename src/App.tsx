@@ -4,12 +4,14 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BiaProvider } from "@/contexts/BiaContext";
+import { EbiosProvider } from "@/contexts/EbiosContext";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RiskProvider } from "@/contexts/RiskContext";
+import { RoleProvider } from "@/contexts/RoleContext";
+import { StrategyProvider } from "@/contexts/StrategyContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { BcmCopilot } from "./components/chatbot/BcmCopilot";
-import TenaciaVoice from "./components/pca/bia/TenaciaVoice"; // 👈 AJOUTE CETTE LIGNE
 
 const queryClient = new QueryClient();
 
@@ -20,17 +22,39 @@ function App() {
         <GovernanceProvider>
           <BiaProvider>
             <RiskProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/tenacia-voice" element={<TenaciaVoice />} /> {/* 👈 AJOUTE CETTE ROUTE */}
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-                {/* Chatbot flottant disponible sur toutes les pages */}
-                <BcmCopilot />
-              </BrowserRouter>
+              <EbiosProvider>
+                <StrategyProvider>
+                  <RoleProvider>
+                    <Toaster />
+                    <Sonner />
+                    <BrowserRouter>
+                      <Routes>
+                        {/* Route principale */}
+                        <Route path="/" element={<Index />} />
+                        {/* Routes BIA */}
+                        <Route path="/bia" element={<Index />} />
+                        <Route path="/bia/synthese" element={<Index />} />
+                        <Route path="/tenacia-voice" element={<Index />} />
+                        {/* ✅ TOUTES LES AUTRES ROUTES EXISTANTES */}
+                        <Route path="/dashboard" element={<Index />} />
+                        <Route path="/governance" element={<Index />} />
+                        <Route path="/risk" element={<Index />} />
+                        <Route path="/plan" element={<Index />} />
+                        <Route path="/benchmark" element={<Index />} />
+                        <Route path="/exercices" element={<Index />} />
+                        <Route path="/ressources" element={<Index />} />
+                        <Route path="/rapports" element={<Index />} />
+                        <Route path="/scenarios" element={<Index />} />
+                        <Route path="/form" element={<Index />} />
+                        <Route path="/ai" element={<Index />} />
+                        {/* 404 */}
+                        <Route path="*" element={<NotFound />} />
+                      </Routes>
+                      <BcmCopilot />
+                    </BrowserRouter>
+                  </RoleProvider>
+                </StrategyProvider>
+              </EbiosProvider>
             </RiskProvider>
           </BiaProvider>
         </GovernanceProvider>

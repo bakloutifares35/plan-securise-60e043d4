@@ -1367,7 +1367,90 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
               <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2"><div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-primary">1</div><h2 className="text-lg font-semibold">Informations générales</h2></div>{data.name && <Badge variant="outline" className="text-xs">📋 {data.name}</Badge>}</div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div><Label>Nom du processus *</Label><Input value={data.name} onChange={(e) => update("name", e.target.value)} placeholder="Ex: Traitement des commandes" /></div>
-                <div><Label>Entité *</Label><Select value={data.entityId} onValueChange={(v) => update("entityId", v)}><SelectTrigger><SelectValue placeholder="Sélectionner une entité" /></SelectTrigger><SelectContent>{entities.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select></div>
+                <div><Label>Entité *</Label>
+                  <Select value={data.entityId} onValueChange={(v) => update("entityId", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner une entité" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(() => {
+                        // 🔥 FONCTION POUR DÉTERMINER LE TYPE D'ENTITÉ
+                        const getEntityType = (entity: any): string => {
+                          return (entity.type || entity.entity_type || entity.niveau || entity.level || '').toLowerCase();
+                        };
+
+                        // 🔥 FONCTION POUR SAVOIR SI C'EST UNE FILIALE
+                        const isFiliale = (entity: any): boolean => {
+                          const type = getEntityType(entity);
+                          return type === 'filiale' || type === 'subsidiary' || type === 'fille' || type === 'parent';
+                        };
+
+                        // 🔥 FONCTION POUR OBTENIR LE NIVEAU HIÉRARCHIQUE
+                        const getLevel = (entity: any): number => {
+                          const type = getEntityType(entity);
+                          if (type === 'direction' || type === 'dir' || type === 'directorate') return 1;
+                          if (type === 'departement' || type === 'dept' || type === 'department') return 2;
+                          if (type === 'service' || type === 'service') return 3;
+                          return 0; // Filiale ou niveau racine
+                        };
+
+                        // 🔥 CONSTRUIRE LA LISTE AVEC INDENTATION
+                        const items: { entity: any; level: number; isFiliale: boolean }[] = [];
+                        
+                        // D'abord les filiales
+                        const filiales = entities.filter(e => isFiliale(e));
+                        const nonFiliales = entities.filter(e => !isFiliale(e));
+
+                        filiales.forEach(f => {
+                          items.push({ entity: f, level: 0, isFiliale: true });
+                        });
+
+                        // Puis les Directions, Départements, Services
+                        const sortedNonFiliales = [...nonFiliales].sort((a, b) => {
+                          const levelA = getLevel(a);
+                          const levelB = getLevel(b);
+                          if (levelA !== levelB) return levelA - levelB;
+                          return a.name.localeCompare(b.name);
+                        });
+
+                        sortedNonFiliales.forEach(e => {
+                          const level = getLevel(e);
+                          items.push({ entity: e, level, isFiliale: false });
+                        });
+
+                        return items.map(({ entity, level, isFiliale: isF }) => {
+                          const icon = isF ? '🏛️' : level === 1 ? '🏢' : level === 2 ? '📁' : '📄';
+                          const paddingLeft = isF ? 0 : (level - 1) * 20;
+                          const isDisabled = isF;
+
+                          return (
+                            <SelectItem 
+                              key={entity.id} 
+                              value={entity.id}
+                              disabled={isDisabled}
+                              className={cn(
+                                "py-1.5",
+                                isDisabled && "opacity-50 cursor-not-allowed bg-muted/20 italic text-muted-foreground"
+                              )}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span style={{ width: `${paddingLeft}px` }} />
+                                <span>{icon}</span>
+                                <span className={isDisabled ? "line-through decoration-muted-foreground/30" : ""}>
+                                  {entity.name}
+                                  {isDisabled && <span className="text-[10px] ml-2 text-muted-foreground">(Filiale)</span>}
+                                </span>
+                              </span>
+                            </SelectItem>
+                          );
+                        });
+                      })()}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Les Filiales sont affichées mais ne peuvent pas être sélectionnées pour un processus.
+                  </p>
+                </div>
                 <div><Label>Responsable *</Label><Input value={data.owner} onChange={(e) => update("owner", e.target.value)} placeholder="Nom du responsable" /></div>
                 <div className="md:col-span-2"><Label>Description</Label><Textarea value={data.description} onChange={(e) => update("description", e.target.value)} rows={3} placeholder="Décrivez le processus..." /></div>
               </div>

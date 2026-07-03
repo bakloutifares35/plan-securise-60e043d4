@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { Sidebar, type Section } from "@/components/pca/Sidebar";
 import { Dashboard } from "@/components/pca/Dashboard";
 import { RiskForm } from "@/components/pca/RiskForm";
@@ -8,7 +9,8 @@ import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
 import { RiskMethodGate } from "@/components/pca/risk/RiskMethodGate";
 import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
-import TenaciaVoice from "@/components/pca/bia/TenaciaVoice"; // 👈 AJOUTE CETTE LIGNE
+import TenaciaVoice from "@/components/pca/bia/TenaciaVoice";
+import BIASynthesis from "@/components/pca/bia/BIASynthesis";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -16,8 +18,25 @@ import { BiaProvider } from "@/contexts/BiaContext";
 import { RiskProvider } from "@/contexts/RiskContext";
 
 const Index = () => {
+  const location = useLocation();
   const [section, setSection] = useState<Section>("dashboard");
   const [biaTab, setBiaTab] = useState<string>("dashboard");
+
+  // 👈 Lire l'URL pour déterminer la section et l'onglet
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === "/") {
+      setSection("dashboard");
+    } else if (path === "/bia") {
+      setSection("bia");
+      setBiaTab("dashboard");
+    } else if (path === "/bia/synthese") {
+      setSection("bia");
+      setBiaTab("synthese");
+    } else if (path === "/tenacia-voice") {
+      setSection("tenacia");
+    }
+  }, [location]);
 
   const handleNavigateToSection = (targetSection: string, targetTab?: string, entityId?: string) => {
     if (targetSection === "bia") {
@@ -51,7 +70,7 @@ const Index = () => {
                       <SelectItem value="form">Identification des risques</SelectItem>
                       <SelectItem value="plan">Plan de continuité</SelectItem>
                       <SelectItem value="benchmark">Benchmark</SelectItem>
-                      <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem> {/* 👈 AJOUTE CETTE LIGNE */}
+                      <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem>
                     </SelectContent>
                   </Select>
                 </header>
@@ -62,9 +81,17 @@ const Index = () => {
                   {section === "plan" && <PlanSteps />}
                   {section === "benchmark" && <Benchmark />}
                   {section === "governance" && <GovernanceModule onNavigateToSection={handleNavigateToSection} />}
-                  {section === "bia" && <BiaModule initialTab={biaTab} />}
+                  {section === "bia" && (
+                    <div>
+                      {biaTab === "synthese" ? (
+                        <BIASynthesis />
+                      ) : (
+                        <BiaModule initialTab={biaTab} />
+                      )}
+                    </div>
+                  )}
                   {section === "risk" && <RiskMethodGate />}
-                  {section === "tenacia" && <TenaciaVoice />} {/* 👈 AJOUTE CETTE LIGNE */}
+                  {section === "tenacia" && <TenaciaVoice />}
                 </div>
               </main>
             </div>
