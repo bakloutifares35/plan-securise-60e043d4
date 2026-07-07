@@ -7,19 +7,26 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, ArrowRight, Check, Plus, Trash2, ShieldAlert, TrendingUp, Server, Users, Building2, Package, Edit2 } from "lucide-react";
+import { 
+  ArrowLeft, ArrowRight, Check, ShieldAlert, TrendingUp, Building2, 
+  ChevronDown, AlertCircle, Info, X
+} from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import {
   PERIODS, AXIS_LABELS, emptyImpacts, computeMaxScore,
   scoreToCriticality, criticalityColor,
-  type Process, type ImpactAxis, type TimePeriod, type Resource, type ResourceType,
+  type Process, type ImpactAxis, type TimePeriod,
 } from "@/data/bia";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
-import { VoiceMic } from "./VoiceMic";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 // ==================== CONSTANTES GLOBALES ====================
 const AVAILABILITY_PERIODS = [
@@ -31,6 +38,19 @@ const AVAILABILITY_PERIODS = [
   { id: "P2W", label: "2sem" },
   { id: "P1M", label: "1mois" },
 ];
+
+// Ordre des périodes pour la cascade (du plus court au plus long)
+const TIME_PERIODS_ORDERED = ["P0_4H", "P4_8H", "P1D", "P2D", "P1W", "P2W", "P1M"];
+
+// ==================== STYLES PASTEL POUR LES SCORES ====================
+const SEVERITY_PASTEL_STYLES: Record<number, { bg: string; text: string; border: string; label: string }> = {
+  0: { bg: "#F5F5F5", text: "#9E9E9E", border: "#E0E0E0", label: "Aucun" },
+  1: { bg: "#E8F5E9", text: "#2E7D32", border: "#A5D6A7", label: "Mineur" },
+  2: { bg: "#FFF8E1", text: "#F57F17", border: "#FFE082", label: "Modéré" },
+  3: { bg: "#FFF3E0", text: "#E65100", border: "#FFCC80", label: "Majeur" },
+  4: { bg: "#FBE9E7", text: "#D84315", border: "#FFAB91", label: "Sévère" },
+  5: { bg: "#FFEBEE", text: "#C62828", border: "#EF9A9A", label: "Très sévère" },
+};
 
 // ==================== DESCRIPTIONS DES SCORES ====================
 const impactDescriptions: Record<ImpactAxis, Record<number, string>> = {
@@ -71,54 +91,55 @@ const impactDescriptions: Record<ImpactAxis, Record<number, string>> = {
   },
 };
 
+// ==================== COMPOSANT MATRICE STATIQUE ====================
 const StaticImpactMatrix = () => {
   const severityLevels = [
-    { label: "Very Severe", color: "bg-red-800 text-white", border: "border-red-900" },
-    { label: "Severe", color: "bg-red-600 text-white", border: "border-red-700" },
-    { label: "Major", color: "bg-orange-500 text-white", border: "border-orange-600" },
-    { label: "Moderate", color: "bg-yellow-500 text-black", border: "border-yellow-600" },
-    { label: "Minor", color: "bg-green-600 text-white", border: "border-green-700" },
+    { label: "Très sévère", color: "bg-red-800 text-white", border: "border-red-900" },
+    { label: "Sévère", color: "bg-red-600 text-white", border: "border-red-700" },
+    { label: "Majeur", color: "bg-orange-500 text-white", border: "border-orange-600" },
+    { label: "Modéré", color: "bg-yellow-500 text-black", border: "border-yellow-600" },
+    { label: "Mineur", color: "bg-green-600 text-white", border: "border-green-700" },
   ];
 
   const rows = [
     {
-      category: "💰 Financial Impact",
+      category: "💰 Impact financier",
       descriptions: [
-        "Significant financial loss which might lead to a negative business result.",
-        "High financial loss which is remarkable in the company's results.",
-        "Financial loss is tolerable.",
-        "Financial loss is marginal.",
-        "No financial loss.",
+        "Perte financière significative pouvant mener à un résultat négatif.",
+        "Perte financière élevée, remarquable dans les résultats.",
+        "Perte financière tolérable.",
+        "Perte financière marginale.",
+        "Aucune perte financière.",
       ],
     },
     {
-      category: "⚖️ Compliance / Legal Impact",
+      category: "⚖️ Conformité / Légal",
       descriptions: [
-        "Administrative complaint leads to loss of business license.",
-        "Legal violations / complaints result in significant fines for the company and may cause jail or suspended sentences.",
-        "Legal violations / complaints result in claims for compensation or company fines.",
-        "Legal violations / complaints result in no significant fines for the company.",
-        "No legal harm.",
+        "Plainte administrative menant à une perte de licence.",
+        "Violations légales / plaintes entraînant des amendes significatives et possiblement des peines de prison.",
+        "Violations légales / plaintes entraînant des demandes de dommages ou amendes.",
+        "Violations légales / plaintes sans amendes significatives.",
+        "Aucun dommage légal.",
       ],
     },
     {
-      category: "⚙️ Operational Impact",
+      category: "⚙️ Impact opérationnel",
       descriptions: [
-        "Severe disruption of the business processes.",
-        "Significant disruption of the business processes.",
-        "Acceptable impairment of the business processes (e.g., inefficient processes or parts of the business operations).",
-        "Marginal impact on the business processes.",
-        "No significant impact on the business processes.",
+        "Interruption sévère des processus métier.",
+        "Interruption significative des processus métier.",
+        "Dégradation acceptable de l'efficacité opérationnelle.",
+        "Impact marginal sur les processus métier.",
+        "Aucun impact significatif sur les processus.",
       ],
     },
     {
-      category: "📢 Reputational Impact",
+      category: "📢 Impact réputationnel",
       descriptions: [
-        "Severe reputational impact. Customers’ or business partners’ trust is irreparably damaged.",
-        "Significant reputational impact (e.g., customers, business partners). Event causes media headlines or even negative publicity.",
-        "Tolerable reputational impact (e.g., customers, business partners). Event causes small media headlines.",
-        "Marginal reputational impact which are negligible. No media notes.",
-        "No reputational impact (e.g. media notes).",
+        "Impact réputationnel sévère. Confiance des clients/partenaires irrémédiablement endommagée.",
+        "Impact réputationnel significatif. Couverture médiatique nationale.",
+        "Impact réputationnel tolérable. Petit article local.",
+        "Impact réputationnel marginal, sans couverture médiatique.",
+        "Aucun impact réputationnel.",
       ],
     },
   ];
@@ -129,7 +150,7 @@ const StaticImpactMatrix = () => {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="bg-muted/50">
-              <th className="border p-2 text-left font-semibold">Business Impact Assessment</th>
+              <th className="border p-2 text-left font-semibold">Évaluation d'impact métier</th>
               {severityLevels.map((s) => (
                 <th key={s.label} className={`border p-2 text-center font-semibold ${s.color}`}>
                   {s.label}
@@ -153,12 +174,13 @@ const StaticImpactMatrix = () => {
       </div>
       <div className="bg-muted/30 p-3 text-xs text-muted-foreground border-t">
         📊 <strong>Fourchettes d'impact financier (% de l'assiette IFRS sur 3 ans)</strong> :
-        Minor (0-0,075%) | Moderate (0,076-0,30%) | Major (0,31-1,20%) | Severe (1,21-4,80%) | Very Severe (4,81%+)
+        Mineur (0-0,075%) | Modéré (0,076-0,30%) | Majeur (0,31-1,20%) | Sévère (1,21-4,80%) | Très sévère (4,81%+)
       </div>
     </div>
   );
 };
 
+// ==================== TOOLTIP D'IMPACT ====================
 const ImpactTooltip = ({ axis }: { axis: ImpactAxis }) => {
   const descriptions = impactDescriptions[axis];
   return (
@@ -166,7 +188,7 @@ const ImpactTooltip = ({ axis }: { axis: ImpactAxis }) => {
       <Tooltip.Root delayDuration={200}>
         <Tooltip.Trigger asChild>
           <button className="ml-1 text-muted-foreground hover:text-foreground cursor-help focus:outline-none">
-            ℹ️
+            <Info className="h-3.5 w-3.5" />
           </button>
         </Tooltip.Trigger>
         <Tooltip.Portal>
@@ -188,20 +210,101 @@ const ImpactTooltip = ({ axis }: { axis: ImpactAxis }) => {
   );
 };
 
-type AppCritique = {
-  id: string;
-  name: string;
-  rto_hours: number;
-  rpo_hours: number;
-  remplacablePar: string;
+// ==================== COMPOSANT CELLULE D'IMPACT AVEC POPOVER ====================
+const ImpactCell = ({
+  value,
+  axis,
+  periodId,
+  onValueChange,
+}: {
+  value: number;
+  axis: ImpactAxis;
+  periodId: string;
+  onValueChange: (axis: ImpactAxis, periodId: string, value: number) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const style = SEVERITY_PASTEL_STYLES[value] || SEVERITY_PASTEL_STYLES[0];
+
+  const handleSelect = (val: number) => {
+    onValueChange(axis, periodId, val);
+    setOpen(false);
+  };
+
+  // Options de sélection avec couleurs pastel
+  const options = [
+    { score: 1, label: "Mineur", bg: "#E8F5E9", text: "#2E7D32", border: "#A5D6A7" },
+    { score: 2, label: "Modéré", bg: "#FFF8E1", text: "#F57F17", border: "#FFE082" },
+    { score: 3, label: "Majeur", bg: "#FFF3E0", text: "#E65100", border: "#FFCC80" },
+    { score: 4, label: "Sévère", bg: "#FBE9E7", text: "#D84315", border: "#FFAB91" },
+    { score: 5, label: "Très sévère", bg: "#FFEBEE", text: "#C62828", border: "#EF9A9A" },
+  ];
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "relative w-full min-w-[80px] px-2 py-2.5 rounded-lg border-2 text-center transition-all duration-200",
+            "hover:shadow-md hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-[#2A5141]/40 cursor-pointer",
+            "border-solid"
+          )}
+          style={{
+            backgroundColor: style.bg,
+            color: style.text,
+            borderColor: style.border,
+          }}
+        >
+          <div className="flex flex-col items-center">
+            <span className="text-xs font-medium">{style.label}</span>
+            <span className="text-[10px] opacity-60">{value}/5</span>
+          </div>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent 
+        className="w-48 p-1.5 bg-white border-[#E8E4DC] shadow-lg rounded-lg" 
+        align="center"
+        sideOffset={8}
+      >
+        <div className="space-y-1">
+          <p className="text-[10px] font-medium text-[#172030]/50 uppercase tracking-wider px-2 pb-1 border-b border-[#E8E4DC]">
+            {AXIS_LABELS[axis]} — Choisir un niveau
+          </p>
+          {options.map((opt) => {
+            const isSelected = value === opt.score;
+            return (
+              <button
+                key={opt.score}
+                onClick={() => handleSelect(opt.score)}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all",
+                  "hover:shadow-sm hover:scale-[1.02]",
+                  isSelected && "ring-2 ring-[#2A5141] ring-offset-1"
+                )}
+                style={{
+                  backgroundColor: opt.bg,
+                  color: opt.text,
+                }}
+              >
+                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.text }} />
+                <span className="flex-1 text-left font-medium">{opt.label}</span>
+                <span className="text-xs opacity-50">{opt.score}/5</span>
+                {isSelected && <Check className="h-3.5 w-3.5 flex-shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 };
 
+// ════════════════════════════════════════════════════════════════════
+// ✅ STEPS - SEULEMENT 3 ÉTAPES
+// ════════════════════════════════════════════════════════════════════
 const STEPS = [
   { id: "general", label: "Général", icon: "📋" },
   { id: "impact", label: "Impact métier", icon: "🎯" },
-  { id: "rto", label: "Délais & RTO/RPO", icon: "⏱️" },
-  { id: "resources", label: "Ressources", icon: "🛠️" },
-  { id: "validation", label: "Validation", icon: "✅" }
+  { id: "rto", label: "Délais & RTO/RPO", icon: "⏱️" }
 ];
 
 const getFirstCriticalPeriod = (impacts: any): { periodId: TimePeriod; hours: number; maxScore: number } | null => {
@@ -327,930 +430,9 @@ const newProcess = (): Process => ({
   lastUpdated: new Date().toISOString().slice(0, 10),
 });
 
-// ==================== RESSOURCES EDITOR COMPLET ====================
-const ResourcesEditor = ({ 
-  resources, 
-  onChange, 
-  appsCritiques, 
-  onAppsChange,
-  allProcesses,
-  departmentId,
-  processName,
-  currentStep,
-}: { 
-  resources: Resource[]; 
-  onChange: (r: Resource[]) => void;
-  appsCritiques: AppCritique[];
-  onAppsChange: (apps: AppCritique[]) => void;
-  allProcesses: Process[];
-  departmentId: string;
-  processName: string;
-  currentStep: number;
-}) => {
-  // ════════════════════════════════════════════════════
-  // ✅ ONGLETS PRINCIPAUX : "Apps IT" et "Ressources partagées"
-  // ════════════════════════════════════════════════════
-  const [activeTab, setActiveTab] = useState<"apps" | "shared">("apps");
-  
-  // Sous-onglets pour les ressources partagées
-  const [sharedSubTab, setSharedSubTab] = useState<"HR" | "Equipement" | "Fournisseur">("HR");
-
-  // États pour les formulaires d'ajout
-  const [showAppForm, setShowAppForm] = useState(false);
-  const [showHRForm, setShowHRForm] = useState(false);
-  const [showEquipmentForm, setShowEquipmentForm] = useState(false);
-  const [showSupplierForm, setShowSupplierForm] = useState(false);
-
-  // États pour l'édition
-  const [editingResource, setEditingResource] = useState<any>(null);
-  const [editingApp, setEditingApp] = useState<any>(null);
-
-  // Nouvelle application IT
-  const [newApp, setNewApp] = useState<Omit<AppCritique, "id">>({
-    name: "",
-    rto_hours: 4,
-    rpo_hours: 1,
-    remplacablePar: "",
-  });
-
-  // Nouvelle ressource HR (avec disponibilités)
-  const [newHR, setNewHR] = useState({
-    name: "",
-    role: "",
-    phone: "",
-    email: "",
-    availability: {
-      P0_4H: false,
-      P4_8H: false,
-      P1D: false,
-      P2D: false,
-      P1W: false,
-      P2W: false,
-      P1M: false
-    }
-  });
-
-  // Nouvel équipement
-  const [newEquipment, setNewEquipment] = useState({
-    name: "",
-    quantity: 1,
-    substitutability: ""
-  });
-
-  // Nouveau fournisseur (avec RTO/RPO)
-  const [newSupplier, setNewSupplier] = useState({
-    name: "",
-    rpo_hours: 1,
-    substitutability: ""
-  });
-
-  // ✅ Récupérer TOUTES les ressources du département (depuis tous les processus)
-  const departmentResources = useMemo(() => {
-    const deptProcesses = allProcesses.filter(p => p.entityId === departmentId);
-    const allResources: Resource[] = [];
-    const seen = new Set<string>();
-
-    for (const proc of deptProcesses) {
-      for (const r of proc.resources || []) {
-        const key = r.type + r.name;
-        if (!seen.has(key)) {
-          seen.add(key);
-          allResources.push(r);
-        }
-      }
-    }
-    return allResources;
-  }, [allProcesses, departmentId]);
-
-  // Filtrer les ressources du département par type
-  const getDepartmentResourcesByType = (type: ResourceType) => 
-    departmentResources.filter(r => r.type === type);
-
-  // ============ APPLICATIONS IT ============
-  const addApp = () => {
-    if (!newApp.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom d'application" });
-      return;
-    }
-    onAppsChange([...appsCritiques, { ...newApp, id: `app_${Date.now()}` }]);
-    setNewApp({ name: "", rto_hours: 4, rpo_hours: 1, remplacablePar: "" });
-    setShowAppForm(false);
-    toast({ title: "Application ajoutée", description: newApp.name });
-  };
-
-  const removeApp = (id: string) => {
-    onAppsChange(appsCritiques.filter(a => a.id !== id));
-    toast({ title: "Application supprimée" });
-  };
-
-  const startEditApp = (app: any) => {
-    setEditingApp({ ...app });
-  };
-
-  const saveEditApp = () => {
-    if (!editingApp) return;
-    if (!editingApp.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
-      return;
-    }
-    onAppsChange(appsCritiques.map(a => a.id === editingApp.id ? editingApp : a));
-    setEditingApp(null);
-    toast({ title: "Application modifiée", description: editingApp.name });
-  };
-
-  // ============ RESSOURCES HUMAINES ============
-  const addHR = () => {
-    if (!newHR.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
-      return;
-    }
-    const hasAvailability = Object.values(newHR.availability).some(v => v === true);
-    if (!hasAvailability) {
-      toast({ title: "Attention", description: "Veuillez sélectionner au moins une période de disponibilité" });
-      return;
-    }
-    const newResourceItem: any = {
-      id: `hr_${Date.now()}`,
-      type: "HR",
-      name: newHR.name,
-      role: newHR.role || "—",
-      phone: newHR.phone || "",
-      email: newHR.email || "",
-      availability: newHR.availability,
-      quantity: 1,
-    };
-    onChange([...resources, newResourceItem]);
-    setNewHR({
-      name: "",
-      role: "",
-      phone: "",
-      email: "",
-      availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
-    });
-    setShowHRForm(false);
-    toast({ title: "Ressource RH ajoutée", description: newHR.name });
-  };
-
-  // ============ ÉQUIPEMENTS ============
-  const addEquipment = () => {
-    if (!newEquipment.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom d'équipement" });
-      return;
-    }
-    const newResourceItem: any = {
-      id: `eq_${Date.now()}`,
-      type: "Equipement",
-      name: newEquipment.name,
-      quantity: newEquipment.quantity || 1,
-      substitutability: newEquipment.substitutability || "",
-    };
-    onChange([...resources, newResourceItem]);
-    setNewEquipment({ name: "", quantity: 1, substitutability: "" });
-    setShowEquipmentForm(false);
-    toast({ title: "Équipement ajouté", description: newEquipment.name });
-  };
-
-  // ============ FOURNISSEURS (avec RPO uniquement) ============
-  const addSupplier = () => {
-    if (!newSupplier.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom de fournisseur" });
-      return;
-    }
-    const newResourceItem: any = {
-      id: `sup_${Date.now()}`,
-      type: "Fournisseur",
-      name: newSupplier.name,
-      rpo_hours: newSupplier.rpo_hours || 1,
-      substitutability: newSupplier.substitutability || "",
-      quantity: 1,
-    };
-    onChange([...resources, newResourceItem]);
-    setNewSupplier({ name: "", rpo_hours: 1, substitutability: "" });
-    setShowSupplierForm(false);
-    toast({ title: "Fournisseur ajouté", description: newSupplier.name });
-  };
-
-  // ============ SUPPRESSION (supprime même si la ressource est dans d'autres processus) ============
-  const removeResource = (id: string) => {
-    const resource = resources.find(r => r.id === id);
-    onChange(resources.filter(r => r.id !== id));
-    toast({ title: "Ressource supprimée du processus", description: resource?.name });
-  };
-
-  // ============ ÉDITION RESSOURCE ============
-  const startEditResource = (resource: any) => {
-    setEditingResource({ ...resource });
-  };
-
-  const saveEditResource = () => {
-    if (!editingResource) return;
-    if (!editingResource.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
-      return;
-    }
-    onChange(resources.map(r => r.id === editingResource.id ? editingResource : r));
-    setEditingResource(null);
-    toast({ title: "Ressource modifiée", description: editingResource.name });
-  };
-
-  // ============ RENDU ============
-  return (
-    <div className="space-y-6">
-      {/* ════════════════════════════════════════════════ */}
-      {/* ✅ TITRE DU PROCESSUS - taille moyenne, sans badge */}
-      {/* ════════════════════════════════════════════════ */}
-      <div className="bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 rounded-xl p-4 border border-primary/20">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-1 rounded-full bg-primary" />
-          <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Processus en cours</p>
-            <h2 className="text-xl md:text-2xl font-bold text-primary tracking-tight">
-              {processName || "Nouveau processus"}
-            </h2>
-          </div>
-        </div>
-      </div>
-
-      {/* ════════════════════════════════════════════════ */}
-      {/* ✅ ONGLETS PRINCIPAUX */}
-      {/* ════════════════════════════════════════════════ */}
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        <button
-          onClick={() => setActiveTab("apps")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            activeTab === "apps"
-              ? "bg-purple-100 text-purple-700 ring-2 ring-purple-300"
-              : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
-          }`}
-        >
-          <Server className="h-4 w-4" />
-          Applications IT
-          <Badge variant="secondary" className="text-xs">{appsCritiques.length}</Badge>
-        </button>
-        <button
-          onClick={() => setActiveTab("shared")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            activeTab === "shared"
-              ? "bg-blue-100 text-blue-700 ring-2 ring-blue-300"
-              : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
-          }`}
-        >
-          <Users className="h-4 w-4" />
-          Ressources partagées
-          <Badge variant="secondary" className="text-xs">{departmentResources.length}</Badge>
-        </button>
-      </div>
-
-      {/* ════════════════════════════════════════════════ */}
-      {/* ✅ SECTION A — APPLICATIONS IT */}
-      {/* ════════════════════════════════════════════════ */}
-      {activeTab === "apps" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Applications UNIQUEMENT utilisées par ce processus avec leurs RTO/RPO spécifiques.</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => setShowAppForm(!showAppForm)}>
-              <Plus className="h-3 w-3 mr-1" />
-              Ajouter
-            </Button>
-          </div>
-
-          {showAppForm && (
-            <div className="mb-4 p-4 bg-white/50 rounded-lg border border-purple-200">
-              <div className="grid grid-cols-4 gap-3">
-                <div className="col-span-1">
-                  <Label className="text-xs">Nom *</Label>
-                  <Input value={newApp.name} onChange={(e) => setNewApp({ ...newApp, name: e.target.value })} placeholder="Ex: SWIFT, SAP..." className="h-8 text-sm" />
-                </div>
-                <div>
-                  <Label className="text-xs">RTO (h)</Label>
-                  <Input type="number" value={newApp.rto_hours} onChange={(e) => setNewApp({ ...newApp, rto_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} />
-                </div>
-                <div>
-                  <Label className="text-xs">RPO (h)</Label>
-                  <Input type="number" value={newApp.rpo_hours} onChange={(e) => setNewApp({ ...newApp, rpo_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} />
-                </div>
-                <div>
-                  <Label className="text-xs">Remplaçable par</Label>
-                  <Input value={newApp.remplacablePar} onChange={(e) => setNewApp({ ...newApp, remplacablePar: e.target.value })} placeholder="Ex: solution manuelle..." className="h-8 text-sm" />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 mt-3">
-                <Button variant="ghost" size="sm" onClick={() => setShowAppForm(false)}>Annuler</Button>
-                <Button size="sm" onClick={addApp}>Ajouter</Button>
-              </div>
-            </div>
-          )}
-
-          {appsCritiques.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucune application IT critique pour ce processus.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Application</TableHead>
-                  <TableHead className="text-center">RTO</TableHead>
-                  <TableHead className="text-center">RPO</TableHead>
-                  <TableHead>Remplaçable par</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {appsCritiques.map((app) => (
-                  <TableRow key={app.id}>
-                    {editingApp?.id === app.id ? (
-                      <>
-                        <TableCell><Input value={editingApp.name} onChange={(e) => setEditingApp({ ...editingApp, name: e.target.value })} className="h-8 text-sm" /></TableCell>
-                        <TableCell className="text-center"><Input type="number" value={editingApp.rto_hours} onChange={(e) => setEditingApp({ ...editingApp, rto_hours: Number(e.target.value) })} className="h-8 text-sm w-20 mx-auto" min={0} step={0.5} /></TableCell>
-                        <TableCell className="text-center"><Input type="number" value={editingApp.rpo_hours} onChange={(e) => setEditingApp({ ...editingApp, rpo_hours: Number(e.target.value) })} className="h-8 text-sm w-20 mx-auto" min={0} step={0.5} /></TableCell>
-                        <TableCell><Input value={editingApp.remplacablePar} onChange={(e) => setEditingApp({ ...editingApp, remplacablePar: e.target.value })} className="h-8 text-sm" /></TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" className="h-7 w-7 text-green-600" onClick={saveEditApp}><Check className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="sm" className="h-7 w-7" onClick={() => setEditingApp(null)}>✕</Button>
-                        </TableCell>
-                      </>
-                    ) : (
-                      <>
-                        <TableCell className="font-medium">{app.name}</TableCell>
-                        <TableCell className="text-center"><Badge className="bg-red-50 text-red-700">{app.rto_hours}h</Badge></TableCell>
-                        <TableCell className="text-center"><Badge className="bg-orange-50 text-orange-700">{app.rpo_hours}h</Badge></TableCell>
-                        <TableCell>{app.remplacablePar || "—"}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditApp(app)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeApp(app.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-                          </div>
-                        </TableCell>
-                      </>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-      )}
-
-      {/* ════════════════════════════════════════════════ */}
-      {/* ✅ SECTION B — RESSOURCES PARTAGÉES */}
-      {/* ════════════════════════════════════════════════ */}
-      {activeTab === "shared" && (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Toutes les ressources partagées par les processus du département.</p>
-
-          {/* Sous-onglets */}
-          <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-            <button
-              onClick={() => setSharedSubTab("HR")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
-                sharedSubTab === "HR"
-                  ? "bg-blue-100 text-blue-700 ring-2 ring-blue-300"
-                  : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              <Users className="h-4 w-4" /> RH <Badge variant="secondary" className="text-xs">{getDepartmentResourcesByType("HR").length}</Badge>
-            </button>
-            <button
-              onClick={() => setSharedSubTab("Equipement")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
-                sharedSubTab === "Equipement"
-                  ? "bg-yellow-100 text-yellow-700 ring-2 ring-yellow-300"
-                  : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              <Package className="h-4 w-4" /> Équipements <Badge variant="secondary" className="text-xs">{getDepartmentResourcesByType("Equipement").length}</Badge>
-            </button>
-            <button
-              onClick={() => setSharedSubTab("Fournisseur")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
-                sharedSubTab === "Fournisseur"
-                  ? "bg-orange-100 text-orange-700 ring-2 ring-orange-300"
-                  : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              <Building2 className="h-4 w-4" /> Fournisseurs <Badge variant="secondary" className="text-xs">{getDepartmentResourcesByType("Fournisseur").length}</Badge>
-            </button>
-          </div>
-
-          {/* ── RESSOURCES HUMAINES ── */}
-          {sharedSubTab === "HR" && (
-            <div className="space-y-4">
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={() => setShowHRForm(!showHRForm)}>
-                  <Plus className="h-3 w-3 mr-1" /> Ajouter une RH
-                </Button>
-              </div>
-
-              {showHRForm && (
-                <div className="p-4 bg-white/50 rounded-lg border border-blue-200">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><Label className="text-xs">Nom *</Label><Input value={newHR.name} onChange={(e) => setNewHR({ ...newHR, name: e.target.value })} placeholder="Jean Dupont" className="h-8 text-sm" /></div>
-                    <div><Label className="text-xs">Rôle</Label><Input value={newHR.role} onChange={(e) => setNewHR({ ...newHR, role: e.target.value })} placeholder="Responsable" className="h-8 text-sm" /></div>
-                    <div><Label className="text-xs">Téléphone</Label><Input value={newHR.phone} onChange={(e) => setNewHR({ ...newHR, phone: e.target.value })} placeholder="+33 6..." className="h-8 text-sm" /></div>
-                    <div><Label className="text-xs">Email</Label><Input value={newHR.email} onChange={(e) => setNewHR({ ...newHR, email: e.target.value })} placeholder="nom@email.com" className="h-8 text-sm" /></div>
-                  </div>
-                  <div className="mt-3">
-                    <Label className="text-xs font-medium">Périodes de disponibilité</Label>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {AVAILABILITY_PERIODS.map((period) => (
-                        <label key={period.id} className="flex items-center gap-1 text-xs">
-                          <input type="checkbox" checked={newHR.availability[period.id]} onChange={(e) => setNewHR({ ...newHR, availability: { ...newHR.availability, [period.id]: e.target.checked } })} className="rounded" /> {period.label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 mt-3">
-                    <Button variant="ghost" size="sm" onClick={() => setShowHRForm(false)}>Annuler</Button>
-                    <Button size="sm" onClick={addHR}>Ajouter</Button>
-                  </div>
-                </div>
-              )}
-
-              {getDepartmentResourcesByType("HR").length === 0 ? (
-                <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucune ressource humaine dans ce département.</p>
-              ) : (
-                <div className="space-y-2">
-                  {getDepartmentResourcesByType("HR").map((r) => (
-                    <div key={r.id} className="p-3 bg-blue-50/30 rounded-lg border border-blue-100/50">
-                      {editingResource?.id === r.id ? (
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div><Label className="text-xs">Nom</Label><Input value={editingResource.name} onChange={(e) => setEditingResource({ ...editingResource, name: e.target.value })} className="h-8 text-sm" /></div>
-                            <div><Label className="text-xs">Rôle</Label><Input value={editingResource.role} onChange={(e) => setEditingResource({ ...editingResource, role: e.target.value })} className="h-8 text-sm" /></div>
-                            <div><Label className="text-xs">Téléphone</Label><Input value={editingResource.phone} onChange={(e) => setEditingResource({ ...editingResource, phone: e.target.value })} className="h-8 text-sm" /></div>
-                            <div><Label className="text-xs">Email</Label><Input value={editingResource.email} onChange={(e) => setEditingResource({ ...editingResource, email: e.target.value })} className="h-8 text-sm" /></div>
-                          </div>
-                          <div className="mt-2">
-                            <Label className="text-xs font-medium">Périodes de disponibilité</Label>
-                            <div className="flex flex-wrap gap-2 mt-1">
-                              {AVAILABILITY_PERIODS.map((period) => (
-                                <label key={period.id} className="flex items-center gap-1 text-xs">
-                                  <input 
-                                    type="checkbox" 
-                                    checked={editingResource.availability?.[period.id] || false} 
-                                    onChange={(e) => setEditingResource({ 
-                                      ...editingResource, 
-                                      availability: { ...editingResource.availability, [period.id]: e.target.checked } 
-                                    })} 
-                                    className="rounded" 
-                                  /> {period.label}
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="flex justify-end gap-2 mt-2">
-                            <Button variant="ghost" size="sm" onClick={() => setEditingResource(null)}>Annuler</Button>
-                            <Button size="sm" onClick={saveEditResource}>Enregistrer</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-sm">{r.name}</p>
-                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                              <span>👔 {(r as any).role || "—"}</span>
-                              {(r as any).phone && <span>📞 {(r as any).phone}</span>}
-                              {(r as any).email && <span>✉️ {(r as any).email}</span>}
-                            </div>
-                            {(r as any).availability && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {AVAILABILITY_PERIODS.map((period) => (
-                                  <Badge key={period.id} variant={(r as any).availability[period.id] ? "default" : "outline"} className="text-[10px]">{period.label}</Badge>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditResource(r)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource(r.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── ÉQUIPEMENTS ── */}
-          {sharedSubTab === "Equipement" && (
-            <div className="space-y-4">
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={() => setShowEquipmentForm(!showEquipmentForm)}>
-                  <Plus className="h-3 w-3 mr-1" /> Ajouter un équipement
-                </Button>
-              </div>
-
-              {showEquipmentForm && (
-                <div className="p-4 bg-white/50 rounded-lg border border-yellow-200">
-                  <div className="grid grid-cols-3 gap-3">
-                    <div><Label className="text-xs">Nom *</Label><Input value={newEquipment.name} onChange={(e) => setNewEquipment({ ...newEquipment, name: e.target.value })} placeholder="Scanner, Serveur..." className="h-8 text-sm" /></div>
-                    <div><Label className="text-xs">Quantité</Label><Input type="number" min={1} value={newEquipment.quantity} onChange={(e) => setNewEquipment({ ...newEquipment, quantity: Number(e.target.value) })} className="h-8 text-sm" /></div>
-                    <div><Label className="text-xs">Remplaçable par</Label><Input value={newEquipment.substitutability} onChange={(e) => setNewEquipment({ ...newEquipment, substitutability: e.target.value })} placeholder="Équipement de secours..." className="h-8 text-sm" /></div>
-                  </div>
-                  <div className="flex justify-end gap-2 mt-3">
-                    <Button variant="ghost" size="sm" onClick={() => setShowEquipmentForm(false)}>Annuler</Button>
-                    <Button size="sm" onClick={addEquipment}>Ajouter</Button>
-                  </div>
-                </div>
-              )}
-
-              {getDepartmentResourcesByType("Equipement").length === 0 ? (
-                <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucun équipement dans ce département.</p>
-              ) : (
-                <div className="space-y-2">
-                  {getDepartmentResourcesByType("Equipement").map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-3 bg-yellow-50/30 rounded-lg border border-yellow-100/50">
-                      {editingResource?.id === r.id ? (
-                        <div className="w-full space-y-2">
-                          <div className="grid grid-cols-3 gap-2">
-                            <div><Label className="text-xs">Nom</Label><Input value={editingResource.name} onChange={(e) => setEditingResource({ ...editingResource, name: e.target.value })} className="h-8 text-sm" /></div>
-                            <div><Label className="text-xs">Quantité</Label><Input type="number" value={editingResource.quantity} onChange={(e) => setEditingResource({ ...editingResource, quantity: Number(e.target.value) })} className="h-8 text-sm" min={1} /></div>
-                            <div><Label className="text-xs">Remplaçable par</Label><Input value={editingResource.substitutability} onChange={(e) => setEditingResource({ ...editingResource, substitutability: e.target.value })} className="h-8 text-sm" /></div>
-                          </div>
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => setEditingResource(null)}>Annuler</Button>
-                            <Button size="sm" onClick={saveEditResource}>Enregistrer</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div>
-                            <p className="font-medium text-sm">{r.name}</p>
-                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                              <span>📦 {r.quantity} unité(s)</span>
-                              {r.substitutability && <span>🔄 {r.substitutability}</span>}
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditResource(r)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource(r.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── FOURNISSEURS (avec RPO uniquement) ── */}
-          {sharedSubTab === "Fournisseur" && (
-            <div className="space-y-4">
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={() => setShowSupplierForm(!showSupplierForm)}>
-                  <Plus className="h-3 w-3 mr-1" /> Ajouter un fournisseur
-                </Button>
-              </div>
-
-              {showSupplierForm && (
-                <div className="p-4 bg-white/50 rounded-lg border border-orange-200">
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-1"><Label className="text-xs">Nom *</Label><Input value={newSupplier.name} onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })} placeholder="AWS, OVH..." className="h-8 text-sm" /></div>
-                    <div><Label className="text-xs">RPO (h)</Label><Input type="number" value={newSupplier.rpo_hours} onChange={(e) => setNewSupplier({ ...newSupplier, rpo_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} /></div>
-                    <div><Label className="text-xs">Remplaçable par</Label><Input value={newSupplier.substitutability} onChange={(e) => setNewSupplier({ ...newSupplier, substitutability: e.target.value })} placeholder="Fournisseur alternatif..." className="h-8 text-sm" /></div>
-                  </div>
-                  <div className="flex justify-end gap-2 mt-3">
-                    <Button variant="ghost" size="sm" onClick={() => setShowSupplierForm(false)}>Annuler</Button>
-                    <Button size="sm" onClick={addSupplier}>Ajouter</Button>
-                  </div>
-                </div>
-              )}
-
-              {getDepartmentResourcesByType("Fournisseur").length === 0 ? (
-                <p className="text-sm text-muted-foreground italic text-center py-6 border border-dashed rounded-lg">Aucun fournisseur dans ce département.</p>
-              ) : (
-                <div className="space-y-2">
-                  {getDepartmentResourcesByType("Fournisseur").map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-3 bg-orange-50/30 rounded-lg border border-orange-100/50">
-                      {editingResource?.id === r.id ? (
-                        <div className="w-full space-y-2">
-                          <div className="grid grid-cols-3 gap-2">
-                            <div><Label className="text-xs">Nom</Label><Input value={editingResource.name} onChange={(e) => setEditingResource({ ...editingResource, name: e.target.value })} className="h-8 text-sm" /></div>
-                            <div><Label className="text-xs">RPO (h)</Label><Input type="number" value={editingResource.rpo_hours} onChange={(e) => setEditingResource({ ...editingResource, rpo_hours: Number(e.target.value) })} className="h-8 text-sm" min={0} step={0.5} /></div>
-                            <div><Label className="text-xs">Remplaçable par</Label><Input value={editingResource.substitutability} onChange={(e) => setEditingResource({ ...editingResource, substitutability: e.target.value })} className="h-8 text-sm" /></div>
-                          </div>
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => setEditingResource(null)}>Annuler</Button>
-                            <Button size="sm" onClick={saveEditResource}>Enregistrer</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div>
-                            <p className="font-medium text-sm">{r.name}</p>
-                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                              {(r as any).rpo_hours && <span>📊 RPO: {(r as any).rpo_hours}h</span>}
-                              {r.substitutability && <span>🔄 {r.substitutability}</span>}
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEditResource(r)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeResource(r.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============ SUMMARY VIEW ============
-const SummaryView = ({ data, entityName, criticality, score, appsCritiques }: { 
-  data: Process; 
-  entityName: string; 
-  criticality: ReturnType<typeof scoreToCriticality>; 
-  score: number;
-  appsCritiques: AppCritique[];
-}) => {
-  const scorePercentage = Math.round((score / 5) * 100);
-  const getScoreColor = () => {
-    if (score >= 4) return "bg-red-500";
-    if (score >= 3) return "bg-orange-500";
-    if (score >= 2) return "bg-yellow-500";
-    return "bg-green-500";
-  };
-  const getRecommendation = () => {
-    if (score >= 4) return { title: "Action urgente requise", message: "Ce processus est CRITIQUE. Un PCA détaillé doit être mis en place immédiatement.", icon: "🚨", color: "text-red-700 bg-red-50 border-red-200" };
-    if (score >= 3) return { title: "Priorité haute", message: "Ce processus est MAJEUR. Planifiez la mise en place d'un PCA dans les 30 jours.", icon: "⚠️", color: "text-orange-700 bg-orange-50 border-orange-200" };
-    if (score >= 2) return { title: "À surveiller", message: "Ce processus est MODÉRÉ. Une documentation de continuité est recommandée.", icon: "📋", color: "text-yellow-700 bg-yellow-50 border-yellow-200" };
-    return { title: "Non critique", message: "Ce processus est MINEUR. Aucune action immédiate requise.", icon: "✅", color: "text-green-700 bg-green-50 border-green-200" };
-  };
-  const recommendation = getRecommendation();
-
-  const resourcesByType = {
-    HR: data.resources.filter(r => r.type === "HR"),
-    Equipement: data.resources.filter(r => r.type === "Equipement"),
-    Fournisseur: data.resources.filter(r => r.type === "Fournisseur"),
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="text-center mb-6">
-        <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-primary/10 mb-4">
-          <span className="text-3xl font-bold text-primary">{scorePercentage}%</span>
-        </div>
-        <h2 className="text-xl font-bold text-foreground">Validation du BIA</h2>
-        <p className="text-sm text-muted-foreground">Vérifiez les informations avant validation</p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <span className="text-base">📋</span> Identification
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between py-1 border-b">
-              <span className="text-muted-foreground">Nom du processus</span>
-              <span className="font-medium">{data.name || "—"}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b">
-              <span className="text-muted-foreground">Entité</span>
-              <span className="font-medium">{entityName || "—"}</span>
-            </div>
-            <div className="flex justify-between py-1">
-              <span className="text-muted-foreground">Responsable</span>
-              <span className="font-medium">{data.owner || "—"}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <span className="text-base">⏱️</span> Objectifs de continuité
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-muted/30 rounded-lg p-2 text-center">
-                <p className="text-xs text-muted-foreground">RTO</p>
-                <p className="text-lg font-bold text-primary">{data.rto} <span className="text-xs">heures</span></p>
-              </div>
-              <div className="bg-muted/30 rounded-lg p-2 text-center">
-                <p className="text-xs text-muted-foreground">RPO</p>
-                <p className="text-lg font-bold text-primary">{data.rpo} <span className="text-xs">heures</span></p>
-              </div>
-              <div className="bg-muted/30 rounded-lg p-2 text-center">
-                <p className="text-xs text-muted-foreground">MTPD</p>
-                <p className="text-lg font-bold text-primary">{data.mtpd} <span className="text-xs">heures</span></p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <span className="text-base">🎯</span> Niveau de criticité
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4 mb-3">
-            <div className={`px-3 py-1 rounded-full text-sm font-semibold ${criticalityColor(criticality)}`}>
-              {criticality}
-            </div>
-            <div className="flex-1">
-              <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                <div className={`h-full ${getScoreColor()} transition-all duration-500`} style={{ width: `${scorePercentage}%` }} />
-              </div>
-            </div>
-            <span className="text-sm font-medium">{score}/5</span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Score calculé automatiquement à partir de l'évaluation des impacts.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card className={recommendation.color}>
-        <CardContent className="pt-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">{recommendation.icon}</span>
-            <div>
-              <p className="font-semibold text-sm">{recommendation.title}</p>
-              <p className="text-sm mt-0.5">{recommendation.message}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {data.description && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <span className="text-base">📝</span> Description
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{data.description}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <span className="text-base">🛠️</span> Ressources & Applications critiques
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            {appsCritiques && appsCritiques.length > 0 && (
-              <div className="border rounded-lg overflow-hidden md:col-span-2">
-                <div className="bg-purple-100 text-purple-700 px-3 py-2 border-b flex items-center gap-2">
-                  <Server className="h-4 w-4" />
-                  <span className="font-semibold text-sm">Applications IT (ce processus)</span>
-                  <Badge variant="outline" className="ml-auto text-xs">{appsCritiques.length}</Badge>
-                </div>
-                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
-                  {appsCritiques.map((app) => (
-                    <div key={app.id} className="p-2 bg-purple-50/30 rounded-lg border border-purple-100/50">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-medium text-sm">{app.name}</p>
-                        <div className="flex gap-1">
-                          <Badge className="bg-red-50 text-red-700 text-xs">RTO: {app.rto_hours}h</Badge>
-                          <Badge className="bg-orange-50 text-orange-700 text-xs">RPO: {app.rpo_hours}h</Badge>
-                        </div>
-                      </div>
-                      {app.remplacablePar && (
-                        <p className="text-xs text-muted-foreground">🔄 Remplaçable par : {app.remplacablePar}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {resourcesByType.HR.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-blue-100 text-blue-700 px-3 py-2 border-b flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  <span className="font-semibold text-sm">Ressources humaines</span>
-                  <Badge variant="outline" className="ml-auto text-xs">{resourcesByType.HR.length}</Badge>
-                </div>
-                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
-                  {resourcesByType.HR.map((r) => (
-                    <div key={r.id} className="p-2 bg-blue-50/30 rounded-lg border border-blue-100/50">
-                      <p className="font-medium text-sm">{r.name}</p>
-                      <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mt-1">
-                        <span>👔 {(r as any).role || "—"}</span>
-                        <span>📞 {(r as any).phone || "—"}</span>
-                        <span className="col-span-2">✉️ {(r as any).email || "—"}</span>
-                      </div>
-                      {(r as any).availability && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {AVAILABILITY_PERIODS.map((period) => (
-                            <Badge
-                              key={period.id}
-                              variant={(r as any).availability[period.id] ? "default" : "outline"}
-                              className="text-[10px]"
-                            >
-                              {period.label}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {resourcesByType.Equipement.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-yellow-100 text-yellow-700 px-3 py-2 border-b flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  <span className="font-semibold text-sm">Équipements</span>
-                  <Badge variant="outline" className="ml-auto text-xs">{resourcesByType.Equipement.length}</Badge>
-                </div>
-                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
-                  {resourcesByType.Equipement.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-2 bg-yellow-50/30 rounded-lg border border-yellow-100/50">
-                      <div>
-                        <p className="font-medium text-sm">{r.name}</p>
-                        <p className="text-xs text-muted-foreground">{r.quantity} unité(s)</p>
-                      </div>
-                      {r.substitutability && <Badge variant="outline" className="text-xs">🔄 {r.substitutability}</Badge>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {resourcesByType.Fournisseur.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-orange-100 text-orange-700 px-3 py-2 border-b flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  <span className="font-semibold text-sm">Fournisseurs</span>
-                  <Badge variant="outline" className="ml-auto text-xs">{resourcesByType.Fournisseur.length}</Badge>
-                </div>
-                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
-                  {resourcesByType.Fournisseur.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-2 bg-orange-50/30 rounded-lg border border-orange-100/50">
-                      <div>
-                        <p className="font-medium text-sm">{r.name}</p>
-                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground mt-1">
-                          {(r as any).rpo_hours && <Badge variant="outline" className="text-[10px]">RPO: {(r as any).rpo_hours}h</Badge>}
-                          {r.substitutability && <span>🔄 {r.substitutability}</span>}
-                        </div>
-                      </div>
-                      {r.substitutability && <Badge variant="outline" className="text-xs">🔄 {r.substitutability}</Badge>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {data.resources.length === 0 && appsCritiques.length === 0 && (
-            <p className="text-sm text-muted-foreground italic text-center py-4">Aucune ressource ou application déclarée.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      {data.dependsOn && data.dependsOn.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <span className="text-base">🔗</span> Dépendances ({data.dependsOn.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {data.dependsOn.map((depId, idx) => (
-                <Badge key={idx} variant="secondary" className="text-xs">
-                  Dépendance {idx + 1}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex justify-end">
-        <Button variant="outline" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
-          ↑ Revoir le formulaire
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-// ============ COMPOSANT PRINCIPAL BiaWizard ============
+// ════════════════════════════════════════════════════════════════════
+// ✅ COMPOSANT PRINCIPAL - 3 ÉTAPES UNIQUEMENT
+// ════════════════════════════════════════════════════════════════════
 export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: () => void }) => {
   const { processes, upsertProcess } = useBia();
   const { entities } = useGovernance();
@@ -1265,23 +447,40 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
   const [step, setStep] = useState(0);
   const [data, setData] = useState<any>(initial);
 
-  useEffect(() => {
-    if (data.id) {
-      localStorage.setItem("currentProcessId", data.id);
-      localStorage.setItem("currentProcessName", data.name);
-      const entity = entities.find(e => e.id === data.entityId);
-      if (entity) {
-        localStorage.setItem("currentEntitySector", entity.sector || "Général");
-      }
-    }
-  }, [data.id, data.name, data.entityId, entities]);
+  // ==================== LOGIQUE DE CASCADE DE SÉVÉRITÉ ====================
+  // Quand on modifie une cellule, on propage la valeur vers les périodes suivantes
+  // UNIQUEMENT si leur valeur actuelle est inférieure à la nouvelle valeur
+  // RÈGLE : on ne fait JAMAIS diminuer une valeur existante
+  const updateImpactWithCascade = (axis: ImpactAxis, periodId: string, newValue: number) => {
+    setData((prev: any) => {
+      // Copie profonde des impacts
+      const newImpacts = { ...prev.impacts };
+      
+      // Parcourir toutes les périodes à partir de celle modifiée
+      const startIndex = TIME_PERIODS_ORDERED.indexOf(periodId);
 
+      for (let i = 0; i < TIME_PERIODS_ORDERED.length; i++) {
+        const period = TIME_PERIODS_ORDERED[i];
+        const currentValue = newImpacts[period]?.[axis] ?? 0;
+
+        if (i === startIndex) {
+          // La période modifiée prend toujours la nouvelle valeur
+          newImpacts[period] = { ...newImpacts[period], [axis]: newValue };
+        } else if (i > startIndex && currentValue < newValue) {
+          // Les périodes suivantes ne peuvent pas être moins graves
+          newImpacts[period] = { ...newImpacts[period], [axis]: newValue };
+        }
+        // Si currentValue >= newValue, on ne touche à rien (déjà cohérent)
+        // Si i < startIndex, on ne touche pas aux périodes antérieures
+      }
+
+      return { ...prev, impacts: newImpacts };
+    });
+  };
+
+  // ==================== FONCTIONS DE MISE À JOUR ====================
   const update = (key: string, value: any) => {
     setData((d: any) => ({ ...d, [key]: value }));
-  };
-  const setImpact = (period: TimePeriod, axis: ImpactAxis, value: number) => {
-    const newImpacts = { ...data.impacts, [period]: { ...data.impacts[period], [axis]: value } };
-    update("impacts", newImpacts);
   };
 
   const globalScore = computeMaxScore(data.impacts);
@@ -1292,14 +491,17 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
   const suggestedRTO = getSuggestedRTOFromImpacts(data.impacts);
   const suggestedRPO = getSuggestedRPOFromImpacts(data.impacts);
 
+  // ==================== MODE RAPIDE ====================
   const fillAllImpacts = (score: number) => {
     const newImpacts = emptyImpacts();
-    for (const p of PERIODS) {
-      for (const a of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
-        newImpacts[p.id][a] = score;
+    
+    for (const period of TIME_PERIODS_ORDERED) {
+      for (const axis of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
+        newImpacts[period][axis] = score;
       }
     }
-    update("impacts", newImpacts);
+    
+    setData((prev: any) => ({ ...prev, impacts: newImpacts }));
     toast({ title: "Impacts mis à jour", description: `Score ${score}/5 appliqué à toutes les périodes` });
   };
 
@@ -1309,15 +511,16 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
     return true;
   };
 
+  // ✅ Sauvegarde
   const submit = async () => {
     const processToSave = {
       ...data,
       lastUpdated: new Date().toISOString().slice(0, 10),
-      appsCritiques: data.appsCritiques || []
+      appsCritiques: data.appsCritiques || [],
+      resources: []
     };
     
     console.log("💾 Sauvegarde du processus:", processToSave.name);
-    console.log("📱 Apps critiques:", processToSave.appsCritiques);
     
     await upsertProcess(processToSave);
     toast({ title: "BIA enregistré", description: `${data.name} — Criticité: ${criticality}` });
@@ -1330,20 +533,48 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
     toast({ title: "Suggestions appliquées", description: `RTO: ${suggestedRTO}h, RPO: ${suggestedRPO}h` });
   };
   
+  const isLastStep = step === STEPS.length - 1;
+  
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground">{processId ? "Modifier l'analyse d'impact" : "Nouvelle analyse d'impact métier"}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground" style={{ fontFamily: "Playfair Display, serif" }}>
+            {processId ? "Modifier l'analyse d'impact" : "Nouvelle analyse d'impact métier"}
+          </h1>
           <p className="text-muted-foreground mt-2">Remplissez les étapes pour évaluer la criticité de votre processus</p>
         </div>
-        <Button variant="outline" onClick={onDone}><ArrowLeft className="h-4 w-4 mr-2" />Retour</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onDone} className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Retour à la fiche
+          </Button>
+        </div>
       </div>
 
+      {/* ✅ Progression - 3 étapes seulement */}
       <div className="bg-secondary/20 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-2"><span className="text-sm font-medium">Progression</span><span className="text-sm text-muted-foreground">Étape {step + 1} / {STEPS.length}</span></div>
-        <div className="flex gap-2">{STEPS.map((s, i) => (<button key={s.id} onClick={() => i <= step && setStep(i)} className={`flex-1 h-2 rounded-full transition-all ${i < step ? "bg-success" : i === step ? "bg-primary" : "bg-secondary"}`} title={s.label} />))}</div>
-        <div className="flex justify-between mt-2 text-xs text-muted-foreground">{STEPS.map((s, i) => (<span key={s.id} className={i === step ? "text-primary font-medium" : ""}>{s.icon} {s.label}</span>))}</div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium">Progression</span>
+          <span className="text-sm text-muted-foreground">Étape {step + 1} / {STEPS.length}</span>
+        </div>
+        <div className="flex gap-2">
+          {STEPS.map((s, i) => (
+            <button 
+              key={s.id} 
+              onClick={() => i <= step && setStep(i)} 
+              className={`flex-1 h-2 rounded-full transition-all ${i < step ? "bg-success" : i === step ? "bg-primary" : "bg-secondary"}`} 
+              title={s.label} 
+            />
+          ))}
+        </div>
+        <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+          {STEPS.map((s, i) => (
+            <span key={s.id} className={i === step ? "text-primary font-medium" : ""}>
+              {s.icon} {s.label}
+            </span>
+          ))}
+        </div>
         {data.name && (
           <div className="mt-3 pt-2 border-t border-border/50 flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Processus actuel</span>
@@ -1352,183 +583,169 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
         )}
       </div>
 
-      <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg p-4 border border-primary/20">
+      {/* ✅ Score de criticité - REDESIGNÉ */}
+      <div className="bg-gradient-to-r from-[#2A5141]/10 to-[#2A5141]/5 rounded-xl p-6 border border-[#2A5141]/20">
         <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3"><div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center"><TrendingUp className="h-6 w-6 text-primary" /></div><div><p className="text-xs text-muted-foreground">Score de criticité</p><div className="flex items-baseline gap-2"><span className="text-3xl font-bold">{scorePercentage}%</span><Badge className={criticalityColor(criticality)}>{criticality}</Badge></div></div></div>
-          {requiresPca && (<div className="flex items-center gap-2 text-warning"><ShieldAlert className="h-4 w-4" /><span className="text-sm">Nécessite un PCA dédié</span></div>)}
+          <div className="flex items-center gap-4">
+            <div className="h-14 w-14 rounded-full bg-[#2A5141]/20 flex items-center justify-center">
+              <TrendingUp className="h-7 w-7 text-[#2A5141]" />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-[#172030]/50 uppercase tracking-wider">Score de criticité</p>
+              <div className="flex items-baseline gap-3">
+                <span className="text-4xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+                  {scorePercentage}%
+                </span>
+                <Badge className={cn("text-sm px-3 py-1", criticalityColor(criticality))}>
+                  {criticality}
+                </Badge>
+              </div>
+            </div>
+          </div>
+          {requiresPca && (
+            <div className="flex items-center gap-2 bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg border border-amber-200">
+              <ShieldAlert className="h-4 w-4" />
+              <span className="text-sm font-medium">Nécessite un PCA dédié</span>
+            </div>
+          )}
         </div>
-        <div className="mt-3 h-2 bg-secondary rounded-full overflow-hidden"><div className="h-full bg-primary transition-all duration-300" style={{ width: `${scorePercentage}%` }} /></div>
+        <div className="mt-4 h-2.5 bg-[#E8E4DC] rounded-full overflow-hidden">
+          <div 
+            className="h-full rounded-full transition-all duration-500"
+            style={{ 
+              width: `${scorePercentage}%`,
+              backgroundColor: globalScore >= 4 ? "#C62828" : globalScore >= 3 ? "#E65100" : globalScore >= 2 ? "#F57F17" : "#2E7D32"
+            }}
+          />
+        </div>
+        <p className="text-xs text-[#172030]/40 mt-2">
+          Score basé sur le maximum de tous les impacts évalués (1 = Mineur, 5 = Très sévère)
+        </p>
       </div>
 
       <Card>
         <CardContent className="p-6 space-y-6">
+          {/* ═══════ ÉTAPE 1 - GÉNÉRAL ═══════ */}
           {step === 0 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2"><div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-primary">1</div><h2 className="text-lg font-semibold">Informations générales</h2></div>{data.name && <Badge variant="outline" className="text-xs">📋 {data.name}</Badge>}</div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">1</div>
+                  <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Informations générales</h2>
+                </div>
+                {data.name && <Badge variant="outline" className="text-xs">📋 {data.name}</Badge>}
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <div><Label>Nom du processus *</Label><Input value={data.name} onChange={(e) => update("name", e.target.value)} placeholder="Ex: Traitement des commandes" /></div>
-                <div><Label>Entité *</Label>
+                <div>
+                  <Label>Nom du processus *</Label>
+                  <Input value={data.name} onChange={(e) => update("name", e.target.value)} placeholder="Ex: Traitement des commandes" />
+                </div>
+                <div>
+                  <Label>Entité *</Label>
                   <Select value={data.entityId} onValueChange={(v) => update("entityId", v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner une entité" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(() => {
-                        // 🔥 FONCTION POUR DÉTERMINER LE TYPE D'ENTITÉ
-                        const getEntityType = (entity: any): string => {
-                          return (entity.type || entity.entity_type || entity.niveau || entity.level || '').toLowerCase();
-                        };
-
-                        // 🔥 FONCTION POUR SAVOIR SI C'EST UNE FILIALE
-                        const isFiliale = (entity: any): boolean => {
-                          const type = getEntityType(entity);
-                          return type === 'filiale' || type === 'subsidiary' || type === 'fille' || type === 'parent';
-                        };
-
-                        // 🔥 FONCTION POUR OBTENIR LE NIVEAU HIÉRARCHIQUE
-                        const getLevel = (entity: any): number => {
-                          const type = getEntityType(entity);
-                          if (type === 'direction' || type === 'dir' || type === 'directorate') return 1;
-                          if (type === 'departement' || type === 'dept' || type === 'department') return 2;
-                          if (type === 'service' || type === 'service') return 3;
-                          return 0; // Filiale ou niveau racine
-                        };
-
-                        // 🔥 CONSTRUIRE LA LISTE AVEC INDENTATION
-                        const items: { entity: any; level: number; isFiliale: boolean }[] = [];
-                        
-                        // D'abord les filiales
-                        const filiales = entities.filter(e => isFiliale(e));
-                        const nonFiliales = entities.filter(e => !isFiliale(e));
-
-                        filiales.forEach(f => {
-                          items.push({ entity: f, level: 0, isFiliale: true });
-                        });
-
-                        // Puis les Directions, Départements, Services
-                        const sortedNonFiliales = [...nonFiliales].sort((a, b) => {
-                          const levelA = getLevel(a);
-                          const levelB = getLevel(b);
-                          if (levelA !== levelB) return levelA - levelB;
-                          return a.name.localeCompare(b.name);
-                        });
-
-                        sortedNonFiliales.forEach(e => {
-                          const level = getLevel(e);
-                          items.push({ entity: e, level, isFiliale: false });
-                        });
-
-                        return items.map(({ entity, level, isFiliale: isF }) => {
-                          const icon = isF ? '🏛️' : level === 1 ? '🏢' : level === 2 ? '📁' : '📄';
-                          const paddingLeft = isF ? 0 : (level - 1) * 20;
-                          const isDisabled = isF;
-
-                          return (
-                            <SelectItem 
-                              key={entity.id} 
-                              value={entity.id}
-                              disabled={isDisabled}
-                              className={cn(
-                                "py-1.5",
-                                isDisabled && "opacity-50 cursor-not-allowed bg-muted/20 italic text-muted-foreground"
-                              )}
-                            >
-                              <span className="flex items-center gap-1.5">
-                                <span style={{ width: `${paddingLeft}px` }} />
-                                <span>{icon}</span>
-                                <span className={isDisabled ? "line-through decoration-muted-foreground/30" : ""}>
-                                  {entity.name}
-                                  {isDisabled && <span className="text-[10px] ml-2 text-muted-foreground">(Filiale)</span>}
-                                </span>
-                              </span>
-                            </SelectItem>
-                          );
-                        });
-                      })()}
+                      {entities.filter(e => e.parentId !== null).map((entity) => (
+                        <SelectItem key={entity.id} value={entity.id}>
+                          <span className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            {entity.name}
+                          </span>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Les Filiales sont affichées mais ne peuvent pas être sélectionnées pour un processus.
+                    Sélectionnez le département ou service concerné.
                   </p>
                 </div>
-                <div><Label>Responsable *</Label><Input value={data.owner} onChange={(e) => update("owner", e.target.value)} placeholder="Nom du responsable" /></div>
-                <div className="md:col-span-2"><Label>Description</Label><Textarea value={data.description} onChange={(e) => update("description", e.target.value)} rows={3} placeholder="Décrivez le processus..." /></div>
+                <div>
+                  <Label>Responsable *</Label>
+                  <Input value={data.owner} onChange={(e) => update("owner", e.target.value)} placeholder="Nom du responsable" />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Description</Label>
+                  <Textarea value={data.description} onChange={(e) => update("description", e.target.value)} rows={3} placeholder="Décrivez le processus..." />
+                </div>
               </div>
             </div>
           )}
 
+          {/* ═══════ ÉTAPE 2 - IMPACT - REDESIGNÉ ═══════ */}
           {step === 1 && (
             <div className="space-y-6">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-primary">2</div>
-                  <h2 className="text-lg font-semibold">Évaluation de l'impact métier</h2>
+                  <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">2</div>
+                  <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Évaluation de l'impact métier</h2>
                 </div>
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button variant="outline" size="sm" className="gap-1">
-                      <span className="text-base">📊</span> Voir la matrice d'impact
+                      <span className="text-base">📊</span> Voir la matrice
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                    <DialogTitle className="text-lg font-semibold mb-2">Matrice d'évaluation des impacts</DialogTitle>
+                    <DialogTitle className="text-lg font-semibold mb-2" style={{ fontFamily: "Playfair Display, serif" }}>
+                      Matrice d'évaluation des impacts
+                    </DialogTitle>
                     <StaticImpactMatrix />
                   </DialogContent>
                 </Dialog>
               </div>
               <p className="text-sm text-muted-foreground">
                 Évaluez l'impact (1 = négligeable, 5 = catastrophique) pour chaque axe et période d'indisponibilité.
+                <span className="block text-xs text-[#2A5141] mt-1">
+                  ⚡ La sévérité se propage automatiquement vers l'avant : quand vous mettez une valeur, les périodes suivantes s'ajustent si elles sont moins graves. Vous pouvez modifier n'importe quelle cellule à tout moment.
+                </span>
               </p>
 
+              {/* ✅ Boutons Mode rapide - REDESIGNÉS */}
               <div className="flex flex-wrap gap-2">
                 {[
-                  { score: 1, label: "Mineur", color: "bg-green-500" },
-                  { score: 2, label: "Modéré", color: "bg-yellow-500" },
-                  { score: 3, label: "Majeur", color: "bg-orange-500" },
-                  { score: 4, label: "Critique", color: "bg-red-500" },
-                  { score: 5, label: "Extrême", color: "bg-red-700" }
+                  { score: 1, label: "Mineur", color: "#E8F5E9", textColor: "#2E7D32", border: "#A5D6A7" },
+                  { score: 2, label: "Modéré", color: "#FFF8E1", textColor: "#F57F17", border: "#FFE082" },
+                  { score: 3, label: "Majeur", color: "#FFF3E0", textColor: "#E65100", border: "#FFCC80" },
+                  { score: 4, label: "Sévère", color: "#FBE9E7", textColor: "#D84315", border: "#FFAB91" },
+                  { score: 5, label: "Très sévère", color: "#FFEBEE", textColor: "#C62828", border: "#EF9A9A" }
                 ].map((item) => (
                   <Button
                     key={item.score}
                     onClick={() => fillAllImpacts(item.score)}
-                    className={`flex-1 ${item.color} text-white hover:opacity-90`}
-                    variant="default"
+                    variant="outline"
+                    className="flex-1 min-w-[80px] text-xs font-medium transition-all hover:shadow-md hover:scale-[1.02]"
+                    style={{
+                      backgroundColor: item.color,
+                      color: item.textColor,
+                      borderColor: item.border,
+                    }}
                   >
-                    Mode rapide {item.score} – {item.label}
+                    <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: item.textColor }} />
+                    {item.score} – {item.label}
                   </Button>
                 ))}
               </div>
 
-              <div className="bg-muted/30 rounded-lg p-3 text-center">
-                <p className="text-xs text-muted-foreground">
-                  Score actuel : <strong className="text-primary">{globalScore}/5</strong> ({criticality})
+              <div className="bg-[#F8F6F2] rounded-lg p-3 text-center border border-[#E8E4DC]">
+                <p className="text-sm text-[#172030]">
+                  Score actuel : <strong className="text-[#2A5141]">{globalScore}/5</strong> ({criticality})
                 </p>
               </div>
 
-              <div className="overflow-auto border rounded-lg">
+              {/* ✅ TABLEAU D'IMPACT - AVEC CELLULES CLIQUABLES */}
+              <div className="overflow-auto border border-[#E8E4DC] rounded-xl bg-white">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="w-36">
+                    <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+                      <TableHead className="w-36 py-3 px-4 text-xs font-semibold text-[#172030]/60 uppercase tracking-wider">
                         Axe / Période
-                        <Tooltip.Provider>
-                          <Tooltip.Root>
-                            <Tooltip.Trigger asChild>
-                              <button className="ml-1 text-muted-foreground hover:text-foreground">ℹ️</button>
-                            </Tooltip.Trigger>
-                            <Tooltip.Portal>
-                              <Tooltip.Content className="z-50 max-w-xs rounded-md bg-popover px-3 py-2 text-xs shadow-md border border-border">
-                                Les scores 1 à 5 sont détaillés pour chaque axe (passez la souris sur ℹ️ à côté du nom).
-                                <Tooltip.Arrow className="fill-border" />
-                              </Tooltip.Content>
-                            </Tooltip.Portal>
-                          </Tooltip.Root>
-                        </Tooltip.Provider>
                       </TableHead>
                       {PERIODS.map((p) => (
-                        <TableHead key={p.id} className="text-center min-w-[70px]">
-                          <div className="text-xs font-medium">{p.label}</div>
-                          <div className="text-[10px] text-muted-foreground font-normal">
+                        <TableHead key={p.id} className="text-center min-w-[100px] py-3 px-2">
+                          <div className="text-xs font-semibold text-[#172030]">{p.label}</div>
+                          <div className="text-[10px] text-[#172030]/40 font-normal">
                             {p.hours <= 24 ? `${p.hours}h` : `${Math.round(p.hours/24)}j`}
                           </div>
                         </TableHead>
@@ -1536,35 +753,30 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(Object.keys(AXIS_LABELS) as ImpactAxis[]).map((axis) => (
-                      <TableRow key={axis} className="hover:bg-muted/30">
-                        <TableCell className="font-medium text-sm">
-                          {AXIS_LABELS[axis]}
-                          <ImpactTooltip axis={axis} />
+                    {(Object.keys(AXIS_LABELS) as ImpactAxis[]).map((axis, rowIdx) => (
+                      <TableRow 
+                        key={axis} 
+                        className={cn(
+                          "border-b border-[#E8E4DC]",
+                          rowIdx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
+                        )}
+                      >
+                        <TableCell className="font-medium text-sm text-[#172030] py-3 px-4">
+                          <div className="flex items-center gap-1">
+                            {AXIS_LABELS[axis]}
+                            <ImpactTooltip axis={axis} />
+                          </div>
                         </TableCell>
                         {PERIODS.map((p) => {
                           const currentValue = data.impacts[p.id]?.[axis] ?? 0;
-                          let bgClass = "bg-gray-50 border-gray-200";
-                          if (currentValue >= 5) bgClass = "bg-red-700 border-red-800 text-white font-bold";
-                          else if (currentValue >= 4) bgClass = "bg-red-500 border-red-600 text-white";
-                          else if (currentValue >= 3) bgClass = "bg-orange-500 border-orange-600 text-white";
-                          else if (currentValue >= 2) bgClass = "bg-yellow-500 border-yellow-600";
-                          else if (currentValue >= 1) bgClass = "bg-green-500 border-green-600 text-white";
                           return (
-                            <TableCell key={p.id} className="text-center p-1">
-                              <Select value={String(currentValue)} onValueChange={(v) => setImpact(p.id, axis, Number(v))}>
-                                <SelectTrigger className={cn("h-10 w-14 mx-auto transition-all font-bold", bgClass)}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="0">0 - Aucun</SelectItem>
-                                  <SelectItem value="1">1 - Négligeable</SelectItem>
-                                  <SelectItem value="2">2 - Mineur</SelectItem>
-                                  <SelectItem value="3">3 - Modéré</SelectItem>
-                                  <SelectItem value="4">4 - Majeur</SelectItem>
-                                  <SelectItem value="5">5 - Catastrophique</SelectItem>
-                                </SelectContent>
-                              </Select>
+                            <TableCell key={p.id} className="text-center p-2">
+                              <ImpactCell
+                                value={currentValue}
+                                axis={axis}
+                                periodId={p.id}
+                                onValueChange={updateImpactWithCascade}
+                              />
                             </TableCell>
                           );
                         })}
@@ -1573,118 +785,94 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                   </TableBody>
                 </Table>
               </div>
+              
+              <div className="flex items-center gap-4 text-xs text-[#172030]/50">
+                <span className="flex items-center gap-1 text-[#2A5141]">
+                  <span>💡</span>
+                  Cliquez sur n'importe quelle cellule pour modifier la valeur
+                </span>
+                <span className="flex items-center gap-1">
+                  <span>⚡</span>
+                  La cascade s'applique automatiquement vers la droite
+                </span>
+              </div>
             </div>
           )}
 
+          {/* ═══════ ÉTAPE 3 - DÉLAIS & RTO/RPO ═══════ */}
           {step === 2 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-primary">3</div>
-                  <h2 className="text-lg font-semibold">Délais de reprise &amp; RTO/RPO</h2>
+                  <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">3</div>
+                  <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Délais de reprise &amp; RTO/RPO</h2>
                 </div>
                 {data.name && <Badge variant="outline">⏱️ {data.name}</Badge>}
               </div>
-              <div className="bg-muted/30 rounded-lg p-4 border border-border">
+              <div className="bg-[#F8F6F2] rounded-lg p-4 border border-[#E8E4DC]">
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div>
-                    <p className="text-sm font-medium">RTO / RPO suggérés</p>
-                    <p className="text-xs text-muted-foreground">Basés sur la première période d'impact significatif</p>
+                    <p className="text-sm font-medium text-[#172030]">RTO / RPO suggérés</p>
+                    <p className="text-xs text-[#172030]/50">Basés sur la première période d'impact significatif</p>
                     <div className="flex gap-4 mt-2">
-                      <div className="bg-background rounded-lg px-3 py-1"><span className="text-xs text-muted-foreground">RTO suggéré</span><p className="text-xl font-bold text-primary">{suggestedRTO} heures</p></div>
-                      <div className="bg-background rounded-lg px-3 py-1"><span className="text-xs text-muted-foreground">RPO suggéré</span><p className="text-xl font-bold text-primary">{suggestedRPO} heure{suggestedRPO > 1 ? 's' : ''}</p></div>
+                      <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
+                        <span className="text-xs text-[#172030]/50">RTO suggéré</span>
+                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRTO} heures</p>
+                      </div>
+                      <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
+                        <span className="text-xs text-[#172030]/50">RPO suggéré</span>
+                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRPO} heure{suggestedRPO > 1 ? 's' : ''}</p>
+                      </div>
                     </div>
                   </div>
-                  <Button onClick={applySuggestions} variant="outline" size="sm">Appliquer les suggestions</Button>
+                  <Button onClick={applySuggestions} variant="outline" size="sm" className="border-[#2A5141] text-[#2A5141] hover:bg-[#2A5141]/10">
+                    Appliquer les suggestions
+                  </Button>
                 </div>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <div><Label>RTO — Recovery Time Objective (heures)</Label><Input type="number" min={0} value={data.rto} onChange={(e) => update("rto", Number(e.target.value))} /><p className="text-xs text-muted-foreground mt-1">Délai maximal de reprise visé.</p></div>
-                <div><Label>RPO — Recovery Point Objective (heures)</Label><Input type="number" min={0} value={data.rpo} onChange={(e) => update("rpo", Number(e.target.value))} /><p className="text-xs text-muted-foreground mt-1">Perte de données maximale acceptée.</p></div>
-                <div><Label>MTPD — Maximum Tolerable Period of Disruption (heures)</Label><Input type="number" min={0} value={data.mtpd} onChange={(e) => update("mtpd", Number(e.target.value))} /></div>
-              </div>
-              {rtoExceedsMtpd && (<div className="text-destructive text-sm">Erreur : le RTO ({data.rto}h) ne peut pas être supérieur au MTPD ({data.mtpd}h)</div>)}
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-primary">4</div>
-                  <h2 className="text-lg font-semibold">Ressources critiques</h2>
+                <div>
+                  <Label>RTO — Recovery Time Objective (heures)</Label>
+                  <Input type="number" min={0} value={data.rto} onChange={(e) => update("rto", Number(e.target.value))} />
+                  <p className="text-xs text-muted-foreground mt-1">Délai maximal de reprise visé.</p>
                 </div>
-                {data.name && <Badge variant="outline">🛠️ {data.name}</Badge>}
+                <div>
+                  <Label>RPO — Recovery Point Objective (heures)</Label>
+                  <Input type="number" min={0} value={data.rpo} onChange={(e) => update("rpo", Number(e.target.value))} />
+                  <p className="text-xs text-muted-foreground mt-1">Perte de données maximale acceptée.</p>
+                </div>
+                <div className="md:col-span-2">
+                  <Label>MTPD — Maximum Tolerable Period of Disruption (heures)</Label>
+                  <Input type="number" min={0} value={data.mtpd} onChange={(e) => update("mtpd", Number(e.target.value))} />
+                  <p className="text-xs text-muted-foreground mt-1">Durée maximale d'indisponibilité acceptable avant de mettre en danger l'entreprise.</p>
+                </div>
               </div>
-              <ResourcesEditor 
-                resources={data.resources} 
-                onChange={(r) => update("resources", r)} 
-                appsCritiques={data.appsCritiques || []}
-                onAppsChange={(apps) => update("appsCritiques", apps)}
-                allProcesses={processes}
-                departmentId={data.entityId}
-                processName={data.name}
-                currentStep={step}
-              />
+              {rtoExceedsMtpd && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span>Erreur : le RTO ({data.rto}h) ne peut pas être supérieur au MTPD ({data.mtpd}h).</span>
+                </div>
+              )}
             </div>
-          )}
-
-          {step === 4 && (
-            <SummaryView 
-              data={data} 
-              entityName={entities.find(e => e.id === data.entityId)?.name ?? "—"} 
-              criticality={criticality} 
-              score={globalScore}
-              appsCritiques={data.appsCritiques || []}
-            />
           )}
         </CardContent>
       </Card>
 
+      {/* ✅ Navigation - bouton "Enregistrer" à la dernière étape */}
       <div className="flex justify-between">
-        <Button variant="outline" disabled={step === 0} onClick={() => setStep(s => s - 1)}><ArrowLeft className="h-4 w-4 mr-2" />Précédent</Button>
-        {step < STEPS.length - 1 ? <Button onClick={() => setStep(s => s + 1)} disabled={!canNext()}>Suivant <ArrowRight className="h-4 w-4 ml-2" /></Button> : <Button onClick={submit} className="bg-success hover:bg-success/90"><Check className="h-4 w-4 mr-2" />Enregistrer le BIA</Button>}
+        <Button variant="outline" disabled={step === 0} onClick={() => setStep(s => s - 1)}>
+          <ArrowLeft className="h-4 w-4 mr-2" />Précédent
+        </Button>
+        {!isLastStep ? (
+          <Button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
+            Suivant <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        ) : (
+          <Button onClick={submit} className="bg-[#2A5141] hover:bg-[#1a3329] text-white" disabled={!canNext()}>
+            <Check className="h-4 w-4 mr-2" />Enregistrer le BIA
+          </Button>
+        )}
       </div>
-
-      {/* Assistant vocal avec mode guidé */}
-      {step < 4 && (
-        <VoiceMic
-          onNameChange={(name) => update("name", name)}
-          onOwnerChange={(owner) => update("owner", owner)}
-          onEntityChange={(entity) => {
-            const found = entities.find(e => e.name === entity || e.id === entity);
-            if (found) update("entityId", found.id);
-            else toast({ title: "Entité non trouvée", description: `"${entity}" n'existe pas dans la liste`, variant: "destructive" });
-          }}
-          onDescriptionChange={(desc) => update("description", desc)}
-          onRTOChange={(rto) => update("rto", rto)}
-          onRPOChange={(rpo) => update("rpo", rpo)}
-          onImpactFill={(score) => fillAllImpacts(score)}
-          onNextStep={() => {
-            if (step < STEPS.length - 1) setStep(step + 1);
-          }}
-          onAddResource={(resource) => {
-            const newResource = {
-              id: `r_${Date.now()}`,
-              type: "HR",
-              name: resource.name,
-              quantity: 1,
-              hrPeople: [{
-                id: `p_${Date.now()}`,
-                name: resource.name,
-                role: resource.role,
-                phone: "",
-                email: "",
-                selected: true,
-                availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
-              }]
-            };
-            update("resources", [...data.resources, newResource]);
-            toast({ title: "Ressource ajoutée", description: `${resource.name} (${resource.role})` });
-          }}
-          currentStep={step}
-        />
-      )}
     </div>
   );
 };

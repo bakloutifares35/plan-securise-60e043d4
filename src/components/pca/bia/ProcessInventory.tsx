@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Plus, Pencil, Trash2, Search, 
@@ -14,7 +15,16 @@ import {
   Calendar, ChevronRight as ChevronRightIcon, X, Edit, Save, Eye, EyeOff,
   Activity, Briefcase, Wrench, Link, HelpCircle,
   GitBranch, TrendingUp, Database, AlertTriangle as AlertTriangleIcon,
-  ShieldAlert, Edit3
+  ShieldAlert, Edit3, Link as LinkIcon, Unlink, ListChecks, Network,
+  RefreshCw, MoreHorizontal, MoreVertical, Filter, 
+  Link2, Eye as EyeIcon, Edit as EditIcon, Trash as TrashIcon,
+  CalendarDays, Phone, Mail, UserCircle, ChevronLeft, ChevronRight as ChevronRightIcon2,
+  Cpu, Cloud, Wifi, Zap, HardDrive, Layers as LayersIcon,
+  ExternalLink, FolderOpen, GripVertical, Grid2X2, List, 
+  BarChart3, TrendingUp as TrendingUpIcon, AlertOctagon, Check, Minus,
+  Circle, CircleCheck, CircleDot, CircleDashed, CircleOff,
+  Square, SquareCheck, SquareDot, SquareDashed, PlusCircle, FolderTree,
+  MoreHorizontal as MoreHoriz
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -23,19 +33,40 @@ import { computeMaxScore, scoreToCriticality, criticalityColor, ImpactAxis, Time
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { BiaWizard } from "./BiaWizard";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+  DrawerClose,
+  DrawerFooter,
+} from "@/components/ui/drawer";
 
 const AVAILABILITY_PERIODS = [
-  { id: "P0_4H", label: "0-4h" },
-  { id: "P4_8H", label: "4-8h" },
-  { id: "P1D",  label: "1j" },
-  { id: "P2D",  label: "2j" },
-  { id: "P1W",  label: "1sem" },
-  { id: "P2W",  label: "2sem" },
-  { id: "P1M",  label: "1mois" },
+  { id: "P0_4H", label: "0-4h", short: "0-4", color: "bg-emerald-100" },
+  { id: "P4_8H", label: "4-8h", short: "4-8", color: "bg-teal-100" },
+  { id: "P1D",  label: "1j", short: "1j", color: "bg-cyan-100" },
+  { id: "P2D",  label: "2j", short: "2j", color: "bg-sky-100" },
+  { id: "P1W",  label: "1sem", short: "1s", color: "bg-blue-100" },
+  { id: "P2W",  label: "2sem", short: "2s", color: "bg-indigo-100" },
+  { id: "P1M",  label: "1mois", short: "1m", color: "bg-violet-100" },
 ];
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-type BIAStatus = "critique" | "a_completer" | "a_reviser" | "complet";
+type BIAStatus = "critique" | "a_completer" | "a_reviser" | "complet" | "non_demarre";
 
 interface ServiceBIA {
   id: string;
@@ -52,19 +83,9 @@ interface ServiceBIA {
   description?: string;
 }
 
-// ── Constantes pour la matrice d'impact ──────────────────────────────────────
 const IMPACT_AXES: ImpactAxis[] = ["Financier", "Conformité / Légal", "Opérationnel", "Réputationnel"];
 const TIME_PERIODS: TimePeriod[] = ["P0_4H", "P4_8H", "P1D", "P2D", "P1W"];
 
-// Mapping des axes pour l'affichage
-const AXIS_DISPLAY: Record<string, ImpactAxis> = {
-  financial: "Financier",
-  regulatory: "Conformité / Légal",
-  operational: "Opérationnel",
-  reputation: "Réputationnel",
-};
-
-// Mapping inverse pour la sauvegarde
 const AXIS_SAVE: Record<ImpactAxis, string> = {
   "Financier": "financial",
   "Conformité / Légal": "regulatory",
@@ -73,14 +94,13 @@ const AXIS_SAVE: Record<ImpactAxis, string> = {
 };
 
 const SEVERITY_LEVELS = [
-  { value: "Mineur", color: "bg-green-50 text-green-700 border-green-200", bg: "#F0FDF4", text: "#15803D" },
-  { value: "Modéré", color: "bg-yellow-50 text-yellow-700 border-yellow-200", bg: "#FEF9E7", text: "#A16207" },
-  { value: "Majeur", color: "bg-orange-50 text-orange-700 border-orange-200", bg: "#FEF3C7", text: "#B45309" },
-  { value: "Sévère", color: "bg-orange-100 text-orange-800 border-orange-300", bg: "#FFEDD5", text: "#C2410C" },
-  { value: "Très sévère", color: "bg-red-100 text-red-700 border-red-300", bg: "#FEE2E2", text: "#B91C1C" },
+  { value: "Mineur", bg: "bg-green-100", text: "text-green-800", border: "border-green-300", dotColor: "#22c55e", icon: <CircleCheck className="h-4 w-4 text-green-600" /> },
+  { value: "Modéré", bg: "bg-yellow-100", text: "text-yellow-800", border: "border-yellow-300", dotColor: "#eab308", icon: <CircleDot className="h-4 w-4 text-yellow-600" /> },
+  { value: "Majeur", bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-300", dotColor: "#f97316", icon: <Circle className="h-4 w-4 text-orange-600" /> },
+  { value: "Sévère", bg: "bg-red-100", text: "text-red-800", border: "border-red-300", dotColor: "#ef4444", icon: <AlertTriangleIcon className="h-4 w-4 text-red-600" /> },
+  { value: "Très sévère", bg: "bg-red-200", text: "text-red-900", border: "border-red-400", dotColor: "#dc2626", icon: <AlertOctagon className="h-4 w-4 text-red-700" /> },
 ];
 
-// Mapping des valeurs numériques vers les labels de sévérité
 const SEVERITY_FROM_NUMBER: Record<number, string> = {
   0: "",
   1: "Mineur",
@@ -90,13 +110,11 @@ const SEVERITY_FROM_NUMBER: Record<number, string> = {
   5: "Très sévère",
 };
 
-// ── Helper pour générer le code processus ────────────────────────────────────
 const generateProcessCode = (department: string, index: number): string => {
   const prefix = department.substring(0, 2).toUpperCase() || "DE";
   return `${prefix}_${String(index + 1).padStart(6, '0')}`;
 };
 
-// ── Helper pour récupérer les ressources ─────────────────────────────────────
 const getDepartmentResources = (processes: any[], deptId: string, deptName: string) => {
   const deptProcesses = processes.filter(p => p.department === deptName || p.entityId === deptId);
   
@@ -157,7 +175,6 @@ const getDepartmentResources = (processes: any[], deptId: string, deptName: stri
   return resources;
 };
 
-// ── Helper pour calculer le taux de complétude ──────────────────────────────
 const calculateCompletionRate = (processes: any[]): number => {
   if (processes.length === 0) return 0;
   let completed = 0;
@@ -169,8 +186,9 @@ const calculateCompletionRate = (processes: any[]): number => {
   return Math.round((completed / processes.length) * 100);
 };
 
-// ── Helper pour déterminer le statut BIA ────────────────────────────────────
 const getBIAStatus = (processes: any[], lastReviewed?: string): BIAStatus => {
+  if (processes.length === 0) return "non_demarre";
+  
   const criticalCount = processes.filter(p => {
     const score = computeMaxScoreFromImpacts(p.impacts);
     return score >= 4;
@@ -191,10 +209,8 @@ const getBIAStatus = (processes: any[], lastReviewed?: string): BIAStatus => {
   return "complet";
 };
 
-// ── Helper pour déterminer si un processus est critique ─────────────────────
 const isProcessCritical = (impacts: any): boolean => {
   if (!impacts) return false;
-  
   for (const [periodId, axes] of Object.entries(impacts)) {
     if (typeof axes === 'object' && axes !== null) {
       for (const [axisKey, value] of Object.entries(axes)) {
@@ -206,23 +222,17 @@ const isProcessCritical = (impacts: any): boolean => {
   return false;
 };
 
-// ── Helper pour extraire les valeurs d'impact d'un processus ────────────────
 const getImpactValue = (impacts: any, axis: ImpactAxis, period: TimePeriod): number => {
   if (!impacts) return 0;
-  
   const periodData = impacts[period];
   if (!periodData || typeof periodData !== 'object') return 0;
-  
   const axisKey = AXIS_SAVE[axis];
   if (!axisKey) return 0;
-  
   const value = periodData[axisKey];
   if (value === undefined || value === null) return 0;
-  
   return typeof value === 'number' ? value : parseInt(String(value));
 };
 
-// ── Helper pour calculer le score max des impacts ──────────────────────────
 const computeMaxScoreFromImpacts = (impacts: any): number => {
   if (!impacts) return 0;
   let maxScore = 0;
@@ -237,7 +247,6 @@ const computeMaxScoreFromImpacts = (impacts: any): number => {
   return maxScore;
 };
 
-// ── Helper pour la carte des dépendances ────────────────────────────────────
 type Pos = { x: number; y: number };
 
 const getNodeBgColor = (criticality: Criticality) => {
@@ -267,7 +276,572 @@ const edgeColor = (criticality: Criticality) => {
   }
 };
 
-// ── Composant : Carte des dépendances ──────────────────────────────────────
+// ============================================================
+// COMPOSANT - Dialogue de liaison de ressources
+// ============================================================
+const LinkResourceDialog = ({ 
+  open, 
+  onOpenChange, 
+  process, 
+  allResources,
+  onLink,
+  resourceType,
+  setResourceType
+}: { 
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  process: any;
+  allResources: {
+    hr: any[];
+    equipment: any[];
+    apps: any[];
+    suppliers: any[];
+  };
+  onLink: (type: string, resourceId: string) => void;
+  resourceType: string;
+  setResourceType: (type: string) => void;
+}) => {
+  const [selectedResourceId, setSelectedResourceId] = useState<string>("");
+
+  const getResourcesForType = () => {
+    switch(resourceType) {
+      case 'HR': return allResources.hr;
+      case 'Equipement': return allResources.equipment;
+      case 'App': return allResources.apps;
+      case 'Fournisseur': return allResources.suppliers;
+      default: return [];
+    }
+  };
+
+  const getResourceLabel = () => {
+    switch(resourceType) {
+      case 'HR': return 'Ressource humaine';
+      case 'Equipement': return 'Équipement';
+      case 'App': return 'Application IT';
+      case 'Fournisseur': return 'Prestataire';
+      default: return 'Ressource';
+    }
+  };
+
+  const getResourceIcon = () => {
+    switch(resourceType) {
+      case 'HR': return <Users className="h-5 w-5 text-blue-600" />;
+      case 'Equipement': return <Monitor className="h-5 w-5 text-yellow-600" />;
+      case 'App': return <Server className="h-5 w-5 text-purple-600" />;
+      case 'Fournisseur': return <Handshake className="h-5 w-5 text-orange-600" />;
+      default: return <LinkIcon className="h-5 w-5 text-gray-600" />;
+    }
+  };
+
+  const resources = getResourcesForType();
+
+  const handleLink = () => {
+    if (!selectedResourceId) {
+      toast({ title: "Erreur", description: "Veuillez sélectionner une ressource", variant: "destructive" });
+      return;
+    }
+    onLink(resourceType, selectedResourceId);
+    setSelectedResourceId("");
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <LinkIcon className="h-5 w-5 text-indigo-600" />
+            Lier une ressource à "{process?.name || ''}"
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label>Type de ressource</Label>
+            <div className="grid grid-cols-4 gap-2 mt-1">
+              <Button 
+                variant={resourceType === 'HR' ? 'default' : 'outline'} 
+                size="sm"
+                className={resourceType === 'HR' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                onClick={() => { setResourceType('HR'); setSelectedResourceId(''); }}
+              >
+                <Users className="h-4 w-4 mr-1" /> RH
+              </Button>
+              <Button 
+                variant={resourceType === 'Equipement' ? 'default' : 'outline'} 
+                size="sm"
+                className={resourceType === 'Equipement' ? 'bg-yellow-600 hover:bg-yellow-700' : ''}
+                onClick={() => { setResourceType('Equipement'); setSelectedResourceId(''); }}
+              >
+                <Monitor className="h-4 w-4 mr-1" /> Équip.
+              </Button>
+              <Button 
+                variant={resourceType === 'App' ? 'default' : 'outline'} 
+                size="sm"
+                className={resourceType === 'App' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                onClick={() => { setResourceType('App'); setSelectedResourceId(''); }}
+              >
+                <Server className="h-4 w-4 mr-1" /> App
+              </Button>
+              <Button 
+                variant={resourceType === 'Fournisseur' ? 'default' : 'outline'} 
+                size="sm"
+                className={resourceType === 'Fournisseur' ? 'bg-orange-600 hover:bg-orange-700' : ''}
+                onClick={() => { setResourceType('Fournisseur'); setSelectedResourceId(''); }}
+              >
+                <Handshake className="h-4 w-4 mr-1" /> Prest.
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <Label>{getResourceLabel()}</Label>
+            <select
+              value={selectedResourceId}
+              onChange={(e) => setSelectedResourceId(e.target.value)}
+              className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="">Sélectionner...</option>
+              {resources.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.name} {r.role ? `(${r.role})` : ''} {r.service ? `(${r.service})` : ''}
+                </option>
+              ))}
+            </select>
+            {resources.length === 0 && (
+              <p className="text-xs text-gray-400 mt-1">Aucune {getResourceLabel().toLowerCase()} disponible</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+            {getResourceIcon()}
+            <span className="text-sm text-gray-600">
+              Vous allez lier cette ressource au processus "{process?.name || ''}"
+            </span>
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
+          <Button onClick={handleLink} className="bg-indigo-600 hover:bg-indigo-700">
+            <LinkIcon className="h-4 w-4 mr-1" /> Lier
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ============================================================
+// COMPOSANT - ProcessDetailView
+// ============================================================
+const ProcessDetailView = ({ 
+  process, 
+  allProcesses,
+  onClose,
+  onEditProcess,
+  serviceId,
+  onResourceUnlinked,
+}: { 
+  process: any;
+  allProcesses: any[];
+  onClose: () => void;
+  onEditProcess: (id: string) => void;
+  serviceId: string;
+  onResourceUnlinked?: () => void;
+}) => {
+  const [linkedHR, setLinkedHR] = useState<any[]>([]);
+  const [linkedEquipment, setLinkedEquipment] = useState<any[]>([]);
+  const [linkedApps, setLinkedApps] = useState<any[]>([]);
+  const [linkedSuppliers, setLinkedSuppliers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const score = computeMaxScoreFromImpacts(process.impacts);
+  const crit = scoreToCriticality(score);
+
+  const loadLinkedResources = async () => {
+    setIsLoading(true);
+    try {
+      const { data: hrLinks } = await supabase
+        .from('processus_ressources_humaines')
+        .select('ressource_humaine_id')
+        .eq('processus_id', process.id);
+
+      if (hrLinks && hrLinks.length > 0) {
+        const hrIds = hrLinks.map((l: any) => l.ressource_humaine_id);
+        const { data: hrData } = await supabase
+          .from('ressources_humaines')
+          .select('*')
+          .in('id', hrIds)
+          .eq('department_id', serviceId);
+        setLinkedHR(hrData || []);
+      } else {
+        setLinkedHR([]);
+      }
+
+      const { data: equipLinks } = await supabase
+        .from('processus_equipements')
+        .select('equipement_id')
+        .eq('processus_id', process.id);
+
+      if (equipLinks && equipLinks.length > 0) {
+        const equipIds = equipLinks.map((l: any) => l.equipement_id);
+        const { data: equipData } = await supabase
+          .from('ressources_equipements')
+          .select('*')
+          .in('id', equipIds)
+          .eq('department_id', serviceId);
+        setLinkedEquipment(equipData || []);
+      } else {
+        setLinkedEquipment([]);
+      }
+
+      const { data: appLinks } = await supabase
+        .from('processus_applications')
+        .select('application_id')
+        .eq('processus_id', process.id);
+
+      if (appLinks && appLinks.length > 0) {
+        const appIds = appLinks.map((l: any) => l.application_id);
+        const { data: appData } = await supabase
+          .from('applications_it')
+          .select('*')
+          .in('id', appIds)
+          .eq('department_id', serviceId);
+        setLinkedApps(appData || []);
+      } else {
+        setLinkedApps([]);
+      }
+
+      const { data: suppLinks } = await supabase
+        .from('processus_fournisseurs')
+        .select('fournisseur_id')
+        .eq('processus_id', process.id);
+
+      if (suppLinks && suppLinks.length > 0) {
+        const suppIds = suppLinks.map((l: any) => l.fournisseur_id);
+        const { data: suppData } = await supabase
+          .from('fournisseurs')
+          .select('*')
+          .in('id', suppIds)
+          .eq('department_id', serviceId);
+        setLinkedSuppliers(suppData || []);
+      } else {
+        setLinkedSuppliers([]);
+      }
+
+    } catch (error) {
+      console.error('Erreur chargement ressources liées:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (process && process.id) {
+      loadLinkedResources();
+    }
+  }, [process.id]);
+
+  const unlinkResource = async (type: string, resourceId: string, resourceName: string) => {
+    if (!confirm(`Voulez-vous dissocier "${resourceName}" de ce processus ?`)) return;
+
+    try {
+      let table = '';
+      let idColumn = '';
+      
+      switch(type) {
+        case 'HR':
+          table = 'processus_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          break;
+        case 'Equipement':
+          table = 'processus_equipements';
+          idColumn = 'equipement_id';
+          break;
+        case 'App':
+          table = 'processus_applications';
+          idColumn = 'application_id';
+          break;
+        case 'Fournisseur':
+          table = 'processus_fournisseurs';
+          idColumn = 'fournisseur_id';
+          break;
+        default: return;
+      }
+
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('processus_id', process.id)
+        .eq(idColumn, resourceId);
+
+      if (error) throw error;
+
+      toast({ title: "Succès", description: `Ressource dissociée du processus` });
+      
+      await loadLinkedResources();
+      if (onResourceUnlinked) onResourceUnlinked();
+
+    } catch (error: any) {
+      console.error('Erreur dissociation:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de la dissociation", variant: "destructive" });
+    }
+  };
+
+  const getMergedResources = (type: string) => {
+    const oldResources = process.resources?.filter((r: any) => r.type === type) || [];
+    let newResources: any[] = [];
+    
+    switch(type) {
+      case 'HR': newResources = linkedHR; break;
+      case 'Equipement': newResources = linkedEquipment; break;
+      case 'Fournisseur': newResources = linkedSuppliers; break;
+      default: return oldResources;
+    }
+
+    const merged = [...oldResources];
+    for (const newRes of newResources) {
+      if (!merged.some((r: any) => r.id === newRes.id || r.name === newRes.name)) {
+        merged.push({ ...newRes, _isLinked: true });
+      }
+    }
+    return merged.map((r: any) => ({ ...r, _isLinked: r._isLinked || false }));
+  };
+
+  const totalResources = 
+    getMergedResources('HR').length + 
+    getMergedResources('Equipement').length + 
+    (process.appsCritiques?.length || 0) + 
+    linkedApps.length + 
+    getMergedResources('Fournisseur').length;
+
+  return (
+    <Dialog open={!!process} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield className="h-6 w-6 text-indigo-600" />
+              <DialogTitle className="text-xl">{process.name}</DialogTitle>
+              <Badge className={criticalityColor(crit)}>{crit}</Badge>
+              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                <LinkIcon className="h-3 w-3 mr-1" />
+                {totalResources} ressources
+              </Badge>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={loadLinkedResources}>
+                <RefreshCw className="h-4 w-4 mr-1" /> Rafraîchir
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => onEditProcess(process.id)}>
+                <Pencil className="h-4 w-4 mr-1" /> Modifier
+              </Button>
+            </div>
+          </div>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-gray-400">Code</p>
+                <p className="font-mono text-sm">{process.code || process.id?.slice(0, 8)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-gray-400">Responsable</p>
+                <p className="font-medium text-sm">{process.owner || "—"}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-gray-400">RTO</p>
+                <p className="font-medium text-sm">{process.rto || 0}h</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-gray-400">RPO</p>
+                <p className="font-medium text-sm">{process.rpo || 0}h</p>
+              </div>
+            </div>
+
+            {process.description && (
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-400 font-semibold">Description</p>
+                <p className="text-sm">{process.description}</p>
+              </div>
+            )}
+
+            <div className="border rounded-lg overflow-hidden">
+              <div className="bg-gray-100 px-4 py-2 font-medium text-sm flex items-center gap-2">
+                <LinkIcon className="h-4 w-4 text-indigo-600" />
+                Ressources associées
+                <Badge className="bg-indigo-100 text-indigo-700 text-xs ml-2">
+                  {totalResources} total
+                </Badge>
+              </div>
+              <div className="p-4 grid grid-cols-2 gap-4">
+                <div className="border rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className="h-4 w-4 text-blue-600" />
+                    <span className="font-medium text-sm">RH</span>
+                    <Badge variant="outline" className="text-xs">
+                      {getMergedResources('HR').length}
+                    </Badge>
+                  </div>
+                  {getMergedResources('HR').length > 0 ? (
+                    getMergedResources('HR').map((r: any, i: number) => (
+                      <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                        <span>{r.name}</span>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[10px]">{r.role || "—"}</Badge>
+                          {r._isLinked && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                              onClick={() => unlinkResource('HR', r.id, r.name)}
+                              title="Dissocier"
+                            >
+                              <Unlink className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-400">Aucun RH associé</p>
+                  )}
+                </div>
+
+                <div className="border rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Monitor className="h-4 w-4 text-yellow-600" />
+                    <span className="font-medium text-sm">Équipements</span>
+                    <Badge variant="outline" className="text-xs">
+                      {getMergedResources('Equipement').length}
+                    </Badge>
+                  </div>
+                  {getMergedResources('Equipement').length > 0 ? (
+                    getMergedResources('Equipement').map((r: any, i: number) => (
+                      <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                        <span>{r.name}</span>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[10px]">{r.type || "—"}</Badge>
+                          {r._isLinked && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                              onClick={() => unlinkResource('Equipement', r.id, r.name)}
+                              title="Dissocier"
+                            >
+                              <Unlink className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-400">Aucun équipement associé</p>
+                  )}
+                </div>
+
+                <div className="border rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Server className="h-4 w-4 text-purple-600" />
+                    <span className="font-medium text-sm">Apps IT</span>
+                    <Badge variant="outline" className="text-xs">
+                      {(process.appsCritiques?.length || 0) + linkedApps.length}
+                    </Badge>
+                  </div>
+                  {[...(process.appsCritiques || []), ...linkedApps].length > 0 ? (
+                    [...(process.appsCritiques || []), ...linkedApps].map((a: any, i: number) => {
+                      const isLinked = linkedApps.some((la: any) => la.id === a.id);
+                      return (
+                        <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                          <span>{a.name}</span>
+                          <div className="flex items-center gap-1">
+                            <Badge variant="outline" className="text-[10px]">{a.rto_hours || a.rto || 0}h</Badge>
+                            {isLinked && (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                                onClick={() => unlinkResource('App', a.id, a.name)}
+                                title="Dissocier"
+                              >
+                                <Unlink className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-400">Aucune app associée</p>
+                  )}
+                </div>
+
+                <div className="border rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Handshake className="h-4 w-4 text-orange-600" />
+                    <span className="font-medium text-sm">Prestataires</span>
+                    <Badge variant="outline" className="text-xs">
+                      {getMergedResources('Fournisseur').length}
+                    </Badge>
+                  </div>
+                  {getMergedResources('Fournisseur').length > 0 ? (
+                    getMergedResources('Fournisseur').map((r: any, i: number) => (
+                      <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                        <span>{r.name}</span>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[10px]">{r.service || "—"}</Badge>
+                          {r._isLinked && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                              onClick={() => unlinkResource('Fournisseur', r.id, r.name)}
+                              title="Dissocier"
+                            >
+                              <Unlink className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-400">Aucun prestataire associé</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {process.depends_on && process.depends_on.length > 0 && (
+              <div className="border rounded-lg p-3">
+                <p className="text-xs text-gray-400 font-semibold mb-2">Dépendances</p>
+                <div className="flex flex-wrap gap-2">
+                  {process.depends_on.map((depId: string) => {
+                    const dep = allProcesses.find(p => p.id === depId);
+                    return dep ? (
+                      <Badge key={depId} variant="outline" className="bg-indigo-50">
+                        {dep.name}
+                      </Badge>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ============================================================
+// COMPOSANT - DependencyMapView
+// ============================================================
 const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { processes: any[]; serviceName: string; onProcessesUpdate?: () => void }) => {
   const [hoveredProcess, setHoveredProcess] = useState<string | null>(null);
   const [selectedProcess, setSelectedProcess] = useState<any | null>(null);
@@ -626,116 +1200,170 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
   );
 };
 
-// ── Composant : Carte Service BIA ──────────────────────────────────────────
+// ============================================================
+// COMPOSANT - BIAServiceCard - REDESIGN AVEC ÉTAT VIDE
+// ============================================================
 const BIAServiceCard = ({ 
   service,
   onClick,
+  departmentId,
 }: { 
   service: ServiceBIA;
   onClick: () => void;
+  departmentId?: string;
 }) => {
-  const statusColors = {
-    critique: "border-l-4 border-l-red-500",
-    a_completer: "border-l-4 border-l-amber-500",
-    a_reviser: "border-l-4 border-l-orange-500",
-    complet: "border-l-4 border-l-green-500"
-  };
-
-  const statusBadges = {
+  const isNonDemarre = service.status === "non_demarre";
+  
+  const statusConfigs = {
     critique: { label: "Critique", className: "bg-red-100 text-red-700 border-red-200" },
     a_completer: { label: "À compléter", className: "bg-amber-100 text-amber-700 border-amber-200" },
     a_reviser: { label: "À réviser", className: "bg-orange-100 text-orange-700 border-orange-200" },
-    complet: { label: "Complet", className: "bg-green-100 text-green-700 border-green-200" }
+    complet: { label: "Complet", className: "bg-green-100 text-green-700 border-green-200" },
+    non_demarre: { label: "Non démarré", className: "bg-gray-100 text-gray-500 border-gray-200" }
   };
 
-  const barColor = service.completionRate === 100 ? "bg-green-500" : "bg-amber-500";
+  const statusConfig = statusConfigs[service.status] || statusConfigs.a_completer;
+
+  const handleAddProcess = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (departmentId) {
+      window.dispatchEvent(new CustomEvent('openBiaWizard', { 
+        detail: { departmentId } 
+      }));
+    }
+  };
 
   return (
     <div 
-      className={`bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:shadow-md transition-all duration-200 hover:border-indigo-300 ${statusColors[service.status]}`}
+      className="bg-white border border-[#E8E4DC] rounded-xl p-5 cursor-pointer hover:shadow-[0_8px_24px_rgba(23,32,48,0.08)] hover:border-[#2A5141]/30 transition-all duration-200"
       onClick={onClick}
     >
       <div className="flex justify-between items-start mb-3">
         <div>
-          <h3 className="font-semibold text-gray-900">{service.name}</h3>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <h3 className="font-semibold text-[#172030] text-base">{service.name}</h3>
+          <p className="text-xs text-[#172030]/50 mt-0.5">
             👤 {service.owner} · Coord. {service.coordinator}
           </p>
         </div>
-        <Badge className={statusBadges[service.status].className}>
-          {statusBadges[service.status].label}
+        <Badge className={statusConfig.className}>
+          {statusConfig.label}
         </Badge>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 py-3 border-t border-b border-gray-100 mb-3">
+      <div className="grid grid-cols-4 gap-2 py-3 border-t border-b border-[#E8E4DC] mb-3">
         <div className="text-center">
-          <div className="text-lg font-bold font-mono">{service.processCount}</div>
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide">Processus</div>
+          <div className={cn(
+            "text-lg font-bold font-mono",
+            isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
+          )}>
+            {service.processCount}
+          </div>
+          <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Processus</div>
         </div>
         <div className="text-center">
-          <div className={`text-lg font-bold font-mono ${service.criticalCount > 0 ? 'text-red-600' : 'text-gray-600'}`}>
+          <div className={cn(
+            "text-lg font-bold font-mono",
+            service.criticalCount > 0 ? "text-red-600" : isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
+          )}>
             {service.criticalCount}
           </div>
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide">Critiques</div>
+          <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Critiques</div>
         </div>
         <div className="text-center">
-          <div className="text-lg font-bold font-mono">{service.appsIT}</div>
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide">Applis IT</div>
+          <div className={cn(
+            "text-lg font-bold font-mono",
+            isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
+          )}>
+            {service.appsIT}
+          </div>
+          <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Applis IT</div>
         </div>
         <div className="text-center">
-          <div className="text-lg font-bold font-mono">{service.suppliers}</div>
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide">Prestataires</div>
+          <div className={cn(
+            "text-lg font-bold font-mono",
+            isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
+          )}>
+            {service.suppliers}
+          </div>
+          <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Prestataires</div>
         </div>
       </div>
 
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2 flex-1">
-          <div className="flex-1 max-w-28 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="flex-1 max-w-28 h-1.5 bg-[#E8E4DC] rounded-full overflow-hidden">
             <div 
-              className={`h-full rounded-full ${barColor}`} 
-              style={{ width: `${service.completionRate}%` }}
+              className={cn(
+                "h-full rounded-full transition-all",
+                isNonDemarre ? "bg-[#E8E4DC]" : "bg-[#2A5141]"
+              )}
+              style={{ width: `${isNonDemarre ? 0 : service.completionRate}%` }}
             />
           </div>
-          <span className="text-xs font-mono font-medium text-gray-500">
-            {service.completionRate}%
+          <span className={cn(
+            "text-xs font-mono font-medium",
+            isNonDemarre ? "text-[#172030]/30" : "text-[#172030]/60"
+          )}>
+            {isNonDemarre ? "0" : service.completionRate}%
           </span>
         </div>
-        <span className="text-xs text-indigo-600 font-medium flex items-center gap-1">
-          Ouvrir <ChevronRightIcon className="h-3.5 w-3.5" />
-        </span>
+        {isNonDemarre ? (
+          <Button 
+            size="sm" 
+            className="gap-1 text-xs bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
+            onClick={handleAddProcess}
+          >
+            <Plus className="h-3.5 w-3.5" /> Ajouter un processus
+          </Button>
+        ) : (
+          <span className="text-xs text-[#2A5141] font-medium flex items-center gap-1">
+            Ouvrir <ChevronRightIcon className="h-3.5 w-3.5" />
+          </span>
+        )}
       </div>
+      
+      {isNonDemarre && (
+        <p className="text-xs text-[#172030]/40 mt-2 italic">
+          Aucun processus recensé pour ce service. Lancez l'analyse d'impact.
+        </p>
+      )}
     </div>
   );
 };
 
-// ── Composant : Section Direction ──────────────────────────────────────────
+// ============================================================
+// COMPOSANT - DirectionSection - REDESIGN
+// ============================================================
 const DirectionSection = ({ 
   name, 
   icon,
   services,
   onServiceClick,
+  departmentIds,
 }: {
   name: string;
   icon: React.ReactNode;
   services: ServiceBIA[];
   onServiceClick: (service: ServiceBIA) => void;
+  departmentIds?: Record<string, string>;
 }) => {
   return (
-    <div className="mb-6">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-6 h-6 rounded bg-indigo-50 text-indigo-600 flex items-center justify-center">
+    <div className="mb-8">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-6 h-6 rounded-lg bg-[#F8F6F2] text-[#172030] flex items-center justify-center">
           {icon}
         </div>
-        <h3 className="font-semibold text-gray-800">{name}</h3>
-        <span className="text-xs text-gray-400">{services.length} service{services.length > 1 ? 's' : ''}</span>
-        <div className="flex-1 h-px bg-gray-200"></div>
+        <h3 className="font-semibold text-[#172030]">{name}</h3>
+        <span className="text-xs text-[#172030]/40">{services.length} service{services.length > 1 ? 's' : ''}</span>
+        <div className="flex-1 h-px bg-[#E8E4DC]"></div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {services.map(service => (
           <BIAServiceCard
             key={service.id}
             service={service}
             onClick={() => onServiceClick(service)}
+            departmentId={departmentIds?.[service.id]}
           />
         ))}
       </div>
@@ -743,7 +1371,9 @@ const DirectionSection = ({
   );
 };
 
-// ── Composant : Matrice d'impact (LECTURE SEULE) ────────────────────────────
+// ============================================================
+// IMPACT MATRIX - AVEC BADGES ENTIÈREMENT COLORÉS (PASTEL)
+// ============================================================
 const ImpactMatrix = ({ 
   impacts, 
   isCritical,
@@ -757,11 +1387,50 @@ const ImpactMatrix = ({
   rpo?: number;
   mtpd?: number;
 }) => {
-  const getSeverityColor = (value: number) => {
-    if (value === 0) return "bg-gray-50 text-gray-400 border-gray-200";
+  // Définition des styles pastel pour chaque niveau de sévérité
+  const getSeverityPastelStyle = (value: number) => {
+    if (value === 0) {
+      return {
+        bg: "#F5F5F5",
+        text: "#9E9E9E",
+        border: "#E0E0E0",
+        icon: <CircleOff className="h-3.5 w-3.5" style={{ color: "#9E9E9E" }} />
+      };
+    }
     const label = SEVERITY_FROM_NUMBER[value];
-    const found = SEVERITY_LEVELS.find(s => s.value === label);
-    return found ? found.color : "bg-gray-50 border-gray-200";
+    const styles: Record<string, { bg: string; text: string; border: string; icon: JSX.Element }> = {
+      "Mineur": {
+        bg: "#E8F5E9",
+        text: "#2E7D32",
+        border: "#A5D6A7",
+        icon: <CircleCheck className="h-3.5 w-3.5" style={{ color: "#2E7D32" }} />
+      },
+      "Modéré": {
+        bg: "#FFF8E1",
+        text: "#F57F17",
+        border: "#FFE082",
+        icon: <CircleDot className="h-3.5 w-3.5" style={{ color: "#F57F17" }} />
+      },
+      "Majeur": {
+        bg: "#FFF3E0",
+        text: "#E65100",
+        border: "#FFCC80",
+        icon: <Circle className="h-3.5 w-3.5" style={{ color: "#E65100" }} />
+      },
+      "Sévère": {
+        bg: "#FBE9E7",
+        text: "#D84315",
+        border: "#FFAB91",
+        icon: <AlertTriangleIcon className="h-3.5 w-3.5" style={{ color: "#D84315" }} />
+      },
+      "Très sévère": {
+        bg: "#FFEBEE",
+        text: "#C62828",
+        border: "#EF9A9A",
+        icon: <AlertOctagon className="h-3.5 w-3.5" style={{ color: "#C62828" }} />
+      },
+    };
+    return styles[label] || styles["Mineur"];
   };
 
   const getSeverityText = (value: number): string => {
@@ -769,116 +1438,173 @@ const ImpactMatrix = ({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Objectifs de continuité */}
-      <div className="grid grid-cols-3 gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-        <div className="text-center">
-          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">RTO</p>
-          <p className="text-xl font-bold text-red-600">{rto || 0}h</p>
+    <div className="space-y-5">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-lg p-3 border border-[#E8E4DC] shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">RTO</p>
+              <p className="text-xl font-bold text-[#172030]">{rto || 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span></p>
+            </div>
+            <div className="w-7 h-7 rounded-full bg-red-50 flex items-center justify-center">
+              <Clock className="h-3.5 w-3.5 text-red-500" />
+            </div>
+          </div>
+          <p className="text-[10px] text-[#172030]/40">Délai de reprise max</p>
         </div>
-        <div className="text-center">
-          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">RPO</p>
-          <p className="text-xl font-bold text-orange-600">{rpo || 0}h</p>
+        <div className="bg-white rounded-lg p-3 border border-[#E8E4DC] shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">RPO</p>
+              <p className="text-xl font-bold text-[#172030]">{rpo || 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span></p>
+            </div>
+            <div className="w-7 h-7 rounded-full bg-orange-50 flex items-center justify-center">
+              <Database className="h-3.5 w-3.5 text-orange-500" />
+            </div>
+          </div>
+          <p className="text-[10px] text-[#172030]/40">Perte de données max</p>
         </div>
-        <div className="text-center">
-          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">MTPD</p>
-          <p className="text-xl font-bold text-blue-600">{mtpd || 0}h</p>
+        <div className="bg-white rounded-lg p-3 border border-[#E8E4DC] shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">MTPD</p>
+              <p className="text-xl font-bold text-[#172030]">{mtpd || 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span></p>
+            </div>
+            <div className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center">
+              <AlertTriangle className="h-3.5 w-3.5 text-blue-500" />
+            </div>
+          </div>
+          <p className="text-[10px] text-[#172030]/40">Indisponibilité max</p>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm min-w-[600px]">
-          <thead>
-            <tr>
-              <th className="text-left text-xs font-semibold text-gray-400 bg-gray-50 p-2 border-b border-gray-200 w-40">
-                Type d'impact
-              </th>
-              {TIME_PERIODS.map(period => {
-                const label = AVAILABILITY_PERIODS.find(p => p.id === period)?.label || period;
+      <div className="border border-[#E8E4DC] rounded-lg overflow-hidden bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className="text-left text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider bg-[#F8F6F2] p-2 border-b border-[#E8E4DC] w-36">
+                  Type d'impact
+                </th>
+                {TIME_PERIODS.map(period => {
+                  const label = AVAILABILITY_PERIODS.find(p => p.id === period)?.label || period;
+                  return (
+                    <th key={period} className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider bg-[#F8F6F2] p-2 border-b border-[#E8E4DC] min-w-[60px]">
+                      ≤ {label}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {IMPACT_AXES.map((axis, rowIdx) => {
                 return (
-                  <th key={period} className="text-center text-xs font-semibold text-gray-400 bg-gray-50 p-2 border-b border-gray-200">
-                    ≤ {label}
-                  </th>
+                  <tr key={axis} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAF9]'}>
+                    <td className="p-2 border-b border-[#E8E4DC] font-medium text-sm text-[#172030]">
+                      {axis}
+                      <div className="text-[9px] font-normal text-[#172030]/40">
+                        {axis === "Financier" && "Perte financière"}
+                        {axis === "Conformité / Légal" && "Sanctions, litiges"}
+                        {axis === "Opérationnel" && "Perturbation des activités"}
+                        {axis === "Réputationnel" && "Confiance clients / partenaires"}
+                      </div>
+                    </td>
+                    {TIME_PERIODS.map(period => {
+                      const value = getImpactValue(impacts, axis, period);
+                      const text = getSeverityText(value);
+                      const isFilled = value > 0;
+                      const style = getSeverityPastelStyle(value);
+                      return (
+                        <td key={period} className="p-1.5 border-b border-[#E8E4DC] text-center">
+                          <div 
+                            className={cn(
+                              "inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs font-medium transition-all",
+                              !isFilled && "opacity-60"
+                            )}
+                            style={{
+                              backgroundColor: style.bg,
+                              color: style.text,
+                              borderColor: style.border,
+                              minWidth: "70px",
+                              justifyContent: "center"
+                            }}
+                          >
+                            {style.icon}
+                            {text}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
                 );
               })}
-            </tr>
-          </thead>
-          <tbody>
-            {IMPACT_AXES.map(axis => {
-              return (
-                <tr key={axis}>
-                  <td className="text-left p-2 border-b border-gray-100 font-medium text-sm">
-                    {axis}
-                    <div className="text-[10px] font-normal text-gray-400">
-                      {axis === "Financier" && "Perte financière"}
-                      {axis === "Conformité / Légal" && "Sanctions, litiges"}
-                      {axis === "Opérationnel" && "Perturbation des activités"}
-                      {axis === "Réputationnel" && "Confiance clients / partenaires"}
-                    </div>
-                  </td>
-                  {TIME_PERIODS.map(period => {
-                    const value = getImpactValue(impacts, axis, period);
-                    const color = getSeverityColor(value);
-                    const text = getSeverityText(value);
-                    return (
-                      <td key={period} className="p-1 border-b border-gray-100 text-center">
-                        <div
-                          className={`w-full py-1.5 px-2 rounded-md text-xs font-medium border ${color}`}
-                        >
-                          {text}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Légende */}
-      <div className="flex flex-wrap gap-3 p-3 bg-gray-50 rounded-lg">
-        {SEVERITY_LEVELS.map(sev => (
-          <div key={sev.value} className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: sev.bg, border: `1px solid ${sev.text}` }} />
-            <span className="text-[10px] text-gray-500">{sev.value}</span>
-          </div>
-        ))}
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-gray-50 border border-gray-300" />
-          <span className="text-[10px] text-gray-500">— Non renseigné</span>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Résultat automatique */}
-      <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-        <span className="text-sm font-medium text-gray-700">Résultat automatique :</span>
+      <div className="flex flex-wrap items-center gap-3 p-2.5 bg-[#F8F6F2] rounded-lg border border-[#E8E4DC]">
+        <span className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider mr-0.5">Légende</span>
+        {SEVERITY_LEVELS.map(sev => (
+          <div key={sev.value} className="flex items-center gap-1">
+            <div className={cn("w-3 h-3 rounded-full", sev.bg, "border", sev.border)} />
+            <span className="text-[10px] text-[#172030]/60">{sev.value}</span>
+          </div>
+        ))}
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full bg-gray-200 border border-gray-300" />
+          <span className="text-[10px] text-[#172030]/40">Non renseigné</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 p-2.5 bg-white rounded-lg border border-[#E8E4DC] shadow-sm">
+        <span className="text-xs font-medium text-[#172030]/70">Résultat automatique :</span>
         {isCritical ? (
-          <Badge className="bg-red-100 text-red-700 border-red-200">
-            <AlertCircle className="h-3 w-3 mr-1" />
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600">
+            <AlertOctagon className="h-4 w-4" />
             Business critical — YES
-          </Badge>
+          </span>
         ) : (
-          <Badge className="bg-gray-100 text-gray-600 border-gray-200">
-            <CheckCircle className="h-3 w-3 mr-1" />
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#172030]/50">
+            <Check className="h-4 w-4 text-[#2A5141]" />
             Non critique
-          </Badge>
+          </span>
         )}
       </div>
     </div>
   );
 };
 
-// ── Composant : Processus Accordion ─────────────────────────────────────────
+// ============================================================
+// PROCESS ACCORDION - AVEC SECTION RESSOURCES ASSOCIÉES
+// ============================================================
 const ProcessAccordion = ({ 
   process, 
   index,
   department,
+  onProcessClick,
+  onLinkClick,
+  onEditProcess,
+  onDeleteProcess,
+  resourceCount,
+  canDelete,
+  processResources,
 }: { 
   process: any;
   index: number;
   department: string;
+  onProcessClick: (process: any) => void;
+  onLinkClick: (process: any) => void;
+  onEditProcess: (id: string) => void;
+  onDeleteProcess: (id: string, name: string) => void;
+  resourceCount: number;
+  canDelete: boolean;
+  processResources?: {
+    hr: any[];
+    equipment: any[];
+    apps: any[];
+    suppliers: any[];
+  };
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const score = computeMaxScoreFromImpacts(process.impacts);
@@ -886,23 +1612,111 @@ const ProcessAccordion = ({
   const code = generateProcessCode(department, index);
   const isCritical = isProcessCritical(process.impacts);
 
+  const criticalityDotColor = {
+    "Critique": "bg-[#ef4444]",
+    "Majeur": "bg-[#f97316]",
+    "Modéré": "bg-[#eab308]",
+    "Mineur": "bg-[#22c55e]",
+  }[criticality] || "bg-gray-300";
+
+  // Récupérer les ressources liées à ce processus
+  const hrResources = processResources?.hr || [];
+  const equipmentResources = processResources?.equipment || [];
+  const appsResources = processResources?.apps || [];
+  const suppliersResources = processResources?.suppliers || [];
+  
+  const hasAnyResource = hrResources.length > 0 || equipmentResources.length > 0 || appsResources.length > 0 || suppliersResources.length > 0;
+
   return (
-    <div className={`border rounded-xl overflow-hidden bg-white ${isCritical ? 'border-l-4 border-l-red-500' : ''}`}>
+    <div className={cn(
+      "border rounded-lg overflow-hidden bg-white transition-all shadow-sm hover:shadow-md",
+      isCritical ? "border-l-4 border-l-[#ef4444]" : "border-[#E8E4DC]"
+    )}>
       <div 
-        className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-2 p-2.5 cursor-pointer hover:bg-[#FAFAF9] transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
-          {code}
-        </span>
-        <span className="font-medium text-sm flex-1">{process.name}</span>
-        <Badge className={criticalityColor(criticality)}>{criticality}</Badge>
-        <span className="text-xs text-gray-400">Resp. : {process.owner || "—"}</span>
-        <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-[10px] font-mono text-[#172030]/40 bg-[#F8F6F2] px-2 py-0.5 rounded border border-[#E8E4DC] whitespace-nowrap">
+            {code}
+          </span>
+          <span className="font-medium text-sm text-[#172030] truncate">{process.name}</span>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="inline-flex items-center gap-1.5 text-xs">
+            <span className={cn("w-1.5 h-1.5 rounded-full", criticalityDotColor)} />
+            <span className="font-medium text-[#172030]">{criticality}</span>
+          </span>
+          <span className="text-[10px] text-[#172030]/40 hidden sm:inline">Resp. {process.owner || "—"}</span>
+          {resourceCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] bg-[#F8F6F2] px-1.5 py-0.5 rounded border border-[#E8E4DC] text-[#172030]/60">
+              <LinkIcon className="h-2.5 w-2.5" />
+              {resourceCount}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-[#172030]/40 hover:text-[#172030] hover:bg-[#F8F6F2] rounded"
+            onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+          >
+            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-90")} />
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-[10px] text-[#172030]/50 hover:text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onLinkClick(process); }}
+            title="Associer une ressource (RH, équipement, app IT, prestataire)"
+          >
+            <Link2 className="h-3 w-3" />
+            <span className="hidden sm:inline">Associer</span>
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-[10px] text-[#172030]/50 hover:text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onProcessClick(process); }}
+            title="Voir toutes les ressources associées à ce processus"
+          >
+            <FolderOpen className="h-3 w-3" />
+            <span className="hidden sm:inline">Liaisons</span>
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-[10px] text-[#172030]/50 hover:text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onEditProcess(process.id); }}
+            title="Modifier le processus"
+          >
+            <EditIcon className="h-3 w-3" />
+            <span className="hidden sm:inline">Modifier</span>
+          </Button>
+          
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-[10px] text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded gap-1 transition-colors"
+              onClick={(e) => { e.stopPropagation(); onDeleteProcess(process.id, process.name); }}
+              title="Supprimer le processus"
+            >
+              <TrashIcon className="h-3 w-3" />
+              <span className="hidden sm:inline">Supprimer</span>
+            </Button>
+          )}
+        </div>
       </div>
       
       {isOpen && (
-        <div className="p-4 border-t border-gray-100">
+        <div className="p-3 border-t border-[#E8E4DC] bg-[#FAFAF9]">
           <ImpactMatrix
             impacts={process.impacts}
             isCritical={isCritical}
@@ -910,13 +1724,331 @@ const ProcessAccordion = ({
             rpo={process.rpo}
             mtpd={process.mtpd}
           />
+
+          {/* ============================================================
+              SECTION RESSOURCES ASSOCIÉES À CE PROCESSUS
+              ============================================================ */}
+          <div className="mt-4 pt-4 border-t border-[#E8E4DC]">
+            <div className="flex items-center gap-2 mb-3">
+              <LinkIcon className="h-4 w-4 text-[#2A5141]" />
+              <span className="text-sm font-medium text-[#172030]">Ressources associées à ce processus</span>
+              <Badge variant="outline" className="text-[10px] bg-[#F8F6F2] border-[#E8E4DC] text-[#172030]/60">
+                {hrResources.length + equipmentResources.length + appsResources.length + suppliersResources.length} total
+              </Badge>
+            </div>
+
+            {!hasAnyResource ? (
+              <p className="text-sm text-[#172030]/40 italic">Aucune ressource associée à ce processus</p>
+            ) : (
+              <div className="space-y-3">
+                {/* RH */}
+                {hrResources.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Users className="h-3.5 w-3.5 text-blue-600" />
+                      <span className="text-xs font-medium text-[#172030]">Ressources humaines</span>
+                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
+                        {hrResources.length}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {hrResources.map((r, i) => (
+                        <Badge key={r.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
+                          {r.name} {r.role && `(${r.role})`}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Équipements */}
+                {equipmentResources.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Monitor className="h-3.5 w-3.5 text-yellow-600" />
+                      <span className="text-xs font-medium text-[#172030]">Équipements</span>
+                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
+                        {equipmentResources.length}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {equipmentResources.map((eq, i) => (
+                        <Badge key={eq.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
+                          {eq.name} {eq.type && `(${eq.type})`}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Applications IT */}
+                {appsResources.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Server className="h-3.5 w-3.5 text-purple-600" />
+                      <span className="text-xs font-medium text-[#172030]">Applications IT</span>
+                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
+                        {appsResources.length}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {appsResources.map((app, i) => (
+                        <Badge key={app.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
+                          {app.name} {app.rto_hours && `(RTO: ${app.rto_hours}h)`}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Prestataires */}
+                {suppliersResources.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Handshake className="h-3.5 w-3.5 text-orange-600" />
+                      <span className="text-xs font-medium text-[#172030]">Prestataires</span>
+                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
+                        {suppliersResources.length}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suppliersResources.map((sup, i) => (
+                        <Badge key={sup.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
+                          {sup.name} {sup.service && `(${sup.service})`}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-// ── Composant : BIA Fiche Détail ────────────────────────────────────────────
+// ============================================================
+// COMPOSANT - PersonnelTableau - UNIQUEMENT DU TEXTE/CHIFFRES (CORRIGÉ)
+// ============================================================
+const PersonnelTableau = ({ people }: { people: any[] }) => {
+  const getAvailabilityRate = (availability: any) => {
+    if (!availability) return 0;
+    const periods = Object.values(availability);
+    const available = periods.filter(v => v === true).length;
+    return Math.round((available / periods.length) * 100);
+  };
+
+  // Calcul des totaux par période
+  const periodTotals = AVAILABILITY_PERIODS.map(period => {
+    return people.filter(p => p.availability?.[period.id] === true).length;
+  });
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Personne / Rôle</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Processus liés</TableHead>
+            {AVAILABILITY_PERIODS.map((period) => (
+              <TableHead key={period.id} className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">
+                {period.label}
+              </TableHead>
+            ))}
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-right">Taux</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {people.map((person, idx) => {
+            const rate = getAvailabilityRate(person.availability);
+            const displayProcesses = person.linkedProcesses || [];
+            const visibleProcesses = displayProcesses.slice(0, 2);
+            const remainingCount = displayProcesses.length - 2;
+
+            return (
+              <TableRow 
+                key={person.id || idx}
+                className={cn(
+                  "border-b border-[#E8E4DC]",
+                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
+                )}
+              >
+                <TableCell className="py-2">
+                  <div>
+                    <p className="text-sm font-medium text-[#172030]">{person.name}</p>
+                    <p className="text-xs text-[#172030]/40">{person.role || "—"}</p>
+                  </div>
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {displayProcesses.length > 0 ? (
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                      {visibleProcesses.map((p: any) => (
+                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                          {p.name}
+                        </Badge>
+                      ))}
+                      {remainingCount > 0 && (
+                        <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
+                          +{remainingCount}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">—</span>
+                  )}
+                </TableCell>
+                {AVAILABILITY_PERIODS.map((period) => {
+                  const isAvailable = person.availability?.[period.id] === true;
+                  return (
+                    <TableCell key={period.id} className="py-2 text-center font-mono text-sm text-[#172030]">
+                      {isAvailable ? "1" : "0"}
+                    </TableCell>
+                  );
+                })}
+                <TableCell className="py-2 text-right font-semibold text-sm text-[#172030]">
+                  {rate}%
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+        {/* Ligne Total FTE - Utilisation de <tfoot> HTML standard (pas TableFooter de shadcn) */}
+        <tfoot>
+          <tr className="bg-[#F8F6F2] border-t border-[#E8E4DC]">
+            <td className="py-2 font-semibold text-sm text-[#172030]">Total FTE</td>
+            <td className="py-2 text-center text-sm text-[#172030]/50">—</td>
+            {periodTotals.map((total, index) => (
+              <td key={index} className="py-2 text-center font-mono font-semibold text-sm text-[#2A5141]">
+                {total}
+              </td>
+            ))}
+            <td className="py-2 text-right text-sm text-[#172030]/50">—</td>
+          </tr>
+        </tfoot>
+      </Table>
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT - EquipmentTableau - UNIQUEMENT DU TEXTE/CHIFFRES
+// ============================================================
+const EquipmentTableau = ({ equipment, onDeleteEquipment }: { equipment: any[], onDeleteEquipment?: (id: string, name: string) => void }) => {
+  const periods = [
+    { key: "P0_4H", label: "0-4h" },
+    { key: "P4_8H", label: "4-8h" },
+    { key: "P1D", label: "1j" },
+    { key: "P2D", label: "2j" },
+  ];
+
+  const handleDelete = (id: string, name: string) => {
+    if (!confirm(`⚠️ Supprimer définitivement l'équipement "${name}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
+    if (onDeleteEquipment) onDeleteEquipment(id, name);
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Équipement</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Type</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Unités</TableHead>
+            {periods.map((p) => (
+              <TableHead key={p.key} className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">
+                {p.label}
+              </TableHead>
+            ))}
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {equipment.map((eq, idx) => {
+            const quantities = eq.quantities || {};
+            const linkedProcesses = eq.linkedProcesses || [];
+            const visibleProcesses = linkedProcesses.slice(0, 2);
+            const remainingCount = linkedProcesses.length - 2;
+
+            return (
+              <TableRow 
+                key={eq.id || idx}
+                className={cn(
+                  "border-b border-[#E8E4DC]",
+                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
+                )}
+              >
+                <TableCell className="py-2">
+                  <span className="text-sm font-medium text-[#172030]">{eq.name}</span>
+                </TableCell>
+                <TableCell className="py-2 text-sm text-[#172030]/60">{eq.type || "—"}</TableCell>
+                <TableCell className="py-2 text-center font-mono text-sm text-[#172030]">
+                  {eq.quantity || 1}
+                </TableCell>
+                {periods.map((p) => (
+                  <TableCell key={p.key} className="py-2 text-center font-mono text-sm text-[#172030]">
+                    {quantities[p.key] || 0}
+                  </TableCell>
+                ))}
+                <TableCell className="py-2">
+                  {linkedProcesses.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {visibleProcesses.map((p: any) => (
+                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                          {p.name}
+                        </Badge>
+                      ))}
+                      {remainingCount > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
+                              +{remainingCount}
+                            </Badge>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
+                              {linkedProcesses.map((p: any) => (
+                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
+                                  {p.name}
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">Aucun</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {onDeleteEquipment && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                      onClick={() => handleDelete(eq.id, eq.name)}
+                      title="Supprimer cet équipement"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT PRINCIPAL - BIAFicheDetail
+// ============================================================
 const BIAFicheDetail = ({
   service,
   processes,
@@ -939,6 +2071,690 @@ const BIAFicheDetail = ({
     evaluationDate: service.lastReviewed || new Date().toLocaleDateString('fr-FR'),
     validatedBy: "— En attente",
   });
+
+  const [filterCriticality, setFilterCriticality] = useState<string>("all");
+  const [filterResponsible, setFilterResponsible] = useState<string>("all");
+
+  const [showAddHRModal, setShowAddHRModal] = useState(false);
+  const [showAddEquipmentModal, setShowAddEquipmentModal] = useState(false);
+  const [showAddAppModal, setShowAddAppModal] = useState(false);
+  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  
+  const [loadedHR, setLoadedHR] = useState<any[]>([]);
+  const [loadedEquipment, setLoadedEquipment] = useState<any[]>([]);
+  const [loadedApps, setLoadedApps] = useState<any[]>([]);
+  const [loadedSuppliers, setLoadedSuppliers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [processResourcesCache, setProcessResourcesCache] = useState<Record<string, {
+    hr: any[];
+    equipment: any[];
+    apps: any[];
+    suppliers: any[];
+  }>>({});
+
+  const [selectedProcessForLink, setSelectedProcessForLink] = useState<string>(
+    processes.length > 0 ? processes[0].id : ''
+  );
+
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkProcess, setLinkProcess] = useState<any>(null);
+  const [linkResourceType, setLinkResourceType] = useState<string>("HR");
+  const [allResources, setAllResources] = useState<{
+    hr: any[];
+    equipment: any[];
+    apps: any[];
+    suppliers: any[];
+  }>({ hr: [], equipment: [], apps: [], suppliers: [] });
+
+  const [selectedProcessDetail, setSelectedProcessDetail] = useState<any>(null);
+
+  const [enrichedHR, setEnrichedHR] = useState<any[]>([]);
+  const [enrichedEquipment, setEnrichedEquipment] = useState<any[]>([]);
+  const [enrichedApps, setEnrichedApps] = useState<any[]>([]);
+  const [enrichedSuppliers, setEnrichedSuppliers] = useState<any[]>([]);
+
+  const [newHR, setNewHR] = useState({
+    name: "",
+    role: "",
+    phone: "",
+    email: "",
+    availability: {
+      P0_4H: false,
+      P4_8H: false,
+      P1D: false,
+      P2D: false,
+      P1W: false,
+      P2W: false,
+      P1M: false
+    }
+  });
+
+  const [newEquipment, setNewEquipment] = useState({
+    name: "",
+    type: "",
+    quantity: 1,
+    quantities: { P0_4H: 2, P4_8H: 3, P1D: 3, P2D: 4 }
+  });
+
+  const [newApp, setNewApp] = useState({
+    name: "",
+    rto_hours: 4,
+    rpo_hours: 2,
+    remplacablePar: "",
+    department_id: service.id
+  });
+
+  const [newSupplier, setNewSupplier] = useState({
+    name: "",
+    service: "",
+    contact: "",
+    rpo_hours: 4,
+    department_id: service.id
+  });
+
+  const enrichResourcesWithProcesses = async (resources: any[], type: string) => {
+    if (!resources || resources.length === 0) return resources;
+
+    let table = '';
+    let idColumn = '';
+    let idColumnInResource = '';
+
+    switch(type) {
+      case 'hr':
+        table = 'processus_ressources_humaines';
+        idColumn = 'ressource_humaine_id';
+        idColumnInResource = 'id';
+        break;
+      case 'equipment':
+        table = 'processus_equipements';
+        idColumn = 'equipement_id';
+        idColumnInResource = 'id';
+        break;
+      case 'app':
+        table = 'processus_applications';
+        idColumn = 'application_id';
+        idColumnInResource = 'id';
+        break;
+      case 'supplier':
+        table = 'processus_fournisseurs';
+        idColumn = 'fournisseur_id';
+        idColumnInResource = 'id';
+        break;
+      default:
+        return resources;
+    }
+
+    const resourceIds = resources.map(r => r.id);
+
+    if (resourceIds.length === 0) return resources;
+
+    const { data: links, error } = await supabase
+      .from(table)
+      .select(`${idColumn}, processus_id`)
+      .in(idColumn, resourceIds);
+
+    if (error) {
+      console.error(`Erreur chargement liens ${type}:`, error);
+      return enrichResourcesWithProcessesFallback(resources, type);
+    }
+
+    const processIds = links ? links.map(l => l.processus_id) : [];
+    let processMap: Record<string, string> = {};
+
+    if (processIds.length > 0) {
+      const { data: processData } = await supabase
+        .from('processus_metier')
+        .select('id, name')
+        .in('id', processIds);
+      
+      if (processData) {
+        processMap = processData.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {});
+      }
+    }
+
+    const linksByResource: Record<string, any[]> = {};
+    if (links) {
+      for (const link of links) {
+        const resourceId = link[idColumn];
+        if (!linksByResource[resourceId]) {
+          linksByResource[resourceId] = [];
+        }
+        linksByResource[resourceId].push(link);
+      }
+    }
+
+    return resources.map(resource => {
+      const resourceLinks = linksByResource[resource.id] || [];
+      const linkedProcesses = resourceLinks.map(link => ({
+        id: link.processus_id,
+        name: processMap[link.processus_id] || link.processus_id
+      }));
+
+      let oldLinkedProcesses: any[] = [];
+      
+      if (type === 'app') {
+        for (const p of processes) {
+          const apps = (p as any).appsCritiques || [];
+          if (apps.some((a: any) => a.id === resource.id || a.name === resource.name)) {
+            oldLinkedProcesses.push({ id: p.id, name: p.name });
+          }
+        }
+      } else {
+        for (const p of processes) {
+          const resourcesList = p.resources || [];
+          const found = resourcesList.some((r: any) => {
+            if (type === 'hr') {
+              if ((r as any).hrPeople) {
+                return (r as any).hrPeople.some((person: any) => person.id === resource.id || person.name === resource.name);
+              }
+              return r.id === resource.id || r.name === resource.name;
+            }
+            return r.type === (type === 'equipment' ? 'Equipement' : 'Fournisseur') && 
+                   (r.id === resource.id || r.name === resource.name);
+          });
+          if (found) {
+            oldLinkedProcesses.push({ id: p.id, name: p.name });
+          }
+        }
+      }
+
+      const allLinked = [...linkedProcesses];
+      for (const oldP of oldLinkedProcesses) {
+        if (!allLinked.some(p => p.id === oldP.id)) {
+          allLinked.push(oldP);
+        }
+      }
+
+      return {
+        ...resource,
+        linkedProcesses: allLinked,
+        linkedProcessNames: allLinked.map(p => p.name).join(', ')
+      };
+    });
+  };
+
+  const enrichResourcesWithProcessesFallback = (resources: any[], type: string) => {
+    return resources.map(resource => {
+      const linked: any[] = [];
+      
+      for (const p of processes) {
+        let isLinked = false;
+        
+        if (type === 'app') {
+          const apps = (p as any).appsCritiques || [];
+          isLinked = apps.some((a: any) => a.id === resource.id || a.name === resource.name);
+        } else if (type === 'supplier') {
+          const resourcesList = p.resources || [];
+          isLinked = resourcesList.some((r: any) => r.type === "Fournisseur" && (r.id === resource.id || r.name === resource.name));
+        } else if (type === 'equipment') {
+          const resourcesList = p.resources || [];
+          isLinked = resourcesList.some((r: any) => r.type === "Equipement" && (r.id === resource.id || r.name === resource.name));
+        } else if (type === 'hr') {
+          const resourcesList = p.resources || [];
+          for (const r of resourcesList) {
+            if (r.type === "HR") {
+              if ((r as any).hrPeople && (r as any).hrPeople.some((person: any) => person.id === resource.id || person.name === resource.name)) {
+                isLinked = true;
+                break;
+              } else if (r.id === resource.id || r.name === resource.name) {
+                isLinked = true;
+                break;
+              }
+            }
+          }
+        }
+        
+        if (isLinked) {
+          linked.push({ id: p.id, name: p.name });
+        }
+      }
+      
+      return {
+        ...resource,
+        linkedProcesses: linked,
+        linkedProcessNames: linked.map(p => p.name).join(', ')
+      };
+    });
+  };
+
+  const loadLinkedResourcesForProcess = async (processId: string) => {
+    try {
+      if (processResourcesCache[processId]) {
+        return processResourcesCache[processId];
+      }
+
+      const result = {
+        hr: [] as any[],
+        equipment: [] as any[],
+        apps: [] as any[],
+        suppliers: [] as any[]
+      };
+
+      const { data: hrLinks } = await supabase
+        .from('processus_ressources_humaines')
+        .select('ressource_humaine_id')
+        .eq('processus_id', processId);
+
+      if (hrLinks && hrLinks.length > 0) {
+        const hrIds = hrLinks.map((l: any) => l.ressource_humaine_id);
+        const { data: hrData } = await supabase
+          .from('ressources_humaines')
+          .select('*')
+          .in('id', hrIds)
+          .eq('department_id', service.id);
+        result.hr = hrData || [];
+      }
+
+      const { data: equipLinks } = await supabase
+        .from('processus_equipements')
+        .select('equipement_id')
+        .eq('processus_id', processId);
+
+      if (equipLinks && equipLinks.length > 0) {
+        const equipIds = equipLinks.map((l: any) => l.equipement_id);
+        const { data: equipData } = await supabase
+          .from('ressources_equipements')
+          .select('*')
+          .in('id', equipIds)
+          .eq('department_id', service.id);
+        result.equipment = equipData || [];
+      }
+
+      const { data: appLinks } = await supabase
+        .from('processus_applications')
+        .select('application_id')
+        .eq('processus_id', processId);
+
+      if (appLinks && appLinks.length > 0) {
+        const appIds = appLinks.map((l: any) => l.application_id);
+        const { data: appData } = await supabase
+          .from('applications_it')
+          .select('*')
+          .in('id', appIds)
+          .eq('department_id', service.id);
+        result.apps = appData || [];
+      }
+
+      const { data: suppLinks } = await supabase
+        .from('processus_fournisseurs')
+        .select('fournisseur_id')
+        .eq('processus_id', processId);
+
+      if (suppLinks && suppLinks.length > 0) {
+        const suppIds = suppLinks.map((l: any) => l.fournisseur_id);
+        const { data: suppData } = await supabase
+          .from('fournisseurs')
+          .select('*')
+          .in('id', suppIds)
+          .eq('department_id', service.id);
+        result.suppliers = suppData || [];
+      }
+
+      setProcessResourcesCache(prev => ({
+        ...prev,
+        [processId]: result
+      }));
+
+      return result;
+    } catch (error) {
+      console.error('Erreur chargement ressources liées:', error);
+      return { hr: [], equipment: [], apps: [], suppliers: [] };
+    }
+  };
+
+  const getTotalResourceCount = (process: any) => {
+    const cached = processResourcesCache[process.id];
+    if (!cached) {
+      return (process.resources?.length || 0) + ((process as any).appsCritiques?.length || 0);
+    }
+    return cached.hr.length + cached.equipment.length + cached.apps.length + cached.suppliers.length;
+  };
+
+  const loadResourcesAndAssociations = async () => {
+    setIsLoading(true);
+    try {
+      const { data: hrData, error: hrError } = await supabase
+        .from('ressources_humaines')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!hrError && hrData) {
+        setLoadedHR(hrData);
+        setEnrichedHR(await enrichResourcesWithProcesses(hrData, 'hr'));
+      }
+
+      const { data: equipData, error: equipError } = await supabase
+        .from('ressources_equipements')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!equipError && equipData) {
+        setLoadedEquipment(equipData);
+        setEnrichedEquipment(await enrichResourcesWithProcesses(equipData, 'equipment'));
+      }
+
+      const { data: appData, error: appError } = await supabase
+        .from('applications_it')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!appError && appData) {
+        setLoadedApps(appData);
+        setEnrichedApps(await enrichResourcesWithProcesses(appData, 'app'));
+      }
+
+      const { data: suppData, error: suppError } = await supabase
+        .from('fournisseurs')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!suppError && suppData) {
+        setLoadedSuppliers(suppData);
+        setEnrichedSuppliers(await enrichResourcesWithProcesses(suppData, 'supplier'));
+      }
+
+      setAllResources({
+        hr: hrData || [],
+        equipment: equipData || [],
+        apps: appData || [],
+        suppliers: suppData || []
+      });
+
+      for (const p of processes) {
+        await loadLinkedResourcesForProcess(p.id);
+      }
+
+    } catch (error) {
+      console.error('Erreur chargement ressources:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedProcessForLink) {
+      loadResourcesAndAssociations();
+    }
+  }, [selectedProcessForLink]);
+
+  useEffect(() => {
+    loadResourcesAndAssociations();
+  }, [service.id]);
+
+  const refreshLinkedResources = async () => {
+    setProcessResourcesCache({});
+    await loadResourcesAndAssociations();
+  };
+
+  const linkResourceToProcess = async (type: string, resourceId: string) => {
+    if (!linkProcess) return;
+
+    try {
+      let table = '';
+      let idColumn = '';
+      
+      switch(type) {
+        case 'HR':
+          table = 'processus_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          break;
+        case 'Equipement':
+          table = 'processus_equipements';
+          idColumn = 'equipement_id';
+          break;
+        case 'App':
+          table = 'processus_applications';
+          idColumn = 'application_id';
+          break;
+        case 'Fournisseur':
+          table = 'processus_fournisseurs';
+          idColumn = 'fournisseur_id';
+          break;
+        default: return;
+      }
+
+      const { data: existing } = await supabase
+        .from(table)
+        .select('*')
+        .eq('processus_id', linkProcess.id)
+        .eq(idColumn, resourceId);
+
+      if (existing && existing.length > 0) {
+        toast({ title: "Info", description: "Cette ressource est déjà liée à ce processus" });
+        return;
+      }
+
+      const { error } = await supabase
+        .from(table)
+        .insert({
+          processus_id: linkProcess.id,
+          [idColumn]: resourceId
+        });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Succès", 
+        description: `Ressource liée au processus "${linkProcess.name}"` 
+      });
+      
+      await refreshLinkedResources();
+      
+    } catch (error: any) {
+      console.error('Erreur liaison:', error);
+      toast({ 
+        title: "Erreur", 
+        description: error.message || "Erreur lors de la liaison", 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  // Fonction pour supprimer un RH avec gestion des liaisons
+  const handleDeletePerson = async (id: string, name: string) => {
+    try {
+      const { error: linkError } = await supabase
+        .from('processus_ressources_humaines')
+        .delete()
+        .eq('ressource_humaine_id', id);
+
+      if (linkError) console.error('Erreur suppression liaisons RH:', linkError);
+
+      const { error } = await supabase
+        .from('ressources_humaines')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast({ title: "Succès", description: `"${name}" supprimé avec succès` });
+      await refreshLinkedResources();
+    } catch (error: any) {
+      console.error('Erreur suppression RH:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de la suppression", variant: "destructive" });
+    }
+  };
+
+  // Fonction pour supprimer un équipement avec gestion des liaisons (CORRIGÉE)
+  const handleDeleteEquipment = async (id: string, name: string) => {
+    try {
+      const { data: links, error: linkCheckError } = await supabase
+        .from('processus_equipements')
+        .select('processus_id')
+        .eq('equipement_id', id);
+
+      if (linkCheckError) throw linkCheckError;
+
+      if (links && links.length > 0) {
+        const { error: deleteLinksError } = await supabase
+          .from('processus_equipements')
+          .delete()
+          .eq('equipement_id', id);
+
+        if (deleteLinksError) throw deleteLinksError;
+        toast({ description: `${links.length} liaison(s) supprimée(s)` });
+      }
+
+      const { error } = await supabase
+        .from('ressources_equipements')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast({ title: "Succès", description: `Équipement "${name}" supprimé avec succès` });
+      await refreshLinkedResources();
+    } catch (error: any) {
+      console.error('Erreur suppression équipement:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de la suppression", variant: "destructive" });
+    }
+  };
+
+  const addHR = async () => {
+    if (!newHR.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
+      return;
+    }
+    const hasAvailability = Object.values(newHR.availability).some(v => v === true);
+    if (!hasAvailability) {
+      toast({ title: "Attention", description: "Veuillez sélectionner au moins une période de disponibilité" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('ressources_humaines')
+        .insert({
+          name: newHR.name,
+          role: newHR.role || "—",
+          phone: newHR.phone || "",
+          email: newHR.email || "",
+          availability: newHR.availability,
+          department_id: service.id
+        });
+
+      if (error) throw error;
+      
+      toast({ title: "Succès", description: `RH "${newHR.name}" ajouté avec succès` });
+      setShowAddHRModal(false);
+      setNewHR({
+        name: "",
+        role: "",
+        phone: "",
+        email: "",
+        availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
+      });
+      await refreshLinkedResources();
+    } catch (error: any) {
+      console.error('Erreur ajout RH:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout du RH", variant: "destructive" });
+    }
+  };
+
+  const addEquipment = async () => {
+    if (!newEquipment.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom d'équipement" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('ressources_equipements')
+        .insert({
+          name: newEquipment.name,
+          type: newEquipment.type || "—",
+          quantity: newEquipment.quantity || 1,
+          quantities: newEquipment.quantities,
+          department_id: service.id
+        });
+
+      if (error) throw error;
+      
+      toast({ title: "Succès", description: `Équipement "${newEquipment.name}" ajouté avec succès` });
+      setShowAddEquipmentModal(false);
+      setNewEquipment({
+        name: "",
+        type: "",
+        quantity: 1,
+        quantities: { P0_4H: 2, P4_8H: 3, P1D: 3, P2D: 4 }
+      });
+      await refreshLinkedResources();
+    } catch (error: any) {
+      console.error('Erreur ajout équipement:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout de l'équipement", variant: "destructive" });
+    }
+  };
+
+  const addApp = async () => {
+    if (!newApp.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom d'application" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('applications_it')
+        .insert({
+          name: newApp.name,
+          rto_hours: newApp.rto_hours || 4,
+          rpo_hours: newApp.rpo_hours || 2,
+          remplacablepar: newApp.remplacablePar || "",
+          department_id: service.id
+        });
+
+      if (error) throw error;
+      
+      toast({ title: "Succès", description: `Application "${newApp.name}" ajoutée avec succès` });
+      setShowAddAppModal(false);
+      setNewApp({
+        name: "",
+        rto_hours: 4,
+        rpo_hours: 2,
+        remplacablePar: "",
+        department_id: service.id
+      });
+      await refreshLinkedResources();
+    } catch (error: any) {
+      console.error('Erreur ajout application:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout de l'application", variant: "destructive" });
+    }
+  };
+
+  const addSupplier = async () => {
+    if (!newSupplier.name.trim()) {
+      toast({ title: "Champ requis", description: "Veuillez saisir un nom de prestataire" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('fournisseurs')
+        .insert({
+          name: newSupplier.name,
+          service: newSupplier.service || "—",
+          contact: newSupplier.contact || "",
+          rpo_hours: newSupplier.rpo_hours || 4,
+          department_id: service.id
+        });
+
+      if (error) throw error;
+      
+      toast({ title: "Succès", description: `Prestataire "${newSupplier.name}" ajouté avec succès` });
+      setShowAddSupplierModal(false);
+      setNewSupplier({
+        name: "",
+        service: "",
+        contact: "",
+        rpo_hours: 4,
+        department_id: service.id
+      });
+      await refreshLinkedResources();
+    } catch (error: any) {
+      console.error('Erreur ajout prestataire:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout du prestataire", variant: "destructive" });
+    }
+  };
 
   const allApps = processes.flatMap(p => (p as any).appsCritiques || []);
   const uniqueApps = allApps.filter((app, index, self) => 
@@ -973,7 +2789,6 @@ const BIAFicheDetail = ({
       .map((eq: any) => ({ ...eq, processName: p.name }))
   );
 
-  // Calcul des postes de travail nécessaires depuis les RH
   const calculateWorkstations = () => {
     const periods = AVAILABILITY_PERIODS;
     const result: Record<string, number> = {};
@@ -986,9 +2801,373 @@ const BIAFicheDetail = ({
 
   const workstationCounts = calculateWorkstations();
 
+  // États de recherche pour Applications IT et Prestataires
+  const [appSearchQuery, setAppSearchQuery] = useState<string>("");
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState<string>("");
+
+  // États pour l'édition inline des RTO/RPO
+  const [editingAppField, setEditingAppField] = useState<{ id: string; field: 'rto' | 'rpo' } | null>(null);
+  const [editingSupplierField, setEditingSupplierField] = useState<{ id: string; field: 'rto' } | null>(null);
+
+  const handleProcessClick = (process: any) => {
+    loadLinkedResourcesForProcess(process.id).then(() => {
+      setSelectedProcessDetail(process);
+    });
+  };
+
+  const handleLinkClick = (process: any) => {
+    setLinkProcess(process);
+    setLinkResourceType("HR");
+    setLinkDialogOpen(true);
+  };
+
+  const refreshDetail = () => {
+    if (selectedProcessDetail) {
+      loadLinkedResourcesForProcess(selectedProcessDetail.id).then(() => {
+        setSelectedProcessDetail({ ...selectedProcessDetail });
+      });
+    }
+  };
+
+  const handleDeleteProcess = (id: string, name: string) => {
+    if (confirm(`⚠️ Voulez-vous vraiment supprimer le processus "${name}" ?\n\nCette action supprimera également toutes les liaisons avec des ressources.`)) {
+      onDelete(id, name);
+      setTimeout(() => {
+        refreshLinkedResources();
+      }, 500);
+    }
+  };
+
+  const filteredProcesses = useMemo(() => {
+    return processes.filter(p => {
+      if (filterCriticality !== "all") {
+        const score = computeMaxScoreFromImpacts(p.impacts);
+        const crit = scoreToCriticality(score);
+        if (crit !== filterCriticality) return false;
+      }
+      if (filterResponsible !== "all") {
+        if (p.owner !== filterResponsible) return false;
+      }
+      return true;
+    });
+  }, [processes, filterCriticality, filterResponsible]);
+
+  const responsibleOptions = useMemo(() => {
+    const owners = new Set<string>();
+    processes.forEach(p => {
+      if (p.owner) owners.add(p.owner);
+    });
+    return Array.from(owners);
+  }, [processes]);
+
+  // Filtrer les applications
+  const filteredApps = useMemo(() => {
+    let apps = [...enrichedApps];
+    if (appSearchQuery.trim()) {
+      const q = appSearchQuery.toLowerCase().trim();
+      apps = apps.filter(app => 
+        app.name?.toLowerCase().includes(q) ||
+        app.remplacablepar?.toLowerCase().includes(q)
+      );
+    }
+    return apps;
+  }, [enrichedApps, appSearchQuery]);
+
+  // Filtrer les prestataires
+  const filteredSuppliers = useMemo(() => {
+    let suppliers = [...enrichedSuppliers];
+    if (supplierSearchQuery.trim()) {
+      const q = supplierSearchQuery.toLowerCase().trim();
+      suppliers = suppliers.filter(sup => 
+        sup.name?.toLowerCase().includes(q) ||
+        sup.service?.toLowerCase().includes(q) ||
+        sup.contact?.toLowerCase().includes(q)
+      );
+    }
+    return suppliers;
+  }, [enrichedSuppliers, supplierSearchQuery]);
+
+  // Mise à jour RTO App
+  const updateAppRTO = async (appId: string, value: number) => {
+    try {
+      const { error } = await supabase
+        .from('applications_it')
+        .update({ rto_hours: value })
+        .eq('id', appId);
+      if (error) throw error;
+      toast({ title: "Succès", description: "RTO mis à jour" });
+      refreshLinkedResources();
+    } catch (error: any) {
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
+    setEditingAppField(null);
+  };
+
+  // Mise à jour RPO App
+  const updateAppRPO = async (appId: string, value: number) => {
+    try {
+      const { error } = await supabase
+        .from('applications_it')
+        .update({ rpo_hours: value })
+        .eq('id', appId);
+      if (error) throw error;
+      toast({ title: "Succès", description: "RPO mis à jour" });
+      refreshLinkedResources();
+    } catch (error: any) {
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
+    setEditingAppField(null);
+  };
+
+  // Mise à jour RTO Prestataire
+  const updateSupplierRTO = async (supplierId: string, value: number) => {
+    try {
+      const { error } = await supabase
+        .from('fournisseurs')
+        .update({ rpo_hours: value })
+        .eq('id', supplierId);
+      if (error) throw error;
+      toast({ title: "Succès", description: "RTO mis à jour" });
+      refreshLinkedResources();
+    } catch (error: any) {
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
+    setEditingSupplierField(null);
+  };
+
+  // Supprimer une application
+  const deleteApp = async (appId: string, appName: string) => {
+    if (!confirm(`⚠️ Supprimer l'application "${appName}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
+    try {
+      const { error } = await supabase
+        .from('applications_it')
+        .delete()
+        .eq('id', appId);
+      if (error) throw error;
+      toast({ title: "Succès", description: `"${appName}" supprimée` });
+      refreshLinkedResources();
+    } catch (error: any) {
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
+  };
+
+  // Supprimer un prestataire
+  const deleteSupplier = async (supplierId: string, supplierName: string) => {
+    if (!confirm(`⚠️ Supprimer le prestataire "${supplierName}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
+    try {
+      const { error } = await supabase
+        .from('fournisseurs')
+        .delete()
+        .eq('id', supplierId);
+      if (error) throw error;
+      toast({ title: "Succès", description: `"${supplierName}" supprimé` });
+      refreshLinkedResources();
+    } catch (error: any) {
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      {/* En-tête */}
+    <div className="space-y-4">
+      <LinkResourceDialog
+        open={linkDialogOpen}
+        onOpenChange={setLinkDialogOpen}
+        process={linkProcess}
+        allResources={allResources}
+        onLink={linkResourceToProcess}
+        resourceType={linkResourceType}
+        setResourceType={setLinkResourceType}
+      />
+
+      <Dialog open={showAddHRModal} onOpenChange={setShowAddHRModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Users className="h-5 w-5 text-indigo-600" />
+              Ajouter une ressource humaine
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Nom *</Label>
+                <Input value={newHR.name} onChange={(e) => setNewHR({ ...newHR, name: e.target.value })} placeholder="Nom complet" />
+              </div>
+              <div>
+                <Label>Rôle</Label>
+                <Input value={newHR.role} onChange={(e) => setNewHR({ ...newHR, role: e.target.value })} placeholder="ex: Chef de projet" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Email</Label>
+                <Input type="email" value={newHR.email} onChange={(e) => setNewHR({ ...newHR, email: e.target.value })} placeholder="nom@email.com" />
+              </div>
+              <div>
+                <Label>Téléphone</Label>
+                <Input value={newHR.phone} onChange={(e) => setNewHR({ ...newHR, phone: e.target.value })} placeholder="+33 6..." />
+              </div>
+            </div>
+            <div>
+              <Label className="font-medium">Périodes de disponibilité</Label>
+              <div className="flex flex-wrap gap-3 mt-2">
+                {AVAILABILITY_PERIODS.map((period) => (
+                  <label key={period.id} className="flex items-center gap-1 text-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={newHR.availability[period.id]} 
+                      onChange={(e) => setNewHR({ 
+                        ...newHR, 
+                        availability: { ...newHR.availability, [period.id]: e.target.checked } 
+                      })} 
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    /> 
+                    {period.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowAddHRModal(false)}>Annuler</Button>
+            <Button onClick={addHR} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddEquipmentModal} onOpenChange={setShowAddEquipmentModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Monitor className="h-5 w-5 text-indigo-600" />
+              Ajouter un équipement
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Nom *</Label>
+                <Input value={newEquipment.name} onChange={(e) => setNewEquipment({ ...newEquipment, name: e.target.value })} placeholder="ex: Serveur Dell R740" />
+              </div>
+              <div>
+                <Label>Type</Label>
+                <Input value={newEquipment.type} onChange={(e) => setNewEquipment({ ...newEquipment, type: e.target.value })} placeholder="ex: Serveur, Poste, Switch" />
+              </div>
+            </div>
+            <div>
+              <Label>Quantité</Label>
+              <Input type="number" min={1} value={newEquipment.quantity} onChange={(e) => setNewEquipment({ ...newEquipment, quantity: Number(e.target.value) })} />
+            </div>
+            <div>
+              <Label className="font-medium">Quantités par période</Label>
+              <div className="grid grid-cols-5 gap-2 mt-2">
+                {Object.entries({ P0_4H: "0-4h", P4_8H: "4-8h", P1D: "1j", P2D: "2j", P1W: "1sem" }).map(([key, label]) => (
+                  <div key={key} className="flex flex-col items-center">
+                    <span className="text-xs text-gray-500">{label}</span>
+                    <Input 
+                      type="number"
+                      className="w-14 h-8 text-center text-sm"
+                      value={newEquipment.quantities[key as keyof typeof newEquipment.quantities]}
+                      onChange={(e) => 
+                        setNewEquipment({ 
+                          ...newEquipment, 
+                          quantities: { ...newEquipment.quantities, [key]: Number(e.target.value) }
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowAddEquipmentModal(false)}>Annuler</Button>
+            <Button onClick={addEquipment} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddAppModal} onOpenChange={setShowAddAppModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Server className="h-5 w-5 text-indigo-600" />
+              Ajouter une application IT
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Nom *</Label>
+              <Input value={newApp.name} onChange={(e) => setNewApp({ ...newApp, name: e.target.value })} placeholder="ex: SAP S/4HANA" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>RTO (heures)</Label>
+                <Input type="number" min={0} value={newApp.rto_hours} onChange={(e) => setNewApp({ ...newApp, rto_hours: Number(e.target.value) })} />
+              </div>
+              <div>
+                <Label>RPO (heures)</Label>
+                <Input type="number" min={0} value={newApp.rpo_hours} onChange={(e) => setNewApp({ ...newApp, rpo_hours: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div>
+              <Label>Application alternative</Label>
+              <Input value={newApp.remplacablePar} onChange={(e) => setNewApp({ ...newApp, remplacablePar: e.target.value })} placeholder="ex: Backup manuel..." />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowAddAppModal(false)}>Annuler</Button>
+            <Button onClick={addApp} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddSupplierModal} onOpenChange={setShowAddSupplierModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Handshake className="h-5 w-5 text-indigo-600" />
+              Ajouter un prestataire
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Nom *</Label>
+              <Input value={newSupplier.name} onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })} placeholder="ex: AWS, OVH..." />
+            </div>
+            <div>
+              <Label>Service</Label>
+              <Input value={newSupplier.service} onChange={(e) => setNewSupplier({ ...newSupplier, service: e.target.value })} placeholder="ex: Hébergement cloud" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Contact</Label>
+                <Input value={newSupplier.contact} onChange={(e) => setNewSupplier({ ...newSupplier, contact: e.target.value })} placeholder="Nom du contact" />
+              </div>
+              <div>
+                <Label>RTO (heures)</Label>
+                <Input type="number" min={0} value={newSupplier.rpo_hours} onChange={(e) => setNewSupplier({ ...newSupplier, rpo_hours: Number(e.target.value) })} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowAddSupplierModal(false)}>Annuler</Button>
+            <Button onClick={addSupplier} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {selectedProcessDetail && (
+        <ProcessDetailView
+          process={selectedProcessDetail}
+          allProcesses={processes}
+          onClose={() => setSelectedProcessDetail(null)}
+          onEditProcess={onEdit}
+          serviceId={service.id}
+          onResourceUnlinked={refreshLinkedResources}
+        />
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
@@ -1009,7 +3188,6 @@ const BIAFicheDetail = ({
         </div>
       </div>
 
-      {/* Meta-bar */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-5 gap-4">
         <div>
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Domaine métier</p>
@@ -1043,7 +3221,6 @@ const BIAFicheDetail = ({
         </div>
       </div>
 
-      {/* Onglets */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-transparent border-b border-gray-200 rounded-none p-0 h-auto gap-0 flex flex-wrap">
           <TabsTrigger 
@@ -1084,155 +3261,155 @@ const BIAFicheDetail = ({
           </TabsTrigger>
         </TabsList>
 
-        {/* Onglet 1 — Évaluation d'impact */}
         <TabsContent value="impact" className="pt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
             <div>
               Pour chaque type d'impact, indiquez la gravité selon le délai écoulé depuis l'incident. Un processus est <strong>critique</strong> dès qu'un impact « sévère » ou « très sévère » apparaît dans les 120 premières heures.
+              <span className="block text-xs text-indigo-600 mt-1">
+                🔗 Cliquez sur l'icône lien pour associer une ressource à un processus.
+              </span>
             </div>
           </div>
 
-          <div className="space-y-3">
-            {processes.map((p, idx) => (
-              <ProcessAccordion
-                key={p.id}
-                process={p}
-                index={idx}
-                department={service.name}
-              />
-            ))}
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-[#172030]/40" />
+              <span className="text-xs font-medium text-[#172030]/60">Filtres</span>
+            </div>
+            <select
+              value={filterCriticality}
+              onChange={(e) => setFilterCriticality(e.target.value)}
+              className="h-8 px-2.5 text-xs border border-[#E8E4DC] rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#2A5141] text-[#172030]"
+            >
+              <option value="all">Toutes les criticités</option>
+              <option value="Critique">Critique</option>
+              <option value="Majeur">Majeur</option>
+              <option value="Modéré">Modéré</option>
+              <option value="Mineur">Mineur</option>
+            </select>
+            <select
+              value={filterResponsible}
+              onChange={(e) => setFilterResponsible(e.target.value)}
+              className="h-8 px-2.5 text-xs border border-[#E8E4DC] rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#2A5141] text-[#172030]"
+            >
+              <option value="all">Tous les responsables</option>
+              {responsibleOptions.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            {(filterCriticality !== "all" || filterResponsible !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-[#172030]/40 hover:text-[#172030]"
+                onClick={() => {
+                  setFilterCriticality("all");
+                  setFilterResponsible("all");
+                }}
+              >
+                <X className="h-3 w-3 mr-1" /> Réinitialiser
+              </Button>
+            )}
+            <span className="text-xs text-[#172030]/40 ml-auto">
+              {filteredProcesses.length} processus
+            </span>
           </div>
 
-          <Button variant="outline" className="w-full mt-4 border-dashed text-gray-400 hover:text-gray-600">
+          <div className="space-y-3">
+            {filteredProcesses.map((p, idx) => {
+              const count = getTotalResourceCount(p);
+              const resources = processResourcesCache[p.id];
+              return (
+                <ProcessAccordion
+                  key={p.id}
+                  process={p}
+                  index={idx}
+                  department={service.name}
+                  onProcessClick={handleProcessClick}
+                  onLinkClick={handleLinkClick}
+                  onEditProcess={onEdit}
+                  onDeleteProcess={handleDeleteProcess}
+                  resourceCount={count}
+                  canDelete={canDelete}
+                  processResources={resources}
+                />
+              );
+            })}
+          </div>
+
+          <Button 
+            variant="outline" 
+            className="w-full mt-4 border-dashed text-gray-400 hover:text-gray-600"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('openBiaWizard', { detail: { departmentId: service.id } }));
+            }}
+          >
             <Plus className="h-4 w-4 mr-2" /> Ajouter un processus
           </Button>
         </TabsContent>
 
-        {/* Onglet 2 — Ressources requises */}
+        {/* ============================================================
+            ONGLET RESSOURCES REQUISES - AVEC TABLEAUX SANS GRAPHIQUES
+            ============================================================ */}
         <TabsContent value="resources" className="pt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
             <div>Ressources minimales pour maintenir les processus critiques dans la première semaine après un sinistre.</div>
           </div>
 
-          {/* Bloc 1 — Personnel nécessaire */}
+          <div className="flex gap-2 mb-4">
+            <Button variant="outline" size="sm" onClick={() => setShowAddHRModal(true)} className="gap-1">
+              <Users className="h-4 w-4" /> Ajouter un RH
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowAddEquipmentModal(true)} className="gap-1">
+              <Monitor className="h-4 w-4" /> Ajouter un équipement
+            </Button>
+          </div>
+
+          {/* PERSONNEL NÉCESSAIRE - TABLEAU UNIQUEMENT TEXTE/CHIFFRES */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
-            <div 
-              className="flex items-center gap-3 p-3 bg-gray-50 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-              onClick={(e) => {
-                const body = e.currentTarget.nextElementSibling;
-                if (body) {
-                  body.style.display = body.style.display === 'none' ? 'block' : 'none';
-                }
-              }}
-            >
-              <div className="w-7 h-7 rounded bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Users className="h-4 w-4" />
-              </div>
-              <h4 className="font-medium text-gray-800 flex-1">Personnel nécessaire</h4>
-              <span className="text-xs text-gray-400">{allHR.length} personne{allHR.length > 1 ? 's' : ''}</span>
-              <ChevronDown className="h-4 w-4 text-gray-400" />
+            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
+              <Users className="h-4 w-4 text-[#2A5141]" />
+              <h4 className="font-medium text-[#172030] flex-1 text-sm">Personnel nécessaire</h4>
+              <span className="text-xs text-[#172030]/40">{enrichedHR.length} personne{enrichedHR.length > 1 ? 's' : ''}</span>
             </div>
             <div className="p-4">
-              {allHR.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50">
-                        <TableHead className="font-medium">Personne / Rôle</TableHead>
-                        <TableHead className="font-medium">Processus</TableHead>
-                        <TableHead className="font-medium">Contact</TableHead>
-                        {AVAILABILITY_PERIODS.map(p => (
-                          <TableHead key={p.id} className="text-center font-mono text-xs font-medium">
-                            {p.label}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {allHR.map((person, idx) => (
-                        <TableRow key={person.id || idx} className="hover:bg-indigo-50/30 transition-colors">
-                          <TableCell>
-                            <div className="font-medium text-sm">{person.name}</div>
-                            <div className="text-xs text-gray-400">{person.role || "—"}</div>
-                          </TableCell>
-                          <TableCell className="text-sm text-gray-500">{person.processName}</TableCell>
-                          <TableCell>
-                            {person.phone && <div className="text-xs">📞 {person.phone}</div>}
-                            {person.email && <div className="text-xs">✉️ {person.email}</div>}
-                            {!person.phone && !person.email && <span className="text-xs text-gray-400">—</span>}
-                          </TableCell>
-                          {AVAILABILITY_PERIODS.map(period => {
-                            const isAvailable = person.availability?.[period.id] || false;
-                            return (
-                              <TableCell key={period.id} className="text-center">
-                                <span className={`text-lg font-bold ${isAvailable ? "text-green-600" : "text-red-400"}`}>
-                                  {isAvailable ? "✓" : "✗"}
-                                </span>
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      ))}
-                      <TableRow className="bg-gray-50 font-semibold">
-                        <TableCell colSpan={3} className="font-medium">Total FTE</TableCell>
-                        {AVAILABILITY_PERIODS.map((period) => {
-                          const total = allHR.filter(p => p.availability?.[period.id] === true).length;
-                          return (
-                            <TableCell key={period.id} className="text-center font-mono">
-                              {total}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
+              {enrichedHR.length > 0 ? (
+                <PersonnelTableau people={enrichedHR} />
               ) : (
-                <div className="text-center py-4 text-gray-400 text-sm">
+                <div className="text-center py-6 text-[#172030]/40 text-sm">
                   Aucune ressource humaine déclarée.
                 </div>
               )}
             </div>
           </div>
 
-          {/* Bloc 2 — Postes de travail nécessaires */}
+          {/* POSTES DE TRAVAIL */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
-            <div 
-              className="flex items-center gap-3 p-3 bg-gray-50 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-              onClick={(e) => {
-                const body = e.currentTarget.nextElementSibling;
-                if (body) {
-                  body.style.display = body.style.display === 'none' ? 'block' : 'none';
-                }
-              }}
-            >
-              <div className="w-7 h-7 rounded bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Monitor className="h-4 w-4" />
-              </div>
-              <h4 className="font-medium text-gray-800 flex-1">Postes de travail nécessaires</h4>
-              <span className="text-xs text-gray-400">1 poste par personne disponible</span>
-              <ChevronDown className="h-4 w-4 text-gray-400" />
+            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
+              <Monitor className="h-4 w-4 text-[#2A5141]" />
+              <h4 className="font-medium text-[#172030] flex-1 text-sm">Postes de travail nécessaires</h4>
+              <span className="text-xs text-[#172030]/40">1 poste par personne disponible</span>
             </div>
             <div className="p-4">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50">
-                      <TableHead className="font-medium">Type de poste</TableHead>
+                    <TableRow className="bg-[#FAFAF9] border-b border-[#E8E4DC]">
+                      <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Type de poste</TableHead>
                       {AVAILABILITY_PERIODS.map(p => (
-                        <TableHead key={p.id} className="text-center font-mono text-xs font-medium">
+                        <TableHead key={p.id} className="text-center font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">
                           {p.label}
                         </TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow>
-                      <TableCell className="font-medium text-sm">Postes de travail</TableCell>
+                    <TableRow className="bg-white">
+                      <TableCell className="font-medium text-sm text-[#172030] py-3">Postes de travail</TableCell>
                       {AVAILABILITY_PERIODS.map(period => (
-                        <TableCell key={period.id} className="text-center font-mono">
+                        <TableCell key={period.id} className="text-center font-mono font-semibold text-[#2A5141] py-3">
                           {workstationCounts[period.id] || 0}
                         </TableCell>
                       ))}
@@ -1243,109 +3420,67 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
-          {/* Bloc 3 — Équipements & infrastructure */}
+          {/* ÉQUIPEMENTS - TABLEAU UNIQUEMENT TEXTE/CHIFFRES */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
-            <div 
-              className="flex items-center gap-3 p-3 bg-gray-50 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-              onClick={(e) => {
-                const body = e.currentTarget.nextElementSibling;
-                if (body) {
-                  body.style.display = body.style.display === 'none' ? 'block' : 'none';
-                }
-              }}
-            >
-              <div className="w-7 h-7 rounded bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Package className="h-4 w-4" />
-              </div>
-              <h4 className="font-medium text-gray-800 flex-1">Équipements & infrastructure</h4>
-              <span className="text-xs text-gray-400">{allEquipment.length} équipement{allEquipment.length > 1 ? 's' : ''}</span>
-              <ChevronDown className="h-4 w-4 text-gray-400" />
+            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
+              <Package className="h-4 w-4 text-[#2A5141]" />
+              <h4 className="font-medium text-[#172030] flex-1 text-sm">Équipements & infrastructure</h4>
+              <span className="text-xs text-[#172030]/40">{enrichedEquipment.length} équipement{enrichedEquipment.length > 1 ? 's' : ''}</span>
             </div>
             <div className="p-4">
-              {allEquipment.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50">
-                        <TableHead className="font-medium">Équipement</TableHead>
-                        <TableHead className="text-center font-mono text-xs font-medium">≤ 2H</TableHead>
-                        <TableHead className="text-center font-mono text-xs font-medium">≤ 24H</TableHead>
-                        <TableHead className="text-center font-mono text-xs font-medium">≤ 48H</TableHead>
-                        <TableHead className="text-center font-mono text-xs font-medium">≤ 120H</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {allEquipment.map((eq, idx) => {
-                        const quantities = eq.quantities || {};
-                        return (
-                          <TableRow key={eq.id || idx} className="hover:bg-indigo-50/30 transition-colors">
-                            <TableCell className="font-medium text-sm">{eq.name}</TableCell>
-                            <TableCell className="text-center font-mono">{quantities.P0_4H || eq.quantity || 2}</TableCell>
-                            <TableCell className="text-center font-mono">{quantities.P4_8H || eq.quantity || 3}</TableCell>
-                            <TableCell className="text-center font-mono">{quantities.P1D || eq.quantity || 3}</TableCell>
-                            <TableCell className="text-center font-mono">{quantities.P2D || eq.quantity || 4}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+              {enrichedEquipment.length > 0 ? (
+                <EquipmentTableau equipment={enrichedEquipment} onDeleteEquipment={handleDeleteEquipment} />
               ) : (
-                <div className="text-center py-4 text-gray-400 text-sm">
+                <div className="text-center py-6 text-[#172030]/40 text-sm">
                   Aucun équipement déclaré.
                 </div>
               )}
             </div>
           </div>
 
-          {/* Bloc 4 — Documents & supports critiques */}
+          {/* DOCUMENTS */}
           <div className="border rounded-xl overflow-hidden bg-white">
-            <div 
-              className="flex items-center gap-3 p-3 bg-gray-50 border-b border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-              onClick={(e) => {
-                const body = e.currentTarget.nextElementSibling;
-                if (body) {
-                  body.style.display = body.style.display === 'none' ? 'block' : 'none';
-                }
-              }}
-            >
-              <div className="w-7 h-7 rounded bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <FileText className="h-4 w-4" />
-              </div>
-              <h4 className="font-medium text-gray-800 flex-1">Documents & supports critiques</h4>
-              <span className="text-xs text-gray-400">
+            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
+              <FileText className="h-4 w-4 text-[#2A5141]" />
+              <h4 className="font-medium text-[#172030] flex-1 text-sm">Documents & supports critiques</h4>
+              <span className="text-xs text-[#172030]/40">
                 {processes.reduce((acc, p) => acc + ((p.documents || []).length), 0)} élément{processes.reduce((acc, p) => acc + ((p.documents || []).length), 0) > 1 ? 's' : ''}
               </span>
-              <ChevronDown className="h-4 w-4 text-gray-400" />
             </div>
             <div className="p-4">
               {processes.some(p => p.documents && p.documents.length > 0) ? (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-gray-50">
-                        <TableHead className="font-medium">Document / support</TableHead>
-                        <TableHead className="font-medium">Processus</TableHead>
-                        <TableHead className="font-medium">Disponible sous</TableHead>
-                        <TableHead className="font-medium">Classification</TableHead>
+                      <TableRow className="bg-[#FAFAF9] border-b border-[#E8E4DC]">
+                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Document / support</TableHead>
+                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Processus</TableHead>
+                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Disponible sous</TableHead>
+                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Classification</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {processes.flatMap(p => 
                         (p.documents || []).map((doc: any) => ({ ...doc, processName: p.name }))
                       ).map((doc, idx) => (
-                        <TableRow key={doc.id || idx} className="hover:bg-indigo-50/30 transition-colors">
-                          <TableCell className="font-medium text-sm">{doc.name}</TableCell>
-                          <TableCell className="text-sm text-gray-500">{doc.processName}</TableCell>
-                          <TableCell>
-                            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 font-mono">
+                        <TableRow key={doc.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAF9]'}>
+                          <TableCell className="font-medium text-sm text-[#172030] py-3">{doc.name}</TableCell>
+                          <TableCell className="text-sm text-[#172030]/60 py-3">{doc.processName}</TableCell>
+                          <TableCell className="py-3">
+                            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2A5141]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
                               {doc.availableUnder || "≤ 2h"}
-                            </Badge>
+                            </span>
                           </TableCell>
-                          <TableCell>
-                            <Badge className={doc.confidential ? "bg-red-100 text-red-700 border-red-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
+                          <TableCell className="py-3">
+                            <span className={cn(
+                              "inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded border",
+                              doc.confidential 
+                                ? "text-[#ef4444] border-red-200 bg-red-50" 
+                                : "text-[#172030]/60 border-[#E8E4DC] bg-[#F8F6F2]"
+                            )}>
                               {doc.confidential ? "Confidentiel" : "Interne"}
-                            </Badge>
+                            </span>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1353,7 +3488,7 @@ const BIAFicheDetail = ({
                   </Table>
                 </div>
               ) : (
-                <div className="text-center py-4 text-gray-400 text-sm">
+                <div className="text-center py-6 text-[#172030]/40 text-sm">
                   Aucun document critique déclaré.
                 </div>
               )}
@@ -1361,116 +3496,411 @@ const BIAFicheDetail = ({
           </div>
         </TabsContent>
 
-        {/* Onglet 3 — Applications IT */}
+        {/* ═══════ SECTION APPLICATIONS IT - REDESIGN ═══════ */}
         <TabsContent value="apps" className="pt-4">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div><strong>RTO</strong> = délai de reprise acceptable · <strong>RPO</strong> = perte de données maximale acceptable.</div>
-          </div>
-
-          <div className="border rounded-xl overflow-hidden bg-white">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="font-medium">Application / service</TableHead>
-                    <TableHead className="font-medium">Processus</TableHead>
-                    <TableHead className="text-center font-mono text-xs font-medium">RTO</TableHead>
-                    <TableHead className="text-center font-mono text-xs font-medium">RPO</TableHead>
-                    <TableHead className="font-medium">Alternatif</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {uniqueApps.length > 0 ? (
-                    uniqueApps.map((app, idx) => {
-                      const parentProcess = processes.find(p => 
-                        (p as any).appsCritiques?.some((a: any) => a.name === app.name)
-                      );
-                      return (
-                        <TableRow key={app.id || idx} className="hover:bg-indigo-50/30 transition-colors">
-                          <TableCell className="font-medium text-sm flex items-center gap-2">
-                            <Server className="h-3.5 w-3.5 text-purple-500" />
-                            {app.name}
-                          </TableCell>
-                          <TableCell className="text-sm text-gray-500">{parentProcess?.name || "—"}</TableCell>
-                          <TableCell className="text-center font-mono">{app.rto_hours || app.rto || 0}h</TableCell>
-                          <TableCell className="text-center font-mono">{app.rpo_hours || app.rpo || 0}h</TableCell>
-                          <TableCell className="text-sm text-gray-500">{app.remplacablePar || app.remplacable_par || "—"}</TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-400 py-4">
-                        Aucune application IT déclarée.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+          <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
+            <div>
+              <span className="font-medium">RTO</span> = délai de reprise acceptable · 
+              <span className="font-medium ml-1">RPO</span> = perte de données maximale acceptable.
+              <span className="block text-xs text-[#172030]/40 mt-1">
+                Cliquez sur une valeur RTO/RPO pour la modifier.
+              </span>
             </div>
           </div>
 
-          <Button variant="outline" className="w-full mt-4 border-dashed text-gray-400 hover:text-gray-600">
-            <Plus className="h-4 w-4 mr-2" /> Ajouter une application
-          </Button>
+          {/* Header avec recherche et bouton ajout */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <Server className="h-5 w-5 text-[#172030]" />
+              <span className="text-sm font-medium text-[#172030]">Applications IT</span>
+              <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
+                {filteredApps.length} / {enrichedApps.length}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-3 flex-1 sm:flex-none">
+              <div className="relative flex-1 sm:w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#172030]/40" />
+                <Input
+                  placeholder="Rechercher..."
+                  value={appSearchQuery}
+                  onChange={(e) => setAppSearchQuery(e.target.value)}
+                  className="pl-8 h-8 text-sm border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20"
+                />
+              </div>
+              <Button 
+                onClick={() => setShowAddAppModal(true)} 
+                className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
+              >
+                <Plus className="h-3.5 w-3.5" /> Ajouter
+              </Button>
+            </div>
+          </div>
+
+          {filteredApps.length > 0 ? (
+            <div className="space-y-3">
+              {filteredApps.map((app) => {
+                const displayProcesses = app.linkedProcesses || [];
+                const visibleProcesses = displayProcesses.slice(0, 2);
+                const remainingCount = displayProcesses.length - 2;
+
+                return (
+                  <div 
+                    key={app.id}
+                    className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-start gap-3">
+                      {/* Icône et nom */}
+                      <div className="flex items-start gap-3 min-w-[160px]">
+                        <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
+                          <Server className="h-4 w-4 text-[#172030]" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-[#172030]">{app.name}</p>
+                          <p className="text-xs text-[#172030]/40">
+                            {app.remplacablepar || "Aucune alternative"}
+                          </p>
+                          {displayProcesses.length > 0 && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
+                              <span className="text-[10px] text-[#2A5141]">Lié</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Processus associés */}
+                      <div className="flex-1 min-w-[80px]">
+                        {displayProcesses.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-[10px] text-[#172030]/40 mr-1">Processus :</span>
+                            {visibleProcesses.map((p: any) => (
+                              <Badge key={p.id} variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                                {p.name}
+                              </Badge>
+                            ))}
+                            {remainingCount > 0 && (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
+                                    +{remainingCount}
+                                  </Badge>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-56 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                                  <div className="space-y-1.5">
+                                    <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
+                                    {displayProcesses.map((p: any) => (
+                                      <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
+                                        {p.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-[#172030]/30">Aucun processus associé</span>
+                        )}
+                      </div>
+
+                      {/* RTO / RPO stats */}
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        <div>
+                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">RTO</p>
+                          {editingAppField?.id === app.id && editingAppField?.field === 'rto' ? (
+                            <Input
+                              type="number"
+                              min={0}
+                              defaultValue={app.rto_hours ?? app.rto ?? 0}
+                              className="w-14 h-7 text-center text-sm font-mono border-[#2A5141] focus:ring-[#2A5141]/20"
+                              onBlur={(e) => updateAppRTO(app.id, Number(e.target.value))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateAppRTO(app.id, Number((e.target as HTMLInputElement).value));
+                                }
+                                if (e.key === 'Escape') setEditingAppField(null);
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditingAppField({ id: app.id, field: 'rto' })}
+                              className="text-sm font-bold text-[#172030] hover:text-[#2A5141] transition-colors"
+                            >
+                              {app.rto_hours ?? app.rto ?? 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span>
+                            </button>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">RPO</p>
+                          {editingAppField?.id === app.id && editingAppField?.field === 'rpo' ? (
+                            <Input
+                              type="number"
+                              min={0}
+                              defaultValue={app.rpo_hours ?? app.rpo ?? 0}
+                              className="w-14 h-7 text-center text-sm font-mono border-[#2A5141] focus:ring-[#2A5141]/20"
+                              onBlur={(e) => updateAppRPO(app.id, Number(e.target.value))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateAppRPO(app.id, Number((e.target as HTMLInputElement).value));
+                                }
+                                if (e.key === 'Escape') setEditingAppField(null);
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditingAppField({ id: app.id, field: 'rpo' })}
+                              className="text-sm font-bold text-[#172030] hover:text-[#2A5141] transition-colors"
+                            >
+                              {app.rpo_hours ?? app.rpo ?? 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[#172030]/30 hover:text-[#172030] hover:bg-[#F8F6F2] rounded-md">
+                              <MoreHoriz className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44 border-[#E8E4DC] shadow-lg bg-white">
+                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
+                              <EditIcon className="h-3.5 w-3.5 text-[#172030]/40" />
+                              Modifier
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
+                              <Link2 className="h-3.5 w-3.5 text-[#172030]/40" />
+                              Voir les liaisons
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              className="text-sm text-red-600 cursor-pointer hover:bg-red-50 gap-2"
+                              onClick={() => deleteApp(app.id, app.name)}
+                            >
+                              <TrashIcon className="h-3.5 w-3.5" />
+                              Supprimer
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12 border border-dashed border-[#E8E4DC] rounded-xl bg-[#FAFAF9]">
+              <Server className="h-10 w-10 mx-auto text-[#172030]/20" />
+              <p className="text-sm text-[#172030]/40 mt-3">
+                {appSearchQuery ? 'Aucune application ne correspond à votre recherche.' : 'Aucune application IT déclarée.'}
+              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-3 border-[#E8E4DC] text-[#172030]/60 hover:text-[#2A5141]"
+                onClick={() => setShowAddAppModal(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter une application
+              </Button>
+            </div>
+          )}
         </TabsContent>
 
-        {/* Onglet 4 — Prestataires */}
+        {/* ═══════ SECTION PRESTATAIRES - REDESIGN ═══════ */}
         <TabsContent value="suppliers" className="pt-4">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div>Prestataires externes ou intra-groupe nécessaires pour l'exploitation de secours.</div>
-          </div>
-
-          <div className="border rounded-xl overflow-hidden bg-white">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="font-medium">Prestataire / service</TableHead>
-                    <TableHead className="font-medium">Processus</TableHead>
-                    <TableHead className="text-center font-mono text-xs font-medium">RTO</TableHead>
-                    <TableHead className="font-medium">Alternatif</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {uniqueSuppliers.length > 0 ? (
-                    uniqueSuppliers.map((sup, idx) => {
-                      const parentProcess = processes.find(p => 
-                        (p.resources || []).some((r: any) => r.type === "Fournisseur" && r.name === sup.name)
-                      );
-                      // Le RTO du prestataire est stocké dans rpo_hours ou rpo
-                      const rtoValue = sup.rpo_hours || sup.rpo || sup.rto_hours || sup.rto || "—";
-                      return (
-                        <TableRow key={sup.id || idx} className="hover:bg-indigo-50/30 transition-colors">
-                          <TableCell className="font-medium text-sm">{sup.name}</TableCell>
-                          <TableCell className="text-sm text-gray-500">{parentProcess?.name || "—"}</TableCell>
-                          <TableCell className="text-center font-mono">
-                            {rtoValue !== "—" ? `${rtoValue}h` : "—"}
-                          </TableCell>
-                          <TableCell className="text-sm text-gray-500">{sup.substitutability || "—"}</TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-gray-400 py-4">
-                        Aucun prestataire déclaré.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+          <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
+            <div>
+              Prestataires externes ou intra-groupe nécessaires pour l'exploitation de secours.
+              <span className="block text-xs text-[#172030]/40 mt-1">
+                Cliquez sur la valeur RTO pour la modifier.
+              </span>
             </div>
           </div>
 
-          <Button variant="outline" className="w-full mt-4 border-dashed text-gray-400 hover:text-gray-600">
-            <Plus className="h-4 w-4 mr-2" /> Ajouter un prestataire
-          </Button>
+          {/* Header avec recherche et bouton ajout */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <Handshake className="h-5 w-5 text-[#172030]" />
+              <span className="text-sm font-medium text-[#172030]">Prestataires</span>
+              <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
+                {filteredSuppliers.length} / {enrichedSuppliers.length}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-3 flex-1 sm:flex-none">
+              <div className="relative flex-1 sm:w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#172030]/40" />
+                <Input
+                  placeholder="Rechercher..."
+                  value={supplierSearchQuery}
+                  onChange={(e) => setSupplierSearchQuery(e.target.value)}
+                  className="pl-8 h-8 text-sm border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20"
+                />
+              </div>
+              <Button 
+                onClick={() => setShowAddSupplierModal(true)} 
+                className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
+              >
+                <Plus className="h-3.5 w-3.5" /> Ajouter
+              </Button>
+            </div>
+          </div>
+
+          {filteredSuppliers.length > 0 ? (
+            <div className="space-y-3">
+              {filteredSuppliers.map((sup) => {
+                const displayProcesses = sup.linkedProcesses || [];
+                const visibleProcesses = displayProcesses.slice(0, 2);
+                const remainingCount = displayProcesses.length - 2;
+
+                return (
+                  <div 
+                    key={sup.id}
+                    className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-start gap-3">
+                      {/* Icône et nom */}
+                      <div className="flex items-start gap-3 min-w-[160px]">
+                        <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
+                          <Truck className="h-4 w-4 text-[#172030]" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-[#172030]">{sup.name}</p>
+                          <p className="text-xs text-[#172030]/40">{sup.service || "—"}</p>
+                          {displayProcesses.length > 0 && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
+                              <span className="text-[10px] text-[#2A5141]">Lié</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Processus associés */}
+                      <div className="flex-1 min-w-[80px]">
+                        {displayProcesses.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-[10px] text-[#172030]/40 mr-1">Processus :</span>
+                            {visibleProcesses.map((p: any) => (
+                              <Badge key={p.id} variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                                {p.name}
+                              </Badge>
+                            ))}
+                            {remainingCount > 0 && (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
+                                    +{remainingCount}
+                                  </Badge>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-56 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                                  <div className="space-y-1.5">
+                                    <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
+                                    {displayProcesses.map((p: any) => (
+                                      <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
+                                        {p.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-[#172030]/30">Aucun processus associé</span>
+                        )}
+                      </div>
+
+                      {/* RTO et Contact */}
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        <div>
+                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">RTO</p>
+                          {editingSupplierField?.id === sup.id ? (
+                            <Input
+                              type="number"
+                              min={0}
+                              defaultValue={sup.rpo_hours ?? sup.rpo ?? sup.rto_hours ?? 0}
+                              className="w-14 h-7 text-center text-sm font-mono border-[#2A5141] focus:ring-[#2A5141]/20"
+                              onBlur={(e) => updateSupplierRTO(sup.id, Number(e.target.value))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateSupplierRTO(sup.id, Number((e.target as HTMLInputElement).value));
+                                }
+                                if (e.key === 'Escape') setEditingSupplierField(null);
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditingSupplierField({ id: sup.id, field: 'rto' })}
+                              className="text-sm font-bold text-[#172030] hover:text-[#2A5141] transition-colors"
+                            >
+                              {sup.rpo_hours ?? sup.rpo ?? sup.rto_hours ?? 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span>
+                            </button>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">Contact</p>
+                          <p className="text-sm font-medium text-[#172030]">{sup.contact || "—"}</p>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[#172030]/30 hover:text-[#172030] hover:bg-[#F8F6F2] rounded-md">
+                              <MoreHoriz className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44 border-[#E8E4DC] shadow-lg bg-white">
+                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
+                              <EditIcon className="h-3.5 w-3.5 text-[#172030]/40" />
+                              Modifier
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
+                              <Link2 className="h-3.5 w-3.5 text-[#172030]/40" />
+                              Voir les liaisons
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              className="text-sm text-red-600 cursor-pointer hover:bg-red-50 gap-2"
+                              onClick={() => deleteSupplier(sup.id, sup.name)}
+                            >
+                              <TrashIcon className="h-3.5 w-3.5" />
+                              Supprimer
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12 border border-dashed border-[#E8E4DC] rounded-xl bg-[#FAFAF9]">
+              <Handshake className="h-10 w-10 mx-auto text-[#172030]/20" />
+              <p className="text-sm text-[#172030]/40 mt-3">
+                {supplierSearchQuery ? 'Aucun prestataire ne correspond à votre recherche.' : 'Aucun prestataire déclaré.'}
+              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-3 border-[#E8E4DC] text-[#172030]/60 hover:text-[#2A5141]"
+                onClick={() => setShowAddSupplierModal(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter un prestataire
+              </Button>
+            </div>
+          )}
         </TabsContent>
 
-        {/* Onglet 5 — Dépendances */}
         <TabsContent value="dependencies" className="pt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -1484,7 +3914,6 @@ const BIAFicheDetail = ({
           />
         </TabsContent>
 
-        {/* Onglet 6 — Contournements de crise */}
         <TabsContent value="workarounds" className="pt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -1547,17 +3976,15 @@ const BIAFicheDetail = ({
               })()}
             </div>
           </div>
-
-          <Button variant="outline" className="w-full mt-4 border-dashed text-gray-400 hover:text-gray-600">
-            <Plus className="h-4 w-4 mr-2" /> Ajouter un contournement
-          </Button>
         </TabsContent>
       </Tabs>
     </div>
   );
 };
 
-// ── Composant principal ───────────────────────────────────────────────────────
+// ============================================================
+// COMPOSANT PRINCIPAL - ProcessInventory
+// ============================================================
 export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) => void; onCreate: () => void }) => {
   const { processes, deleteProcess } = useBia();
   const { entities } = useGovernance();
@@ -1578,12 +4005,31 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   const [selectedService, setSelectedService] = useState<ServiceBIA | null>(null);
   const [showBIADetail, setShowBIADetail] = useState(false);
 
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardProcessId, setWizardProcessId] = useState<string | undefined>(undefined);
+  const [wizardDepartmentId, setWizardDepartmentId] = useState<string | undefined>(undefined);
+
   const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "—";
   const rootEntities = useMemo(() => entities.filter(e => e.parentId === null), [entities]);
   const getChildren = (parentId: string) => entities.filter(e => e.parentId === parentId);
 
   const getDepartmentCount = (entityId: string) => getChildren(entityId).length;
 
+  useEffect(() => {
+    const handleOpenWizard = (event: CustomEvent) => {
+      const { departmentId } = event.detail || {};
+      setWizardDepartmentId(departmentId);
+      setWizardProcessId(undefined);
+      setShowWizard(true);
+    };
+
+    window.addEventListener('openBiaWizard', handleOpenWizard as EventListener);
+    return () => {
+      window.removeEventListener('openBiaWizard', handleOpenWizard as EventListener);
+    };
+  }, []);
+
+  // buildBIAServices MODIFIÉ - inclut TOUS les départements, même sans processus
   const buildBIAServices = (entityId: string): ServiceBIA[] => {
     const directions = getChildren(entityId);
     const services: ServiceBIA[] = [];
@@ -1592,7 +4038,8 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       const depts = getChildren(dir.id);
       for (const dept of depts) {
         const deptProcesses = processes.filter(p => p.department === dept.name || p.entityId === dept.id);
-        if (deptProcesses.length === 0) continue;
+        
+        // PLUS DE CONTINUE - on garde le département même sans processus
 
         const criticalCount = deptProcesses.filter(p => {
           const score = computeMaxScoreFromImpacts(p.impacts);
@@ -1611,20 +4058,20 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
           }
         }
 
-        const rate = calculateCompletionRate(deptProcesses);
+        const rate = deptProcesses.length > 0 ? calculateCompletionRate(deptProcesses) : 0;
         const status = getBIAStatus(deptProcesses, dept.lastUpdated);
 
         services.push({
           id: dept.id,
           name: dept.name,
-          owner: deptProcesses[0]?.owner || "—",
+          owner: deptProcesses.length > 0 ? deptProcesses[0]?.owner || "—" : "—",
           coordinator: "L. Benali",
           processCount: deptProcesses.length,
           criticalCount,
           appsIT: appsIT.size,
           suppliers: suppliers.size,
           completionRate: rate,
-          status,
+          status: status as BIAStatus,
           lastReviewed: dept.lastUpdated,
           description: dept.description || "",
         });
@@ -1660,6 +4107,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     const completed = services.filter(s => s.completionRate === 100).length;
     const toComplete = services.filter(s => s.status === "a_completer").length;
     const toReview = services.filter(s => s.status === "a_reviser").length;
+    const nonDemarre = services.filter(s => s.status === "non_demarre").length;
 
     return {
       totalServices,
@@ -1668,6 +4116,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       completed,
       toComplete,
       toReview,
+      nonDemarre,
       scoped: 9,
     };
   };
@@ -1693,7 +4142,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   };
 
   const handleDelete = (id: string, name: string) => {
-    if (confirm(`Supprimer le processus "${name}" ?`)) {
+    if (confirm(`⚠️ Voulez-vous vraiment supprimer le processus "${name}" ?\n\nCette action supprimera également toutes les liaisons avec des ressources.`)) {
       deleteProcess(id);
       toast({ title: "Processus supprimé", description: name });
     }
@@ -1767,6 +4216,40 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     setShowBIADetail(true);
   };
 
+  const openWizard = (processId?: string, departmentId?: string) => {
+    setWizardProcessId(processId);
+    setWizardDepartmentId(departmentId);
+    setShowWizard(true);
+  };
+
+  const closeWizard = () => {
+    setShowWizard(false);
+    setWizardProcessId(undefined);
+    setWizardDepartmentId(undefined);
+  };
+
+  if (showWizard) {
+    return (
+      <Dialog open={showWizard} onOpenChange={closeWizard}>
+        <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              {wizardProcessId ? "Modifier l'analyse d'impact" : "Nouvelle analyse d'impact métier"}
+            </DialogTitle>
+          </DialogHeader>
+          <BiaWizard 
+            processId={wizardProcessId} 
+            onDone={() => {
+              closeWizard();
+              window.location.reload();
+            }} 
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // VUE DIRECTIONS - REDESIGN
   if (viewLevel === "directions" && selectedRoot && !showBIADetail) {
     const services = buildBIAServices(selectedRoot);
     const filteredServices = getFilteredServices(services);
@@ -1774,11 +4257,16 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
 
     const directions = getChildren(selectedRoot);
     const servicesByDirection: Record<string, ServiceBIA[]> = {};
+    const departmentIds: Record<string, string> = {};
+    
     for (const dir of directions) {
       const depts = getChildren(dir.id);
       const dirServices = services.filter(s => depts.some(d => d.id === s.id));
       if (dirServices.length > 0) {
         servicesByDirection[dir.name] = dirServices;
+        for (const s of dirServices) {
+          departmentIds[s.id] = s.id;
+        }
       }
     }
 
@@ -1786,62 +4274,65 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
-              <Building2 className="h-7 w-7 text-primary" /> Processus & BIA
+            <h1 className="text-2xl md:text-3xl font-bold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
+              <Building2 className="h-7 w-7 text-[#2A5141]" /> Processus &amp; BIA
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-[#172030]/60 mt-1 text-sm">
               Sélectionnez un service pour ouvrir sa fiche d'analyse d'impact. Chaque fiche recense les processus critiques, leurs ressources et leurs objectifs de reprise.
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={goToRoot} className="gap-1">
+            <Button variant="outline" onClick={goToRoot} className="gap-1 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
               <ArrowLeft className="h-4 w-4" /> Retour
             </Button>
-            <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
+            <Button 
+              className="gap-2 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
+              onClick={() => openWizard(undefined, selectedRoot)}
+            >
               <Plus className="h-4 w-4" /> Nouvelle fiche BIA
             </Button>
           </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="bg-gray-50/80 border-gray-200">
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Fiches BIA</p>
-              <p className="text-2xl font-bold">{stats.totalServices}</p>
-              <p className="text-xs text-gray-400">sur {stats.scoped} services scopés</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches BIA</p>
+              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalServices}</p>
+              <p className="text-xs text-[#172030]/40">sur {stats.scoped} services scopés</p>
             </CardContent>
           </Card>
-          <Card className="bg-gray-50/80 border-gray-200">
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Processus critiques</p>
-              <p className="text-2xl font-bold text-red-600">{stats.totalCritical}</p>
-              <p className="text-xs text-gray-400">sur {stats.totalProcesses} processus</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus critiques</p>
+              <p className="text-3xl font-bold text-red-600" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalCritical}</p>
+              <p className="text-xs text-[#172030]/40">sur {stats.totalProcesses} processus</p>
             </CardContent>
           </Card>
-          <Card className="bg-gray-50/80 border-gray-200">
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Fiches complètes</p>
-              <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
-              <p className="text-xs text-gray-400">{stats.toComplete} à compléter</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches complètes</p>
+              <p className="text-3xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.completed}</p>
+              <p className="text-xs text-[#172030]/40">{stats.toComplete} à compléter</p>
             </CardContent>
           </Card>
-          <Card className="bg-gray-50/80 border-gray-200">
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">À réviser</p>
-              <p className="text-2xl font-bold text-amber-600">{stats.toReview}</p>
-              <p className="text-xs text-gray-400">cycle de 2 ans dépassé</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Non démarrés</p>
+              <p className="text-3xl font-bold text-[#172030]/50" style={{ fontFamily: "Playfair Display, serif" }}>{stats.nonDemarre}</p>
+              <p className="text-xs text-[#172030]/40">{stats.toReview} à réviser</p>
             </CardContent>
           </Card>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#172030]/40" />
             <Input 
               placeholder="Rechercher un service, un responsable..." 
               value={searchQuery} 
               onChange={e => setSearchQuery(e.target.value)} 
-              className="pl-9" 
+              className="pl-9 border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20" 
             />
           </div>
           <div className="flex gap-1.5 flex-wrap">
@@ -1849,7 +4340,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               variant={selectedStatus === "all" ? "default" : "outline"}
               size="sm"
               onClick={() => setSelectedStatus("all")}
-              className={selectedStatus === "all" ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+              className={selectedStatus === "all" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
             >
               Tous
             </Button>
@@ -1857,7 +4348,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               variant={selectedStatus === "critique" ? "default" : "outline"}
               size="sm"
               onClick={() => setSelectedStatus("critique")}
-              className={selectedStatus === "critique" ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+              className={selectedStatus === "critique" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
             >
               Critiques
             </Button>
@@ -1865,7 +4356,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               variant={selectedStatus === "a_completer" ? "default" : "outline"}
               size="sm"
               onClick={() => setSelectedStatus("a_completer")}
-              className={selectedStatus === "a_completer" ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+              className={selectedStatus === "a_completer" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
             >
               À compléter
             </Button>
@@ -1873,16 +4364,24 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               variant={selectedStatus === "a_reviser" ? "default" : "outline"}
               size="sm"
               onClick={() => setSelectedStatus("a_reviser")}
-              className={selectedStatus === "a_reviser" ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+              className={selectedStatus === "a_reviser" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
             >
               À réviser
+            </Button>
+            <Button 
+              variant={selectedStatus === "non_demarre" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedStatus("non_demarre")}
+              className={selectedStatus === "non_demarre" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
+            >
+              Non démarrés
             </Button>
           </div>
         </div>
 
         {Object.keys(servicesByDirection).length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <Building className="h-12 w-12 mx-auto text-gray-300" />
+          <div className="text-center py-12 text-[#172030]/40">
+            <Building className="h-12 w-12 mx-auto text-[#172030]/20" />
             <p className="mt-4">Aucun service trouvé dans cette entreprise.</p>
           </div>
         ) : (
@@ -1894,8 +4393,210 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
                 icon={<Building className="h-4 w-4" />}
                 services={dirServices}
                 onServiceClick={handleServiceClick}
+                departmentIds={departmentIds}
               />
             ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // VUE DÉPARTEMENTS - avec les cartes redesign
+  if (viewLevel === "departments" && selectedDirection && !showBIADetail) {
+    const departments = getChildren(selectedDirection);
+    const services = buildBIAServices(selectedRoot || "");
+    const filteredServices = getFilteredServices(services);
+    const stats = getBIAStats(services);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
+              <Building2 className="h-7 w-7 text-[#2A5141]" /> Processus &amp; BIA
+            </h1>
+            <p className="text-[#172030]/60 mt-1 text-sm">
+              Sélectionnez un service pour ouvrir sa fiche d'analyse d'impact.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={goToRoot} className="gap-1 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
+              <ArrowLeft className="h-4 w-4" /> Retour
+            </Button>
+            <Button 
+              className="gap-2 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
+              onClick={() => openWizard(undefined, selectedRoot || undefined)}
+            >
+              <Plus className="h-4 w-4" /> Nouvelle fiche BIA
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches BIA</p>
+              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalServices}</p>
+              <p className="text-xs text-[#172030]/40">sur {stats.scoped} services scopés</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus critiques</p>
+              <p className="text-3xl font-bold text-red-600" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalCritical}</p>
+              <p className="text-xs text-[#172030]/40">sur {stats.totalProcesses} processus</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches complètes</p>
+              <p className="text-3xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.completed}</p>
+              <p className="text-xs text-[#172030]/40">{stats.toComplete} à compléter</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-white border-[#E8E4DC] shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Non démarrés</p>
+              <p className="text-3xl font-bold text-[#172030]/50" style={{ fontFamily: "Playfair Display, serif" }}>{stats.nonDemarre}</p>
+              <p className="text-xs text-[#172030]/40">{stats.toReview} à réviser</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-[#172030]/40" />
+            <span className="text-xs font-medium text-[#172030]/60">Filtres</span>
+          </div>
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="h-8 px-2.5 text-xs border border-[#E8E4DC] rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#2A5141] text-[#172030]"
+          >
+            <option value="all">Tous les statuts</option>
+            <option value="critique">Critique</option>
+            <option value="a_completer">À compléter</option>
+            <option value="a_reviser">À réviser</option>
+            <option value="non_demarre">Non démarré</option>
+          </select>
+          {(selectedStatus !== "all" || searchQuery) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs text-[#172030]/40 hover:text-[#172030]"
+              onClick={() => {
+                setSelectedStatus("all");
+                setSearchQuery("");
+              }}
+            >
+              <X className="h-3 w-3 mr-1" /> Réinitialiser
+            </Button>
+          )}
+          <span className="text-xs text-[#172030]/40 ml-auto">
+            {departments.filter(dept => {
+              const deptProcesses = processes.filter(p => p.department === dept.name || p.entityId === dept.id);
+              if (selectedStatus === "all") return true;
+              const status = getBIAStatus(deptProcesses, dept.lastUpdated);
+              return status === selectedStatus;
+            }).length} services
+          </span>
+        </div>
+
+        {departments.length === 0 ? (
+          <div className="text-center py-12 text-[#172030]/40">
+            <Layers className="h-12 w-12 mx-auto text-[#172030]/20" />
+            <p className="mt-4">Aucun département trouvé dans cette direction.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {departments.map(dept => {
+              const deptProcesses = processes.filter(p => p.department === dept.name || p.entityId === dept.id);
+              const status = getBIAStatus(deptProcesses, dept.lastUpdated);
+              const isNonDemarre = status === "non_demarre";
+              const criticalCount = deptProcesses.filter(p => {
+                const score = computeMaxScoreFromImpacts(p.impacts);
+                return score >= 4;
+              }).length;
+              
+              const statusConfigs = {
+                critique: { label: "Critique", className: "bg-red-100 text-red-700 border-red-200" },
+                a_completer: { label: "À compléter", className: "bg-amber-100 text-amber-700 border-amber-200" },
+                a_reviser: { label: "À réviser", className: "bg-orange-100 text-orange-700 border-orange-200" },
+                complet: { label: "Complet", className: "bg-green-100 text-green-700 border-green-200" },
+                non_demarre: { label: "Non démarré", className: "bg-gray-100 text-gray-500 border-gray-200" }
+              };
+              const statusConfig = statusConfigs[status] || statusConfigs.a_completer;
+
+              return (
+                <div
+                  key={dept.id}
+                  className="bg-white border border-[#E8E4DC] rounded-xl p-5 cursor-pointer hover:shadow-[0_8px_24px_rgba(23,32,48,0.08)] hover:border-[#2A5141]/30 transition-all duration-200"
+                  onClick={() => selectDepartment(dept.id)}
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-semibold text-[#172030] text-base">{dept.name}</h3>
+                      <p className="text-xs text-[#172030]/50 mt-0.5">
+                        {deptProcesses.length > 0 ? `👤 ${deptProcesses[0]?.owner || "—"}` : "Aucun responsable défini"}
+                      </p>
+                    </div>
+                    <Badge className={statusConfig.className}>
+                      {statusConfig.label}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 py-3 border-t border-b border-[#E8E4DC] mb-3">
+                    <div className="text-center">
+                      <div className={cn(
+                        "text-lg font-bold font-mono",
+                        isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
+                      )}>
+                        {deptProcesses.length}
+                      </div>
+                      <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Processus</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={cn(
+                        "text-lg font-bold font-mono",
+                        criticalCount > 0 ? "text-red-600" : isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
+                      )}>
+                        {criticalCount}
+                      </div>
+                      <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Critiques</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={cn(
+                        "text-lg font-bold font-mono",
+                        isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
+                      )}>
+                        {deptProcesses.length > 0 ? calculateCompletionRate(deptProcesses) : 0}%
+                      </div>
+                      <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Complétion</div>
+                    </div>
+                  </div>
+
+                  {isNonDemarre ? (
+                    <Button 
+                      size="sm" 
+                      className="w-full gap-1 text-xs bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.dispatchEvent(new CustomEvent('openBiaWizard', { 
+                          detail: { departmentId: dept.id } 
+                        }));
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Ajouter un processus
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-[#2A5141] font-medium flex items-center justify-center gap-1">
+                      Ouvrir <ChevronRightIcon className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1918,28 +4619,31 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
+  // VUE ENTREPRISES - redesigned
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
-            <Building2 className="h-7 w-7 text-primary" /> Inventaire des processus
+          <h1 className="text-2xl md:text-3xl font-bold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
+            <Building2 className="h-7 w-7 text-[#2A5141]" /> Inventaire des processus
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-[#172030]/60 mt-1 text-sm">
             {viewLevel === "enterprises" && "Sélectionnez une entreprise pour voir ses directions"}
             {viewLevel === "directions" && "Sélectionnez une direction pour voir ses départements"}
             {viewLevel === "departments" && "Sélectionnez un département pour voir ses processus"}
-            {viewLevel === "processes" && `Processus de "${entities.find(e => e.id === selectedDepartment)?.name || ""}"`}
           </p>
         </div>
         <div className="flex gap-2">
           {viewLevel !== "enterprises" && (
-            <Button variant="outline" onClick={goToRoot} className="gap-1">
+            <Button variant="outline" onClick={goToRoot} className="gap-1 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
               <ArrowLeft className="h-4 w-4" /> Retour
             </Button>
           )}
           {can("write") && viewLevel === "processes" && (
-            <Button onClick={onCreate} className="gap-2">
+            <Button 
+              onClick={() => openWizard(undefined, selectedDepartment || undefined)} 
+              className="gap-2 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
+            >
               <Plus className="h-4 w-4" /> Nouveau processus
             </Button>
           )}
@@ -1947,25 +4651,55 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       </div>
 
       <div className="grid gap-3 md:grid-cols-6">
-        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-bold">{processes.length}</p></CardContent></Card>
-        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Critiques</p><p className="text-xl font-bold text-red-600">{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 4).length}</p></CardContent></Card>
-        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Majeurs</p><p className="text-xl font-bold text-orange-600">{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 3 && computeMaxScoreFromImpacts(p.impacts) < 4).length}</p></CardContent></Card>
-        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Modérés</p><p className="text-xl font-bold text-yellow-600">{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 2 && computeMaxScoreFromImpacts(p.impacts) < 3).length}</p></CardContent></Card>
-        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Mineurs</p><p className="text-xl font-bold text-green-600">{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) < 2).length}</p></CardContent></Card>
-        <Card className="bg-gray-100/60 border-gray-200/50 shadow-sm"><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Score moyen</p><p className="text-xl font-bold">{processes.length ? (processes.reduce((acc, p) => acc + computeMaxScoreFromImpacts(p.impacts), 0) / processes.length).toFixed(1) : "0"}/5</p></CardContent></Card>
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
+          <CardContent className="p-3 text-center">
+            <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Total</p>
+            <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{processes.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
+          <CardContent className="p-3 text-center">
+            <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Critiques</p>
+            <p className="text-2xl font-bold text-red-600" style={{ fontFamily: "Playfair Display, serif" }}>{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 4).length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
+          <CardContent className="p-3 text-center">
+            <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Majeurs</p>
+            <p className="text-2xl font-bold text-orange-600" style={{ fontFamily: "Playfair Display, serif" }}>{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 3 && computeMaxScoreFromImpacts(p.impacts) < 4).length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
+          <CardContent className="p-3 text-center">
+            <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Modérés</p>
+            <p className="text-2xl font-bold text-yellow-600" style={{ fontFamily: "Playfair Display, serif" }}>{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 2 && computeMaxScoreFromImpacts(p.impacts) < 3).length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
+          <CardContent className="p-3 text-center">
+            <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Mineurs</p>
+            <p className="text-2xl font-bold text-green-600" style={{ fontFamily: "Playfair Display, serif" }}>{processes.filter(p => computeMaxScoreFromImpacts(p.impacts) < 2).length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
+          <CardContent className="p-3 text-center">
+            <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Score moyen</p>
+            <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{processes.length ? (processes.reduce((acc, p) => acc + computeMaxScoreFromImpacts(p.impacts), 0) / processes.length).toFixed(1) : "0"}</p>
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="border-gray-200/50 shadow-[0_8px_30px_rgb(0,0,0,0.05)]">
+      <Card className="border-[#E8E4DC] shadow-[0_8px_30px_rgb(0,0,0,0.05)]">
         <CardContent className="p-6">
           {viewLevel === "enterprises" && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold">🏢 Entreprises</h2>
-                <span className="text-sm text-muted-foreground">{rootEntities.length} entreprise(s)</span>
+                <h2 className="text-lg font-semibold text-[#172030]">🏢 Entreprises</h2>
+                <span className="text-sm text-[#172030]/40">{rootEntities.length} entreprise(s)</span>
               </div>
               {rootEntities.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Building2 className="h-12 w-12 mx-auto text-muted-foreground/30" />
+                <div className="text-center py-12 text-[#172030]/40">
+                  <Building2 className="h-12 w-12 mx-auto text-[#172030]/20" />
                   <p className="mt-4">Aucune entreprise trouvée.</p>
                   <p className="text-sm">Créez une entité racine dans Gouvernance M1.</p>
                 </div>
@@ -1979,331 +4713,37 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
                     return (
                       <div
                         key={root.id}
-                        className="bg-gradient-to-br from-[#e8ecf1] to-[#d5dbe3] hover:from-[#eef1f6] hover:to-[#dce1ea] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.10)] transition-all duration-300 cursor-pointer transform hover:scale-[1.02] hover:-translate-y-1 p-6 text-[#1e293b] flex flex-col items-center justify-center min-h-[140px] border border-white/40 backdrop-blur-sm"
+                        className="bg-white border border-[#E8E4DC] rounded-xl p-6 cursor-pointer hover:shadow-[0_8px_24px_rgba(23,32,48,0.08)] hover:border-[#2A5141]/30 transition-all duration-200 flex flex-col items-center justify-center min-h-[140px]"
                         onClick={() => selectRoot(root.id)}
                       >
-                        <div className="mb-2 text-[#475569]">
-                          <Building2 className="h-8 w-8" />
+                        <div className="mb-3 w-10 h-10 rounded-lg bg-[#F8F6F2] text-[#172030] flex items-center justify-center">
+                          <Building2 className="h-5 w-5" />
                         </div>
-                        <h3 className="text-lg font-bold text-center text-[#0f172a]">{root.name}</h3>
-                        <p className="text-xs text-[#64748b] mt-1">Entreprise</p>
+                        <h3 className="text-lg font-semibold text-center text-[#172030]">{root.name}</h3>
+                        <p className="text-xs text-[#172030]/40 mt-1">Entreprise</p>
                         <div className="flex flex-wrap gap-2 mt-3 justify-center">
-                          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
-                            {getDepartmentCount(root.id)} direction(s)
+                          <span className="text-xs text-[#172030]/50">
+                            {getDepartmentCount(root.id)} direction{getDepartmentCount(root.id) > 1 ? 's' : ''}
                           </span>
-                          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
+                          <span className="text-xs text-[#172030]/30">•</span>
+                          <span className="text-xs text-[#172030]/50">
                             {totalProcesses} processus
                           </span>
                           {totalCritical > 0 && (
-                            <span className="bg-red-200/60 px-3 py-0.5 rounded-full text-xs font-medium text-red-700 shadow-sm border border-red-200/40">
-                              ⚠️ {totalCritical} critique(s)
+                            <span className="text-xs text-red-600 ml-1">
+                              ⚠️ {totalCritical} critique{totalCritical > 1 ? 's' : ''}
                             </span>
                           )}
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {viewLevel === "directions" && selectedRoot && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold">📊 Directions de {entityName(selectedRoot)}</h2>
-                  <Badge variant="outline">{getChildren(selectedRoot).length} direction(s)</Badge>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => {
-                  setViewLevel("directions");
-                  setShowBIADetail(false);
-                }}>
-                  Voir en mode BIA
-                </Button>
-              </div>
-              {getChildren(selectedRoot).length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Building className="h-12 w-12 mx-auto text-muted-foreground/30" />
-                  <p className="mt-4">Aucune direction trouvée.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {getChildren(selectedRoot).map(dir => {
-                    const services = buildBIAServices(selectedRoot);
-                    const dirServices = services.filter(s => {
-                      const depts = getChildren(dir.id);
-                      return depts.some(d => d.id === s.id);
-                    });
-                    const totalProcesses = dirServices.reduce((acc, s) => acc + s.processCount, 0);
-                    const totalCritical = dirServices.reduce((acc, s) => acc + s.criticalCount, 0);
-                    
-                    return (
-                      <div
-                        key={dir.id}
-                        className="bg-gradient-to-br from-[#e2e7ef] to-[#d0d7e2] hover:from-[#e8ecf4] hover:to-[#d6dde8] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.10)] transition-all duration-300 cursor-pointer transform hover:scale-[1.02] hover:-translate-y-1 p-6 text-[#1e293b] flex flex-col items-center justify-center min-h-[140px] border border-white/40 backdrop-blur-sm"
-                        onClick={() => selectDirection(dir.id)}
-                      >
-                        <div className="mb-2 text-[#475569]">
-                          <Building className="h-8 w-8" />
-                        </div>
-                        <h3 className="text-lg font-bold text-center text-[#0f172a]">{dir.name}</h3>
-                        <p className="text-xs text-[#64748b] mt-1">Direction</p>
-                        <div className="flex flex-wrap gap-2 mt-3 justify-center">
-                          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
-                            {getDepartmentCount(dir.id)} département(s)
-                          </span>
-                          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
-                            {totalProcesses} processus
-                          </span>
-                          {totalCritical > 0 && (
-                            <span className="bg-red-200/60 px-3 py-0.5 rounded-full text-xs font-medium text-red-700 shadow-sm border border-red-200/40">
-                              ⚠️ {totalCritical} critique(s)
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {viewLevel === "departments" && selectedDirection && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold">📋 Départements de {entityName(selectedDirection)}</h2>
-                  <Badge variant="outline">{getChildren(selectedDirection).length} département(s)</Badge>
-                </div>
-              </div>
-              {getChildren(selectedDirection).length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Layers className="h-12 w-12 mx-auto text-muted-foreground/30" />
-                  <p className="mt-4">Aucun département trouvé.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {getChildren(selectedDirection).map(dept => {
-                    const deptResources = getDepartmentResources(processes, dept.id, dept.name);
-                    const procs = getProcessesForDept(dept.id, dept.name);
-                    return (
-                      <div
-                        key={dept.id}
-                        className="bg-gradient-to-br from-[#dce2ec] to-[#c9d1dd] hover:from-[#e2e8f2] hover:to-[#cfd7e3] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.10)] transition-all duration-300 cursor-pointer transform hover:scale-[1.02] hover:-translate-y-1 p-6 text-[#1e293b] flex flex-col border border-white/40 backdrop-blur-sm"
-                        onClick={() => selectDepartment(dept.id)}
-                      >
-                        <div className="mb-2 text-[#475569]">
-                          <Layers className="h-8 w-8" />
-                        </div>
-                        <h3 className="text-lg font-bold text-[#0f172a]">{dept.name}</h3>
-                        <p className="text-xs text-[#64748b] mt-1">Département</p>
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          <span className="bg-white/60 px-3 py-0.5 rounded-full text-xs font-medium text-[#334155] shadow-sm border border-white/40">
-                            {procs.length} processus
-                          </span>
-                          {procs.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 4).length > 0 && (
-                            <span className="bg-red-200/60 px-3 py-0.5 rounded-full text-xs font-medium text-red-700 shadow-sm border border-red-200/40">
-                              ⚠️ {procs.filter(p => computeMaxScoreFromImpacts(p.impacts) >= 4).length}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-3 text-xs text-[#475569] space-y-0.5">
-                          {deptResources.hr.length > 0 && (
-                            <div className="bg-white/30 px-2 py-0.5 rounded-full inline-block">👥 {deptResources.hr.map(h => h.name).join(", ")}</div>
-                          )}
-                          {deptResources.equipment.length > 0 && (
-                            <div className="bg-white/30 px-2 py-0.5 rounded-full inline-block ml-1">🖥️ {deptResources.equipment.map(e => e.name).join(", ")}</div>
-                          )}
-                          {deptResources.suppliers.length > 0 && (
-                            <div className="bg-white/30 px-2 py-0.5 rounded-full inline-block ml-1">🤝 {deptResources.suppliers.map(s => s.name).join(", ")}</div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {viewLevel === "processes" && selectedDepartment && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Button variant="ghost" size="sm" onClick={() => {
-                  setViewLevel("departments");
-                  setSelectedDepartment(null);
-                }} className="gap-1">
-                  <ArrowLeft className="h-4 w-4" />
-                  Retour
-                </Button>
-                <h2 className="text-xl font-bold">{entities.find(e => e.id === selectedDepartment)?.name || "Département"}</h2>
-                <Badge variant="outline">{getProcessesForDept(selectedDepartment, entities.find(e => e.id === selectedDepartment)?.name || "").length} processus</Badge>
-              </div>
-
-              <div className="flex flex-col md:flex-row gap-3">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Rechercher un processus..." 
-                    value={searchQuery} 
-                    onChange={e => setSearchQuery(e.target.value)} 
-                    className="pl-9" 
-                  />
-                </div>
-                <select 
-                  value={selectedCriticality} 
-                  onChange={e => setSelectedCriticality(e.target.value)} 
-                  className="h-10 px-3 rounded-md border bg-background text-sm"
-                >
-                  <option value="all">Toutes les criticités</option>
-                  <option value="Critique">Critique</option>
-                  <option value="Majeur">Majeur</option>
-                  <option value="Modéré">Modéré</option>
-                  <option value="Mineur">Mineur</option>
-                </select>
-              </div>
-
-              {getProcessesForDept(selectedDepartment, entities.find(e => e.id === selectedDepartment)?.name || "").length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <p>Aucun processus dans ce département.</p>
-                </div>
-              ) : (
-                <div className="border rounded-xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/10">
-                          <TableHead>Processus</TableHead>
-                          <TableHead>Responsable</TableHead>
-                          <TableHead className="text-center">RTO</TableHead>
-                          <TableHead className="text-center">RPO</TableHead>
-                          <TableHead>Criticité</TableHead>
-                          <TableHead>Apps IT</TableHead>
-                          <TableHead>Prestataires</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {getProcessesForDept(selectedDepartment, entities.find(e => e.id === selectedDepartment)?.name || "").map(p => {
-                          const score = computeMaxScoreFromImpacts(p.impacts);
-                          const crit = scoreToCriticality(score);
-                          const apps = (p as any).appsCritiques || [];
-                          const prestataires = (p.resources || []).filter((r: any) => r.type === "Fournisseur");
-                          return (
-                            <TableRow
-                              key={p.id}
-                              className="cursor-pointer hover:bg-indigo-50/30 transition-colors"
-                              onClick={() => openProcessModal(p)}
-                            >
-                              <TableCell className="font-medium text-indigo-600 hover:underline">{p.name}</TableCell>
-                              <TableCell className="text-sm">{p.owner}</TableCell>
-                              <TableCell className="text-center"><Badge className="bg-red-50 text-red-700 border-red-200 text-xs">{p.rto}h</Badge></TableCell>
-                              <TableCell className="text-center"><Badge className="bg-orange-50 text-orange-700 border-orange-200 text-xs">{p.rpo}h</Badge></TableCell>
-                              <TableCell><Badge className={criticalityColor(crit)}>{crit}</Badge></TableCell>
-                              <TableCell>
-                                {apps.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {apps.slice(0, 2).map((app: any) => (
-                                      <Badge key={app.id} className="bg-purple-50 text-purple-700 border-purple-200 text-xs gap-1">
-                                        <Server className="h-3 w-3" /> {app.name}
-                                      </Badge>
-                                    ))}
-                                    {apps.length > 2 && <Badge variant="outline" className="text-xs">+{apps.length - 2}</Badge>}
-                                  </div>
-                                ) : <span className="text-muted-foreground text-xs">—</span>}
-                              </TableCell>
-                              <TableCell>
-                                {prestataires.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {prestataires.slice(0, 2).map((p: any) => (
-                                      <Badge key={p.id} className="bg-orange-50 text-orange-700 border-orange-200 text-xs gap-1">
-                                        <Truck className="h-3 w-3" /> {p.name}
-                                      </Badge>
-                                    ))}
-                                    {prestataires.length > 2 && <Badge variant="outline" className="text-xs">+{prestataires.length - 2}</Badge>}
-                                  </div>
-                                ) : <span className="text-muted-foreground text-xs">—</span>}
-                              </TableCell>
-                              <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                                <div className="flex justify-end gap-1">
-                                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit(p.id)}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                  {can("admin") && (
-                                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(p.id, p.name)}>
-                                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
                 </div>
               )}
             </div>
           )}
         </CardContent>
       </Card>
-
-      {selectedProcess && (
-        <Dialog open onOpenChange={() => setSelectedProcess(null)}>
-          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl flex items-center gap-2">
-                <Shield className="h-5 w-5 text-primary" />
-                {selectedProcess.name}
-                <Badge className={criticalityColor(scoreToCriticality(computeMaxScoreFromImpacts(selectedProcess.impacts)))}>
-                  {scoreToCriticality(computeMaxScoreFromImpacts(selectedProcess.impacts))}
-                </Badge>
-              </DialogTitle>
-            </DialogHeader>
-
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-muted/30 rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Responsable</p>
-                  <p className="font-medium">{selectedProcess.owner || "—"}</p>
-                </div>
-                <div className="bg-muted/30 rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Dernière MAJ</p>
-                  <p className="font-medium">{selectedProcess.lastUpdated || "—"}</p>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-primary" /> Objectifs de continuité
-                </h3>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { label: "RTO", value: selectedProcess.rto, unit: "h", color: "bg-red-50 border-red-200 text-red-700" },
-                    { label: "RPO", value: selectedProcess.rpo, unit: "h", color: "bg-orange-50 border-orange-200 text-orange-700" },
-                    { label: "MTPD", value: selectedProcess.mtpd, unit: "h", color: "bg-blue-50 border-blue-200 text-blue-700" },
-                  ].map(({ label, value, unit, color }) => (
-                    <div key={label} className={`rounded-xl border p-3 text-center ${color}`}>
-                      <p className="text-xs font-semibold opacity-70">{label}</p>
-                      <p className="text-2xl font-bold">{value}<span className="text-sm">{unit}</span></p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {selectedProcess.description && (
-                <div className="bg-muted/20 rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1 font-semibold">Description</p>
-                  <p className="text-sm">{selectedProcess.description}</p>
-                </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Search, 
   Filter, 
@@ -13,12 +14,40 @@ import {
   ShieldAlert,
   Eye,
   ChevronDown,
-  ChevronUp,
+  ChevronRight,
   BarChart3,
-  Sparkles
+  Sparkles,
+  ChevronUp,
+  Layers
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
-import { PERIODS, periodMaxScore, scoreCellColor, computeMaxScore, scoreToCriticality, criticalityColor } from "@/data/bia";
+import { PERIODS, periodMaxScore, computeMaxScore, scoreToCriticality, criticalityColor, type ImpactAxis } from "@/data/bia";
+import { cn } from "@/lib/utils";
+
+// ============================================================
+// CONSTANTES
+// ============================================================
+
+const IMPACT_AXES: { id: ImpactAxis; label: string; icon: string }[] = [
+  { id: "Financier", label: "Financier", icon: "💰" },
+  { id: "Conformité / Légal", label: "Conformité / Légal", icon: "⚖️" },
+  { id: "Opérationnel", label: "Opérationnel", icon: "⚙️" },
+  { id: "Réputationnel", label: "Réputationnel", icon: "📢" },
+];
+
+// Styles pastel pour les scores (identiques à la matrice d'impact)
+const SEVERITY_PASTEL_STYLES: Record<number, { bg: string; text: string; border: string; label: string }> = {
+  0: { bg: "#F5F5F5", text: "#9E9E9E", border: "#E0E0E0", label: "Aucun" },
+  1: { bg: "#E8F5E9", text: "#2E7D32", border: "#A5D6A7", label: "Mineur" },
+  2: { bg: "#FFF8E1", text: "#F57F17", border: "#FFE082", label: "Modéré" },
+  3: { bg: "#FFF3E0", text: "#E65100", border: "#FFCC80", label: "Majeur" },
+  4: { bg: "#FBE9E7", text: "#D84315", border: "#FFAB91", label: "Sévère" },
+  5: { bg: "#FFEBEE", text: "#C62828", border: "#EF9A9A", label: "Très sévère" },
+};
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 
 export const MatrixView = () => {
   const { processes } = useBia();
@@ -26,14 +55,66 @@ export const MatrixView = () => {
   const [sortBy, setSortBy] = useState<"name" | "criticality">("criticality");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [filterCriticality, setFilterCriticality] = useState<string>("all");
+  
+  // NOUVEAU: Sélecteur d'axe pour la vue
+  const [selectedAxis, setSelectedAxis] = useState<ImpactAxis | "global">("global");
+  
+  // NOUVEAU: État pour les lignes dépliées (drill-down par processus)
+  const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
 
-  // Filtrer et trier les processus
+  // ============================================================
+  // FONCTIONS DE CALCUL
+  // ============================================================
+
+  // Récupérer la valeur d'un axe spécifique pour une période donnée
+  const getAxisValue = (impacts: any, periodId: string, axis: ImpactAxis): number => {
+    if (!impacts) return 0;
+    const periodData = impacts[periodId];
+    if (!periodData || typeof periodData !== 'object') return 0;
+    // Les axes sont stockés avec des clés en anglais dans les données
+    const axisMap: Record<string, string> = {
+      "Financier": "financial",
+      "Conformité / Légal": "regulatory",
+      "Opérationnel": "operational",
+      "Réputationnel": "reputation",
+    };
+    const key = axisMap[axis] || axis;
+    const value = periodData[key];
+    return typeof value === 'number' ? value : parseInt(String(value)) || 0;
+  };
+
+  // Calcul du score pour une cellule selon la vue sélectionnée
+  const getCellScore = (impacts: any, periodId: string, axis: ImpactAxis | "global"): number => {
+    if (axis === "global") {
+      return periodMaxScore(impacts, periodId);
+    }
+    return getAxisValue(impacts, periodId, axis);
+  };
+
+  // Calcul du score max pour un processus selon la vue sélectionnée
+  const getProcessMaxScore = (impacts: any, axis: ImpactAxis | "global"): number => {
+    if (axis === "global") {
+      return computeMaxScore(impacts);
+    }
+    let maxScore = 0;
+    for (const period of PERIODS) {
+      const value = getAxisValue(impacts, period.id, axis);
+      if (value > maxScore) maxScore = value;
+    }
+    return maxScore;
+  };
+
+  // ============================================================
+  // FILTRAGE ET TRI
+  // ============================================================
+
   const filteredProcesses = processes
     .filter(proc => {
       const matchesSearch = proc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            proc.department.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCriticality = filterCriticality === "all" || 
-                                 scoreToCriticality(computeMaxScore(proc.impacts)) === filterCriticality;
+      const maxScore = getProcessMaxScore(proc.impacts, selectedAxis);
+      const criticality = scoreToCriticality(maxScore);
+      const matchesCriticality = filterCriticality === "all" || criticality === filterCriticality;
       return matchesSearch && matchesCriticality;
     })
     .sort((a, b) => {
@@ -42,113 +123,206 @@ export const MatrixView = () => {
           ? a.name.localeCompare(b.name)
           : b.name.localeCompare(a.name);
       } else {
-        const scoreA = computeMaxScore(a.impacts);
-        const scoreB = computeMaxScore(b.impacts);
+        const scoreA = getProcessMaxScore(a.impacts, selectedAxis);
+        const scoreB = getProcessMaxScore(b.impacts, selectedAxis);
         return sortOrder === "asc" ? scoreA - scoreB : scoreB - scoreA;
       }
     });
 
-  // Statistiques globales
+  // ============================================================
+  // STATISTIQUES
+  // ============================================================
+
   const stats = {
     total: processes.length,
-    critiques: processes.filter(p => computeMaxScore(p.impacts) >= 4).length,
-    majeurs: processes.filter(p => computeMaxScore(p.impacts) >= 3 && computeMaxScore(p.impacts) < 4).length,
-    moderes: processes.filter(p => computeMaxScore(p.impacts) >= 2 && computeMaxScore(p.impacts) < 3).length,
-    mineurs: processes.filter(p => computeMaxScore(p.impacts) < 2).length,
-    avgScore: processes.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / processes.length || 0
+    critiques: processes.filter(p => getProcessMaxScore(p.impacts, selectedAxis) >= 4).length,
+    majeurs: processes.filter(p => getProcessMaxScore(p.impacts, selectedAxis) >= 3 && getProcessMaxScore(p.impacts, selectedAxis) < 4).length,
+    moderes: processes.filter(p => getProcessMaxScore(p.impacts, selectedAxis) >= 2 && getProcessMaxScore(p.impacts, selectedAxis) < 3).length,
+    mineurs: processes.filter(p => getProcessMaxScore(p.impacts, selectedAxis) < 2).length,
+    avgScore: processes.reduce((acc, p) => acc + getProcessMaxScore(p.impacts, selectedAxis), 0) / processes.length || 0
   };
 
+  // ============================================================
+  // EXPORT CSV - TOUJOURS AVEC LES 4 AXES EN DÉTAIL
+  // ============================================================
+
   const exportToCSV = () => {
-    const headers = ["Processus", "Direction", ...PERIODS.map(p => p.label), "Criticité", "Score"];
-    const rows = processes.map(proc => [
-      proc.name,
-      proc.department,
-      ...PERIODS.map(p => periodMaxScore(proc.impacts, p.id).toString()),
-      scoreToCriticality(computeMaxScore(proc.impacts)),
-      computeMaxScore(proc.impacts).toString()
-    ]);
+    const axesLabels = ["Financier", "Conformité/Légal", "Opérationnel", "Réputationnel"];
+    
+    // En-têtes avec tous les axes pour chaque période
+    let headers = ["Processus", "Direction"];
+    for (const period of PERIODS) {
+      for (const axis of axesLabels) {
+        headers.push(`${period.label} - ${axis}`);
+      }
+    }
+    headers.push("Criticité globale", "Score global");
+
+    const rows = processes.map(proc => {
+      const row = [proc.name, proc.department];
+      for (const period of PERIODS) {
+        for (const axis of axesLabels) {
+          const value = getAxisValue(proc.impacts, period.id, axis as ImpactAxis);
+          row.push(value.toString());
+        }
+      }
+      const maxScore = computeMaxScore(proc.impacts);
+      row.push(scoreToCriticality(maxScore));
+      row.push(maxScore.toString());
+      return row;
+    });
     
     const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "matrice_impact_bia.csv";
+    a.download = "matrice_impact_bia_complete.csv";
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // ============================================================
+  // TOGGLE D'EXPANSION
+  // ============================================================
+
+  const toggleProcessExpand = (processId: string) => {
+    setExpandedProcesses(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(processId)) {
+        newSet.delete(processId);
+      } else {
+        newSet.add(processId);
+      }
+      return newSet;
+    });
+  };
+
+  // ============================================================
+  // RENDU
+  // ============================================================
+
+  const getCellStyle = (score: number) => {
+    const style = SEVERITY_PASTEL_STYLES[score] || SEVERITY_PASTEL_STYLES[0];
+    return {
+      backgroundColor: style.bg,
+      color: style.text,
+      borderColor: style.border,
+    };
+  };
+
+  // Vérifier si on est en vue "global"
+  const isGlobalView = selectedAxis === "global";
 
   return (
     <div className="space-y-6">
       {/* En-tête */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
-            <BarChart3 className="h-7 w-7 text-primary" />
+          <h1 className="text-2xl md:text-3xl font-bold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
+            <BarChart3 className="h-7 w-7 text-[#2A5141]" />
             Vue matricielle
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-[#172030]/50 mt-1 text-sm">
             Analyse des impacts par processus et période d'indisponibilité
+            {!isGlobalView && ` — Vue par axe : ${IMPACT_AXES.find(a => a.id === selectedAxis)?.label}`}
           </p>
         </div>
-        <Button variant="outline" onClick={exportToCSV} className="gap-2">
+        <Button variant="outline" onClick={exportToCSV} className="gap-2 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
           <Download className="h-4 w-4" />
-          Exporter CSV
+          Exporter CSV (4 axes)
         </Button>
       </div>
 
       {/* Cartes de synthèse */}
-      <div className="grid gap-3 md:grid-cols-5">
-        <Card className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border-blue-200">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Total processus</p>
-            <p className="text-2xl font-bold">{stats.total}</p>
+            <p className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Total processus</p>
+            <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.total}</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-red-500/10 to-red-500/5 border-red-200">
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Critiques</p>
-            <p className="text-2xl font-bold text-red-600">{stats.critiques}</p>
+            <p className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Critiques</p>
+            <p className="text-2xl font-bold text-[#C62828]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.critiques}</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border-orange-200">
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Majeurs</p>
-            <p className="text-2xl font-bold text-orange-600">{stats.majeurs}</p>
+            <p className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Majeurs</p>
+            <p className="text-2xl font-bold text-[#E65100]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.majeurs}</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-yellow-500/10 to-yellow-500/5 border-yellow-200">
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Modérés</p>
-            <p className="text-2xl font-bold text-yellow-600">{stats.moderes}</p>
+            <p className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Modérés</p>
+            <p className="text-2xl font-bold text-[#F57F17]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.moderes}</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-200">
+        <Card className="bg-white border-[#E8E4DC] shadow-sm">
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Score moyen</p>
-            <p className="text-2xl font-bold text-green-600">{stats.avgScore.toFixed(1)}/5</p>
+            <p className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Score moyen</p>
+            <p className="text-2xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.avgScore.toFixed(1)}/5</p>
           </CardContent>
         </Card>
       </div>
 
+      {/* ============================================================
+          SÉLECTEUR DE VUE (AXE)
+          ============================================================ */}
+      <Card className="border-[#E8E4DC] shadow-sm bg-white">
+        <CardContent className="p-3">
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-[#172030]/40" />
+              <span className="text-xs font-medium text-[#172030]/50 uppercase tracking-wider">Vue :</span>
+            </div>
+            <Tabs 
+              value={selectedAxis} 
+              onValueChange={(v) => setSelectedAxis(v as ImpactAxis | "global")}
+              className="flex-1"
+            >
+              <TabsList className="bg-[#F8F6F2] border border-[#E8E4DC] p-0.5 h-auto flex-wrap">
+                <TabsTrigger 
+                  value="global" 
+                  className="text-xs px-3 py-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#2A5141]"
+                >
+                  🌐 Global
+                </TabsTrigger>
+                {IMPACT_AXES.map((axis) => (
+                  <TabsTrigger 
+                    key={axis.id} 
+                    value={axis.id}
+                    className="text-xs px-3 py-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#2A5141]"
+                  >
+                    {axis.icon} {axis.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Filtres et recherche */}
-      <Card>
+      <Card className="border-[#E8E4DC] shadow-sm bg-white">
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row gap-3">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#172030]/40" />
               <Input
                 placeholder="Rechercher un processus ou une direction..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
+                className="pl-9 border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <select
                 value={filterCriticality}
                 onChange={(e) => setFilterCriticality(e.target.value)}
-                className="h-10 px-3 rounded-md border border-input bg-background text-sm"
+                className="h-10 px-3 rounded-md border border-[#E8E4DC] bg-white text-sm text-[#172030] focus:border-[#2A5141] focus:ring-[#2A5141]/20"
               >
                 <option value="all">Toutes les criticités</option>
                 <option value="Critique">Critique</option>
@@ -167,7 +341,10 @@ export const MatrixView = () => {
                     setSortOrder("desc");
                   }
                 }}
-                className={sortBy === "criticality" ? "bg-primary/10" : ""}
+                className={cn(
+                  "border-[#E8E4DC] hover:border-[#2A5141]",
+                  sortBy === "criticality" ? "bg-[#2A5141]/10 border-[#2A5141]" : ""
+                )}
               >
                 <TrendingUp className="h-4 w-4" />
               </Button>
@@ -182,7 +359,10 @@ export const MatrixView = () => {
                     setSortOrder("asc");
                   }
                 }}
-                className={sortBy === "name" ? "bg-primary/10" : ""}
+                className={cn(
+                  "border-[#E8E4DC] hover:border-[#2A5141]",
+                  sortBy === "name" ? "bg-[#2A5141]/10 border-[#2A5141]" : ""
+                )}
               >
                 <Filter className="h-4 w-4" />
               </Button>
@@ -191,81 +371,175 @@ export const MatrixView = () => {
         </CardContent>
       </Card>
 
-      {/* Matrice principale */}
-      <Card>
+      {/* ============================================================
+          MATRICE PRINCIPALE AVEC DRILL-DOWN
+          ============================================================ */}
+      <Card className="border-[#E8E4DC] shadow-sm bg-white">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center justify-between">
+          <CardTitle className="text-lg flex items-center justify-between text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
             <span>Matrice des impacts</span>
-            <span className="text-xs font-normal text-muted-foreground">
+            <span className="text-xs font-normal text-[#172030]/40">
               {filteredProcesses.length} / {processes.length} processus affichés
+              {!isGlobalView && ` · Axe: ${IMPACT_AXES.find(a => a.id === selectedAxis)?.label}`}
             </span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="overflow-auto">
+        <CardContent className="overflow-auto p-0 px-4 pb-4">
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="min-w-[200px] sticky left-0 bg-muted/50">
-                  Processus / Direction
+              <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+                <TableHead className="min-w-[220px] sticky left-0 bg-[#F8F6F2]">
+                  <span className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Processus / Direction</span>
                 </TableHead>
                 {PERIODS.map((p) => (
                   <TableHead key={p.id} className="text-center min-w-[60px]">
-                    <div className="text-xs">{p.label}</div>
-                    <div className="text-[10px] text-muted-foreground font-normal">
+                    <div className="text-xs font-medium text-[#172030]">{p.label}</div>
+                    <div className="text-[9px] text-[#172030]/40 font-normal">
                       {p.hours <= 24 ? `${p.hours}h` : `${Math.round(p.hours/24)}j`}
                     </div>
                   </TableHead>
                 ))}
-                <TableHead className="text-center min-w-[80px]">Criticité</TableHead>
-                <TableHead className="text-center min-w-[60px]">Action</TableHead>
+                <TableHead className="text-center min-w-[80px]">
+                  <span className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Criticité</span>
+                </TableHead>
+                <TableHead className="text-center min-w-[40px]">
+                  <span className="text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Détail</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredProcesses.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={PERIODS.length + 3} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={PERIODS.length + 3} className="text-center py-8 text-[#172030]/30">
                     Aucun processus trouvé
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredProcesses.map((proc) => {
-                  const criticality = scoreToCriticality(computeMaxScore(proc.impacts));
-                  const maxScore = computeMaxScore(proc.impacts);
-                  
+                  const maxScore = getProcessMaxScore(proc.impacts, selectedAxis);
+                  const criticality = scoreToCriticality(maxScore);
+                  const isExpanded = expandedProcesses.has(proc.id);
+                  const canExpand = isGlobalView; // Drill-down disponible uniquement en vue globale
+
                   return (
-                    <TableRow key={proc.id} className="hover:bg-muted/30 transition-colors">
-                      <TableCell className="font-medium sticky left-0 bg-background">
-                        <p className="text-sm font-semibold">{proc.name}</p>
-                        <p className="text-xs text-muted-foreground">{proc.department}</p>
-                      </TableCell>
-                      {PERIODS.map((p) => {
-                        const score = periodMaxScore(proc.impacts, p.id);
-                        return (
-                          <TableCell key={p.id} className="text-center p-1">
-                            <div className={cn(
-                              "inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold transition-all",
-                              score >= 5 ? "bg-red-500 text-white shadow-md" :
-                              score >= 4 ? "bg-orange-500 text-white" :
-                              score >= 3 ? "bg-yellow-500 text-black" :
-                              score >= 2 ? "bg-green-500 text-white" :
-                              "bg-gray-200 text-gray-600"
-                            )}>
-                              {score}
+                    <>
+                      {/* Ligne principale */}
+                      <TableRow 
+                        key={proc.id} 
+                        className={cn(
+                          "hover:bg-[#FAFAF9] transition-colors border-b border-[#E8E4DC]",
+                          isExpanded && "bg-[#F8F6F2]"
+                        )}
+                      >
+                        <TableCell className="font-medium sticky left-0 bg-inherit">
+                          <div className="flex items-center gap-2">
+                            {canExpand && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-[#172030]/40 hover:text-[#172030]"
+                                onClick={() => toggleProcessExpand(proc.id)}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
+                            <div>
+                              <p className="text-sm font-semibold text-[#172030]">{proc.name}</p>
+                              <p className="text-xs text-[#172030]/50">{proc.department}</p>
                             </div>
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className="text-center">
-                        <Badge className={criticalityColor(criticality)}>
-                          {criticality}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                          </div>
+                        </TableCell>
+                        {PERIODS.map((p) => {
+                          const score = getCellScore(proc.impacts, p.id, selectedAxis);
+                          const style = getCellStyle(score);
+                          return (
+                            <TableCell key={p.id} className="text-center p-1">
+                              <div 
+                                className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-sm font-bold border transition-all"
+                                style={{
+                                  backgroundColor: style.backgroundColor,
+                                  color: style.color,
+                                  borderColor: style.borderColor,
+                                }}
+                              >
+                                {score}
+                              </div>
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="text-center">
+                          <Badge className={cn("text-[10px] px-2 py-0.5 h-5 border", criticalityColor(criticality))}>
+                            {criticality}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-[#172030]/30 hover:text-[#172030]"
+                            onClick={() => {
+                              // Action pour voir les détails du processus
+                              window.dispatchEvent(new CustomEvent('openProcessDetail', { 
+                                detail: { processId: proc.id } 
+                              }));
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Sous-lignes dépliées (axes) - UNIQUEMENT en vue globale */}
+                      {isExpanded && isGlobalView && (
+                        IMPACT_AXES.map((axis) => {
+                          const axisMaxScore = getProcessMaxScore(proc.impacts, axis.id);
+                          return (
+                            <TableRow 
+                              key={`${proc.id}-${axis.id}`} 
+                              className="bg-[#FAFAF9] border-b border-[#E8E4DC]/50 hover:bg-[#F5F5F3] transition-colors"
+                            >
+                              <TableCell className="sticky left-0 bg-inherit pl-10">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-[#172030]/50">{axis.icon}</span>
+                                  <span className="text-xs text-[#172030]/60">{axis.label}</span>
+                                  <Badge variant="outline" className="text-[8px] px-1.5 py-0 h-4 border-[#E8E4DC] text-[#172030]/40">
+                                    {axisMaxScore}/5
+                                  </Badge>
+                                </div>
+                              </TableCell>
+                              {PERIODS.map((p) => {
+                                const score = getAxisValue(proc.impacts, p.id, axis.id);
+                                const style = getCellStyle(score);
+                                return (
+                                  <TableCell key={p.id} className="text-center p-1">
+                                    <div 
+                                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-medium border"
+                                      style={{
+                                        backgroundColor: style.backgroundColor,
+                                        color: style.text,
+                                        borderColor: style.borderColor,
+                                      }}
+                                    >
+                                      {score}
+                                    </div>
+                                  </TableCell>
+                                );
+                              })}
+                              <TableCell className="text-center">
+                                <span className="text-xs text-[#172030]/30">—</span>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <span className="text-xs text-[#172030]/30">—</span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </>
                   );
                 })
               )}
@@ -273,42 +547,48 @@ export const MatrixView = () => {
           </Table>
 
           {/* Légende */}
-          <div className="flex flex-wrap gap-4 mt-6 pt-4 border-t justify-center">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-red-500" />
-              <span className="text-xs">5 - Catastrophique</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-orange-500" />
-              <span className="text-xs">4 - Majeur</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-yellow-500" />
-              <span className="text-xs">3 - Modéré</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-green-500" />
-              <span className="text-xs">2 - Mineur</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-gray-300" />
-              <span className="text-xs">1 - Négligeable</span>
-            </div>
+          <div className="flex flex-wrap gap-4 mt-6 pt-4 border-t border-[#E8E4DC] justify-center">
+            {Object.entries(SEVERITY_PASTEL_STYLES).map(([score, style]) => (
+              <div key={score} className="flex items-center gap-1.5">
+                <div 
+                  className="w-4 h-4 rounded border"
+                  style={{ backgroundColor: style.bg, borderColor: style.border }}
+                />
+                <span className="text-[10px] text-[#172030]/50">
+                  {score} — {style.label}
+                </span>
+              </div>
+            ))}
           </div>
+
+          {/* Légende pour le drill-down */}
+          {isGlobalView && (
+            <div className="flex items-center gap-4 mt-3 text-[10px] text-[#172030]/40 border-t border-[#E8E4DC] pt-3">
+              <span className="flex items-center gap-1">
+                <ChevronRight className="h-3 w-3" />
+                Cliquez sur l'icône pour déplier les 4 axes d'impact
+              </span>
+              <span className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-[#FAFAF9] border border-[#E8E4DC]" />
+                Lignes d'axes détaillées
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Insights pour le consultant */}
-      <Card className="bg-gradient-to-r from-primary/5 to-accent/5">
+      {/* Insights */}
+      <Card className="bg-gradient-to-r from-[#2A5141]/5 to-[#2A5141]/10 border-[#2A5141]/20">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
-            <Sparkles className="h-5 w-5 text-primary mt-0.5" />
+            <Sparkles className="h-5 w-5 text-[#2A5141] mt-0.5" />
             <div>
-              <p className="text-sm font-semibold">Analyse rapide</p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-sm font-semibold text-[#172030]">Analyse rapide</p>
+              <p className="text-xs text-[#172030]/60 mt-1">
                 {stats.critiques > 0 
-                  ? `⚠️ ${stats.critiques} processus critique(s) nécessitent un PCA prioritaire. Les impacts les plus élevés se concentrent sur les premières heures (0-4h).`
+                  ? `⚠️ ${stats.critiques} processus critique${stats.critiques > 1 ? 's' : ''} nécessitent un PCA prioritaire. Les impacts les plus élevés se concentrent sur les premières heures (0-4h).`
                   : `✅ Aucun processus critique. Le niveau de maturité BCM est satisfaisant.`}
+                {!isGlobalView && ` — Vue actuelle : ${IMPACT_AXES.find(a => a.id === selectedAxis)?.label}`}
               </p>
             </div>
           </div>
@@ -317,8 +597,3 @@ export const MatrixView = () => {
     </div>
   );
 };
-
-// Helper pour les classes conditionnelles
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}
