@@ -34,6 +34,7 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { BiaWizard } from "./BiaWizard";
+import { TableauDeMonteeEnCharge } from "./TableauDeMonteeEnCharge";
 import {
   Popover,
   PopoverContent,
@@ -46,15 +47,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-  DrawerClose,
-  DrawerFooter,
-} from "@/components/ui/drawer";
 
 const AVAILABILITY_PERIODS = [
   { id: "P0_4H", label: "0-4h", short: "0-4", color: "bg-emerald-100" },
@@ -113,66 +105,6 @@ const SEVERITY_FROM_NUMBER: Record<number, string> = {
 const generateProcessCode = (department: string, index: number): string => {
   const prefix = department.substring(0, 2).toUpperCase() || "DE";
   return `${prefix}_${String(index + 1).padStart(6, '0')}`;
-};
-
-const getDepartmentResources = (processes: any[], deptId: string, deptName: string) => {
-  const deptProcesses = processes.filter(p => p.department === deptName || p.entityId === deptId);
-  
-  const resources = {
-    hr: [] as any[],
-    equipment: [] as any[],
-    suppliers: [] as any[],
-    apps: [] as any[]
-  };
-
-  const seen = {
-    hr: new Set<string>(),
-    equipment: new Set<string>(),
-    suppliers: new Set<string>(),
-    apps: new Set<string>()
-  };
-
-  for (const proc of deptProcesses) {
-    const appsFromProc = (proc as any).appsCritiques || [];
-    for (const app of appsFromProc) {
-      if (!seen.apps.has(app.name)) {
-        seen.apps.add(app.name);
-        resources.apps.push(app);
-      }
-    }
-
-    const procResources = proc.resources || [];
-    for (const r of procResources) {
-      if (r.type === "HR") {
-        if ((r as any).hrPeople) {
-          for (const p of (r as any).hrPeople) {
-            if (!seen.hr.has(p.name)) {
-              seen.hr.add(p.name);
-              resources.hr.push({ ...p, id: p.id || `hr_${Date.now()}` });
-            }
-          }
-        } else if (r.name && !seen.hr.has(r.name)) {
-          seen.hr.add(r.name);
-          resources.hr.push({
-            id: r.id || `hr_${Date.now()}`,
-            name: r.name,
-            role: (r as any).role || "—",
-            phone: (r as any).phone || "",
-            email: (r as any).email || "",
-            availability: (r as any).availability || {}
-          });
-        }
-      } else if (r.type === "Equipement" && !seen.equipment.has(r.name)) {
-        seen.equipment.add(r.name);
-        resources.equipment.push(r);
-      } else if (r.type === "Fournisseur" && !seen.suppliers.has(r.name)) {
-        seen.suppliers.add(r.name);
-        resources.suppliers.push(r);
-      }
-    }
-  }
-
-  return resources;
 };
 
 const calculateCompletionRate = (processes: any[]): number => {
@@ -297,11 +229,22 @@ const LinkResourceDialog = ({
     apps: any[];
     suppliers: any[];
   };
-  onLink: (type: string, resourceId: string) => void;
+  onLink: (type: string, resourceId: string, rtoHours?: number, rpoHours?: number) => void;
   resourceType: string;
   setResourceType: (type: string) => void;
 }) => {
   const [selectedResourceId, setSelectedResourceId] = useState<string>("");
+  const [linkRtoHours, setLinkRtoHours] = useState<number>(4);
+  const [linkRpoHours, setLinkRpoHours] = useState<number>(2);
+
+  const rtoOptions = [1, 2, 4, 6, 8, 12, 24, 48, 72];
+  const rpoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24];
+
+  useEffect(() => {
+    setLinkRtoHours(4);
+    setLinkRpoHours(2);
+    setSelectedResourceId("");
+  }, [resourceType]);
 
   const getResourcesForType = () => {
     switch(resourceType) {
@@ -333,6 +276,9 @@ const LinkResourceDialog = ({
     }
   };
 
+  const showRtoFields = resourceType === 'App' || resourceType === 'Equipement' || resourceType === 'Fournisseur';
+  const showRpoFields = resourceType === 'App';
+
   const resources = getResourcesForType();
 
   const handleLink = () => {
@@ -340,8 +286,16 @@ const LinkResourceDialog = ({
       toast({ title: "Erreur", description: "Veuillez sélectionner une ressource", variant: "destructive" });
       return;
     }
-    onLink(resourceType, selectedResourceId);
+    if (resourceType === 'App') {
+      onLink(resourceType, selectedResourceId, linkRtoHours, linkRpoHours);
+    } else if (resourceType === 'Equipement' || resourceType === 'Fournisseur') {
+      onLink(resourceType, selectedResourceId, linkRtoHours);
+    } else {
+      onLink(resourceType, selectedResourceId);
+    }
     setSelectedResourceId("");
+    setLinkRtoHours(4);
+    setLinkRpoHours(2);
     onOpenChange(false);
   };
 
@@ -412,6 +366,48 @@ const LinkResourceDialog = ({
             )}
           </div>
 
+          {showRtoFields && (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-[#172030]">
+                Objectifs de reprise pour cette liaison
+              </Label>
+              <div className={cn("grid gap-3", showRpoFields ? "grid-cols-2" : "grid-cols-1")}>
+                <div>
+                  <Label className="text-xs text-slate-500">RTO (heures) *</Label>
+                  <select
+                    value={linkRtoHours}
+                    onChange={(e) => setLinkRtoHours(Number(e.target.value))}
+                    className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    {rtoOptions.map((val) => (
+                      <option key={val} value={val}>{val}h</option>
+                    ))}
+                  </select>
+                </div>
+                {showRpoFields && (
+                  <div>
+                    <Label className="text-xs text-slate-500">RPO (heures) *</Label>
+                    <select
+                      value={linkRpoHours}
+                      onChange={(e) => setLinkRpoHours(Number(e.target.value))}
+                      className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      {rpoOptions.map((val) => (
+                        <option key={val} value={val}>{val}h</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                {showRpoFields 
+                  ? "Ces valeurs sont spécifiques à la liaison de cette application avec ce processus."
+                  : "Cette valeur est spécifique à la liaison de cette ressource avec ce processus."
+                }
+              </p>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
             {getResourceIcon()}
             <span className="text-sm text-gray-600">
@@ -479,7 +475,7 @@ const ProcessDetailView = ({
 
       const { data: equipLinks } = await supabase
         .from('processus_equipements')
-        .select('equipement_id')
+        .select('equipement_id, rto_hours')
         .eq('processus_id', process.id);
 
       if (equipLinks && equipLinks.length > 0) {
@@ -489,14 +485,19 @@ const ProcessDetailView = ({
           .select('*')
           .in('id', equipIds)
           .eq('department_id', serviceId);
-        setLinkedEquipment(equipData || []);
+        
+        const enrichedEquip = equipData?.map(eq => {
+          const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
+          return { ...eq, _linkRto: link?.rto_hours || 4 };
+        });
+        setLinkedEquipment(enrichedEquip || []);
       } else {
         setLinkedEquipment([]);
       }
 
       const { data: appLinks } = await supabase
         .from('processus_applications')
-        .select('application_id')
+        .select('application_id, rto_hours, rpo_hours')
         .eq('processus_id', process.id);
 
       if (appLinks && appLinks.length > 0) {
@@ -506,14 +507,19 @@ const ProcessDetailView = ({
           .select('*')
           .in('id', appIds)
           .eq('department_id', serviceId);
-        setLinkedApps(appData || []);
+        
+        const enrichedApps = appData?.map(app => {
+          const link = appLinks.find((l: any) => l.application_id === app.id);
+          return { ...app, _linkRto: link?.rto_hours || 4, _linkRpo: link?.rpo_hours || 2 };
+        });
+        setLinkedApps(enrichedApps || []);
       } else {
         setLinkedApps([]);
       }
 
       const { data: suppLinks } = await supabase
         .from('processus_fournisseurs')
-        .select('fournisseur_id')
+        .select('fournisseur_id, rto_hours')
         .eq('processus_id', process.id);
 
       if (suppLinks && suppLinks.length > 0) {
@@ -523,7 +529,12 @@ const ProcessDetailView = ({
           .select('*')
           .in('id', suppIds)
           .eq('department_id', serviceId);
-        setLinkedSuppliers(suppData || []);
+        
+        const enrichedSuppliers = suppData?.map(sup => {
+          const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
+          return { ...sup, _linkRto: link?.rto_hours || 4 };
+        });
+        setLinkedSuppliers(enrichedSuppliers || []);
       } else {
         setLinkedSuppliers([]);
       }
@@ -725,8 +736,13 @@ const ProcessDetailView = ({
                     getMergedResources('Equipement').map((r: any, i: number) => (
                       <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
                         <span>{r.name}</span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <Badge variant="outline" className="text-[10px]">{r.type || "—"}</Badge>
+                          {r._linkRto !== undefined && (
+                            <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                              RTO {r._linkRto}h
+                            </Badge>
+                          )}
                           {r._isLinked && (
                             <Button 
                               variant="ghost" 
@@ -760,8 +776,17 @@ const ProcessDetailView = ({
                       return (
                         <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
                           <span>{a.name}</span>
-                          <div className="flex items-center gap-1">
-                            <Badge variant="outline" className="text-[10px]">{a.rto_hours || a.rto || 0}h</Badge>
+                          <div className="flex items-center gap-2">
+                            {a._linkRto !== undefined && (
+                              <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                                RTO {a._linkRto}h
+                              </Badge>
+                            )}
+                            {a._linkRpo !== undefined && (
+                              <Badge variant="outline" className="text-[10px] bg-orange-50 border-orange-200 text-orange-700">
+                                RPO {a._linkRpo}h
+                              </Badge>
+                            )}
                             {isLinked && (
                               <Button 
                                 variant="ghost" 
@@ -794,8 +819,13 @@ const ProcessDetailView = ({
                     getMergedResources('Fournisseur').map((r: any, i: number) => (
                       <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
                         <span>{r.name}</span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <Badge variant="outline" className="text-[10px]">{r.service || "—"}</Badge>
+                          {r._linkRto !== undefined && (
+                            <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                              RTO {r._linkRto}h
+                            </Badge>
+                          )}
                           {r._isLinked && (
                             <Button 
                               variant="ghost" 
@@ -1201,7 +1231,7 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
 };
 
 // ============================================================
-// COMPOSANT - BIAServiceCard - REDESIGN AVEC ÉTAT VIDE
+// COMPOSANT - BIAServiceCard
 // ============================================================
 const BIAServiceCard = ({ 
   service,
@@ -1332,7 +1362,7 @@ const BIAServiceCard = ({
 };
 
 // ============================================================
-// COMPOSANT - DirectionSection - REDESIGN
+// COMPOSANT - DirectionSection
 // ============================================================
 const DirectionSection = ({ 
   name, 
@@ -1372,7 +1402,7 @@ const DirectionSection = ({
 };
 
 // ============================================================
-// IMPACT MATRIX - AVEC BADGES ENTIÈREMENT COLORÉS (PASTEL)
+// IMPACT MATRIX
 // ============================================================
 const ImpactMatrix = ({ 
   impacts, 
@@ -1387,7 +1417,6 @@ const ImpactMatrix = ({
   rpo?: number;
   mtpd?: number;
 }) => {
-  // Définition des styles pastel pour chaque niveau de sévérité
   const getSeverityPastelStyle = (value: number) => {
     if (value === 0) {
       return {
@@ -1576,7 +1605,7 @@ const ImpactMatrix = ({
 };
 
 // ============================================================
-// PROCESS ACCORDION - AVEC SECTION RESSOURCES ASSOCIÉES
+// PROCESS ACCORDION - Avec RTO/RPO visibles
 // ============================================================
 const ProcessAccordion = ({ 
   process, 
@@ -1607,6 +1636,7 @@ const ProcessAccordion = ({
   };
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+
   const score = computeMaxScoreFromImpacts(process.impacts);
   const criticality = scoreToCriticality(score);
   const code = generateProcessCode(department, index);
@@ -1619,7 +1649,6 @@ const ProcessAccordion = ({
     "Mineur": "bg-[#22c55e]",
   }[criticality] || "bg-gray-300";
 
-  // Récupérer les ressources liées à ce processus
   const hrResources = processResources?.hr || [];
   const equipmentResources = processResources?.equipment || [];
   const appsResources = processResources?.apps || [];
@@ -1649,6 +1678,8 @@ const ProcessAccordion = ({
             <span className="font-medium text-[#172030]">{criticality}</span>
           </span>
           <span className="text-[10px] text-[#172030]/40 hidden sm:inline">Resp. {process.owner || "—"}</span>
+          <span className="text-[10px] text-[#172030]/40 hidden md:inline">RTO {process.rto || 0}h</span>
+          <span className="text-[10px] text-[#172030]/40 hidden md:inline">RPO {process.rpo || 0}h</span>
           {resourceCount > 0 && (
             <span className="inline-flex items-center gap-1 text-[10px] bg-[#F8F6F2] px-1.5 py-0.5 rounded border border-[#E8E4DC] text-[#172030]/60">
               <LinkIcon className="h-2.5 w-2.5" />
@@ -1725,9 +1756,6 @@ const ProcessAccordion = ({
             mtpd={process.mtpd}
           />
 
-          {/* ============================================================
-              SECTION RESSOURCES ASSOCIÉES À CE PROCESSUS
-              ============================================================ */}
           <div className="mt-4 pt-4 border-t border-[#E8E4DC]">
             <div className="flex items-center gap-2 mb-3">
               <LinkIcon className="h-4 w-4 text-[#2A5141]" />
@@ -1741,7 +1769,6 @@ const ProcessAccordion = ({
               <p className="text-sm text-[#172030]/40 italic">Aucune ressource associée à ce processus</p>
             ) : (
               <div className="space-y-3">
-                {/* RH */}
                 {hrResources.length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-1.5">
@@ -1761,7 +1788,6 @@ const ProcessAccordion = ({
                   </div>
                 )}
 
-                {/* Équipements */}
                 {equipmentResources.length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-1.5">
@@ -1775,13 +1801,15 @@ const ProcessAccordion = ({
                       {equipmentResources.map((eq, i) => (
                         <Badge key={eq.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
                           {eq.name} {eq.type && `(${eq.type})`}
+                          {eq._linkRto !== undefined && (
+                            <span className="ml-1 text-[10px] text-blue-600">RTO {eq._linkRto}h</span>
+                          )}
                         </Badge>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Applications IT */}
                 {appsResources.length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-1.5">
@@ -1794,14 +1822,19 @@ const ProcessAccordion = ({
                     <div className="flex flex-wrap gap-1.5">
                       {appsResources.map((app, i) => (
                         <Badge key={app.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
-                          {app.name} {app.rto_hours && `(RTO: ${app.rto_hours}h)`}
+                          {app.name}
+                          {app._linkRto !== undefined && (
+                            <span className="ml-1 text-[10px] text-blue-600">RTO {app._linkRto}h</span>
+                          )}
+                          {app._linkRpo !== undefined && (
+                            <span className="ml-1 text-[10px] text-orange-600">RPO {app._linkRpo}h</span>
+                          )}
                         </Badge>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Prestataires */}
                 {suppliersResources.length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-1.5">
@@ -1815,6 +1848,9 @@ const ProcessAccordion = ({
                       {suppliersResources.map((sup, i) => (
                         <Badge key={sup.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
                           {sup.name} {sup.service && `(${sup.service})`}
+                          {sup._linkRto !== undefined && (
+                            <span className="ml-1 text-[10px] text-blue-600">RTO {sup._linkRto}h</span>
+                          )}
                         </Badge>
                       ))}
                     </div>
@@ -1830,7 +1866,7 @@ const ProcessAccordion = ({
 };
 
 // ============================================================
-// COMPOSANT - PersonnelTableau - UNIQUEMENT DU TEXTE/CHIFFRES (CORRIGÉ)
+// COMPOSANT - PersonnelTableau
 // ============================================================
 const PersonnelTableau = ({ people }: { people: any[] }) => {
   const getAvailabilityRate = (availability: any) => {
@@ -1840,7 +1876,6 @@ const PersonnelTableau = ({ people }: { people: any[] }) => {
     return Math.round((available / periods.length) * 100);
   };
 
-  // Calcul des totaux par période
   const periodTotals = AVAILABILITY_PERIODS.map(period => {
     return people.filter(p => p.availability?.[period.id] === true).length;
   });
@@ -1914,7 +1949,6 @@ const PersonnelTableau = ({ people }: { people: any[] }) => {
             );
           })}
         </TableBody>
-        {/* Ligne Total FTE - Utilisation de <tfoot> HTML standard (pas TableFooter de shadcn) */}
         <tfoot>
           <tr className="bg-[#F8F6F2] border-t border-[#E8E4DC]">
             <td className="py-2 font-semibold text-sm text-[#172030]">Total FTE</td>
@@ -1933,7 +1967,7 @@ const PersonnelTableau = ({ people }: { people: any[] }) => {
 };
 
 // ============================================================
-// COMPOSANT - EquipmentTableau - UNIQUEMENT DU TEXTE/CHIFFRES
+// COMPOSANT - EquipmentTableau
 // ============================================================
 const EquipmentTableau = ({ equipment, onDeleteEquipment }: { equipment: any[], onDeleteEquipment?: (id: string, name: string) => void }) => {
   const periods = [
@@ -1982,6 +2016,9 @@ const EquipmentTableau = ({ equipment, onDeleteEquipment }: { equipment: any[], 
               >
                 <TableCell className="py-2">
                   <span className="text-sm font-medium text-[#172030]">{eq.name}</span>
+                  {eq._linkRto !== undefined && (
+                    <span className="ml-2 text-[10px] text-blue-600">RTO {eq._linkRto}h</span>
+                  )}
                 </TableCell>
                 <TableCell className="py-2 text-sm text-[#172030]/60">{eq.type || "—"}</TableCell>
                 <TableCell className="py-2 text-center font-mono text-sm text-[#172030]">
@@ -2047,7 +2084,7 @@ const EquipmentTableau = ({ equipment, onDeleteEquipment }: { equipment: any[], 
 };
 
 // ============================================================
-// COMPOSANT PRINCIPAL - BIAFicheDetail
+// COMPOSANT PRINCIPAL - BIAFicheDetail (AVEC workstationCounts)
 // ============================================================
 const BIAFicheDetail = ({
   service,
@@ -2139,8 +2176,6 @@ const BIAFicheDetail = ({
 
   const [newApp, setNewApp] = useState({
     name: "",
-    rto_hours: 4,
-    rpo_hours: 2,
     remplacablePar: "",
     department_id: service.id
   });
@@ -2149,9 +2184,24 @@ const BIAFicheDetail = ({
     name: "",
     service: "",
     contact: "",
-    rpo_hours: 4,
     department_id: service.id
   });
+
+  // ✅ AJOUT : Fonction pour calculer les postes de travail
+  const calculateWorkstations = () => {
+    const periods = AVAILABILITY_PERIODS;
+    const result: Record<string, number> = {};
+    for (const period of periods) {
+      const count = enrichedHR.filter(person => person.availability?.[period.id] === true).length;
+      result[period.id] = count;
+    }
+    return result;
+  };
+
+  // ✅ AJOUT : Variable pour les postes de travail
+  const workstationCounts = useMemo(() => {
+    return calculateWorkstations();
+  }, [enrichedHR]);
 
   const enrichResourcesWithProcesses = async (resources: any[], type: string) => {
     if (!resources || resources.length === 0) return resources;
@@ -2348,7 +2398,7 @@ const BIAFicheDetail = ({
 
       const { data: equipLinks } = await supabase
         .from('processus_equipements')
-        .select('equipement_id')
+        .select('equipement_id, rto_hours')
         .eq('processus_id', processId);
 
       if (equipLinks && equipLinks.length > 0) {
@@ -2358,12 +2408,17 @@ const BIAFicheDetail = ({
           .select('*')
           .in('id', equipIds)
           .eq('department_id', service.id);
-        result.equipment = equipData || [];
+        
+        const enrichedEquipment = equipData?.map(eq => {
+          const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
+          return { ...eq, _linkRto: link?.rto_hours || 4 };
+        });
+        result.equipment = enrichedEquipment || [];
       }
 
       const { data: appLinks } = await supabase
         .from('processus_applications')
-        .select('application_id')
+        .select('application_id, rto_hours, rpo_hours')
         .eq('processus_id', processId);
 
       if (appLinks && appLinks.length > 0) {
@@ -2373,12 +2428,17 @@ const BIAFicheDetail = ({
           .select('*')
           .in('id', appIds)
           .eq('department_id', service.id);
-        result.apps = appData || [];
+        
+        const enrichedApps = appData?.map(app => {
+          const link = appLinks.find((l: any) => l.application_id === app.id);
+          return { ...app, _linkRto: link?.rto_hours || 4, _linkRpo: link?.rpo_hours || 2 };
+        });
+        result.apps = enrichedApps || [];
       }
 
       const { data: suppLinks } = await supabase
         .from('processus_fournisseurs')
-        .select('fournisseur_id')
+        .select('fournisseur_id, rto_hours')
         .eq('processus_id', processId);
 
       if (suppLinks && suppLinks.length > 0) {
@@ -2388,7 +2448,12 @@ const BIAFicheDetail = ({
           .select('*')
           .in('id', suppIds)
           .eq('department_id', service.id);
-        result.suppliers = suppData || [];
+        
+        const enrichedSuppliers = suppData?.map(sup => {
+          const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
+          return { ...sup, _linkRto: link?.rto_hours || 4 };
+        });
+        result.suppliers = enrichedSuppliers || [];
       }
 
       setProcessResourcesCache(prev => ({
@@ -2487,29 +2552,38 @@ const BIAFicheDetail = ({
     await loadResourcesAndAssociations();
   };
 
-  const linkResourceToProcess = async (type: string, resourceId: string) => {
+  const linkResourceToProcess = async (type: string, resourceId: string, rtoHours?: number, rpoHours?: number) => {
     if (!linkProcess) return;
 
     try {
       let table = '';
       let idColumn = '';
+      let data: any = { processus_id: linkProcess.id };
       
       switch(type) {
         case 'HR':
           table = 'processus_ressources_humaines';
           idColumn = 'ressource_humaine_id';
+          data[idColumn] = resourceId;
           break;
         case 'Equipement':
           table = 'processus_equipements';
           idColumn = 'equipement_id';
+          data[idColumn] = resourceId;
+          if (rtoHours !== undefined) data.rto_hours = rtoHours;
           break;
         case 'App':
           table = 'processus_applications';
           idColumn = 'application_id';
+          data[idColumn] = resourceId;
+          if (rtoHours !== undefined) data.rto_hours = rtoHours;
+          if (rpoHours !== undefined) data.rpo_hours = rpoHours;
           break;
         case 'Fournisseur':
           table = 'processus_fournisseurs';
           idColumn = 'fournisseur_id';
+          data[idColumn] = resourceId;
+          if (rtoHours !== undefined) data.rto_hours = rtoHours;
           break;
         default: return;
       }
@@ -2525,33 +2599,17 @@ const BIAFicheDetail = ({
         return;
       }
 
-      const { error } = await supabase
-        .from(table)
-        .insert({
-          processus_id: linkProcess.id,
-          [idColumn]: resourceId
-        });
-
+      const { error } = await supabase.from(table).insert(data);
       if (error) throw error;
 
-      toast({ 
-        title: "Succès", 
-        description: `Ressource liée au processus "${linkProcess.name}"` 
-      });
-      
+      toast({ title: "Succès", description: `Ressource liée au processus "${linkProcess.name}"` });
       await refreshLinkedResources();
-      
     } catch (error: any) {
       console.error('Erreur liaison:', error);
-      toast({ 
-        title: "Erreur", 
-        description: error.message || "Erreur lors de la liaison", 
-        variant: "destructive" 
-      });
+      toast({ title: "Erreur", description: error.message || "Erreur lors de la liaison", variant: "destructive" });
     }
   };
 
-  // Fonction pour supprimer un RH avec gestion des liaisons
   const handleDeletePerson = async (id: string, name: string) => {
     try {
       const { error: linkError } = await supabase
@@ -2576,7 +2634,6 @@ const BIAFicheDetail = ({
     }
   };
 
-  // Fonction pour supprimer un équipement avec gestion des liaisons (CORRIGÉE)
   const handleDeleteEquipment = async (id: string, name: string) => {
     try {
       const { data: links, error: linkCheckError } = await supabase
@@ -2693,27 +2750,17 @@ const BIAFicheDetail = ({
     }
 
     try {
-      const { error } = await supabase
-        .from('applications_it')
-        .insert({
-          name: newApp.name,
-          rto_hours: newApp.rto_hours || 4,
-          rpo_hours: newApp.rpo_hours || 2,
-          remplacablepar: newApp.remplacablePar || "",
-          department_id: service.id
-        });
+      const { error } = await supabase.from('applications_it').insert({
+        name: newApp.name,
+        remplacablepar: newApp.remplacablePar || "",
+        department_id: service.id
+      });
 
       if (error) throw error;
       
       toast({ title: "Succès", description: `Application "${newApp.name}" ajoutée avec succès` });
       setShowAddAppModal(false);
-      setNewApp({
-        name: "",
-        rto_hours: 4,
-        rpo_hours: 2,
-        remplacablePar: "",
-        department_id: service.id
-      });
+      setNewApp({ name: "", remplacablePar: "", department_id: service.id });
       await refreshLinkedResources();
     } catch (error: any) {
       console.error('Erreur ajout application:', error);
@@ -2728,27 +2775,18 @@ const BIAFicheDetail = ({
     }
 
     try {
-      const { error } = await supabase
-        .from('fournisseurs')
-        .insert({
-          name: newSupplier.name,
-          service: newSupplier.service || "—",
-          contact: newSupplier.contact || "",
-          rpo_hours: newSupplier.rpo_hours || 4,
-          department_id: service.id
-        });
+      const { error } = await supabase.from('fournisseurs').insert({
+        name: newSupplier.name,
+        service: newSupplier.service || "—",
+        contact: newSupplier.contact || "",
+        department_id: service.id
+      });
 
       if (error) throw error;
       
       toast({ title: "Succès", description: `Prestataire "${newSupplier.name}" ajouté avec succès` });
       setShowAddSupplierModal(false);
-      setNewSupplier({
-        name: "",
-        service: "",
-        contact: "",
-        rpo_hours: 4,
-        department_id: service.id
-      });
+      setNewSupplier({ name: "", service: "", contact: "", department_id: service.id });
       await refreshLinkedResources();
     } catch (error: any) {
       console.error('Erreur ajout prestataire:', error);
@@ -2756,58 +2794,8 @@ const BIAFicheDetail = ({
     }
   };
 
-  const allApps = processes.flatMap(p => (p as any).appsCritiques || []);
-  const uniqueApps = allApps.filter((app, index, self) => 
-    index === self.findIndex(a => a.name === app.name)
-  );
-
-  const allSuppliers = processes.flatMap(p => 
-    (p.resources || []).filter((r: any) => r.type === "Fournisseur")
-  );
-  const uniqueSuppliers = allSuppliers.filter((sup, index, self) => 
-    index === self.findIndex(s => s.name === sup.name)
-  );
-
-  const allHR = processes.flatMap(p => {
-    const hrResources = (p.resources || []).filter((r: any) => r.type === "HR");
-    const people: any[] = [];
-    for (const r of hrResources) {
-      if ((r as any).hrPeople) {
-        for (const ppl of (r as any).hrPeople) {
-          people.push({ ...ppl, processName: p.name });
-        }
-      } else if (r.name) {
-        people.push({ ...r, processName: p.name });
-      }
-    }
-    return people;
-  });
-
-  const allEquipment = processes.flatMap(p => 
-    (p.resources || [])
-      .filter((r: any) => r.type === "Equipement")
-      .map((eq: any) => ({ ...eq, processName: p.name }))
-  );
-
-  const calculateWorkstations = () => {
-    const periods = AVAILABILITY_PERIODS;
-    const result: Record<string, number> = {};
-    for (const period of periods) {
-      const count = allHR.filter(person => person.availability?.[period.id] === true).length;
-      result[period.id] = count;
-    }
-    return result;
-  };
-
-  const workstationCounts = calculateWorkstations();
-
-  // États de recherche pour Applications IT et Prestataires
   const [appSearchQuery, setAppSearchQuery] = useState<string>("");
   const [supplierSearchQuery, setSupplierSearchQuery] = useState<string>("");
-
-  // États pour l'édition inline des RTO/RPO
-  const [editingAppField, setEditingAppField] = useState<{ id: string; field: 'rto' | 'rpo' } | null>(null);
-  const [editingSupplierField, setEditingSupplierField] = useState<{ id: string; field: 'rto' } | null>(null);
 
   const handleProcessClick = (process: any) => {
     loadLinkedResourcesForProcess(process.id).then(() => {
@@ -2819,14 +2807,6 @@ const BIAFicheDetail = ({
     setLinkProcess(process);
     setLinkResourceType("HR");
     setLinkDialogOpen(true);
-  };
-
-  const refreshDetail = () => {
-    if (selectedProcessDetail) {
-      loadLinkedResourcesForProcess(selectedProcessDetail.id).then(() => {
-        setSelectedProcessDetail({ ...selectedProcessDetail });
-      });
-    }
   };
 
   const handleDeleteProcess = (id: string, name: string) => {
@@ -2860,7 +2840,6 @@ const BIAFicheDetail = ({
     return Array.from(owners);
   }, [processes]);
 
-  // Filtrer les applications
   const filteredApps = useMemo(() => {
     let apps = [...enrichedApps];
     if (appSearchQuery.trim()) {
@@ -2873,7 +2852,6 @@ const BIAFicheDetail = ({
     return apps;
   }, [enrichedApps, appSearchQuery]);
 
-  // Filtrer les prestataires
   const filteredSuppliers = useMemo(() => {
     let suppliers = [...enrichedSuppliers];
     if (supplierSearchQuery.trim()) {
@@ -2887,55 +2865,6 @@ const BIAFicheDetail = ({
     return suppliers;
   }, [enrichedSuppliers, supplierSearchQuery]);
 
-  // Mise à jour RTO App
-  const updateAppRTO = async (appId: string, value: number) => {
-    try {
-      const { error } = await supabase
-        .from('applications_it')
-        .update({ rto_hours: value })
-        .eq('id', appId);
-      if (error) throw error;
-      toast({ title: "Succès", description: "RTO mis à jour" });
-      refreshLinkedResources();
-    } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    }
-    setEditingAppField(null);
-  };
-
-  // Mise à jour RPO App
-  const updateAppRPO = async (appId: string, value: number) => {
-    try {
-      const { error } = await supabase
-        .from('applications_it')
-        .update({ rpo_hours: value })
-        .eq('id', appId);
-      if (error) throw error;
-      toast({ title: "Succès", description: "RPO mis à jour" });
-      refreshLinkedResources();
-    } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    }
-    setEditingAppField(null);
-  };
-
-  // Mise à jour RTO Prestataire
-  const updateSupplierRTO = async (supplierId: string, value: number) => {
-    try {
-      const { error } = await supabase
-        .from('fournisseurs')
-        .update({ rpo_hours: value })
-        .eq('id', supplierId);
-      if (error) throw error;
-      toast({ title: "Succès", description: "RTO mis à jour" });
-      refreshLinkedResources();
-    } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    }
-    setEditingSupplierField(null);
-  };
-
-  // Supprimer une application
   const deleteApp = async (appId: string, appName: string) => {
     if (!confirm(`⚠️ Supprimer l'application "${appName}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
     try {
@@ -2951,7 +2880,6 @@ const BIAFicheDetail = ({
     }
   };
 
-  // Supprimer un prestataire
   const deleteSupplier = async (supplierId: string, supplierName: string) => {
     if (!confirm(`⚠️ Supprimer le prestataire "${supplierName}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
     try {
@@ -3100,16 +3028,6 @@ const BIAFicheDetail = ({
               <Label>Nom *</Label>
               <Input value={newApp.name} onChange={(e) => setNewApp({ ...newApp, name: e.target.value })} placeholder="ex: SAP S/4HANA" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>RTO (heures)</Label>
-                <Input type="number" min={0} value={newApp.rto_hours} onChange={(e) => setNewApp({ ...newApp, rto_hours: Number(e.target.value) })} />
-              </div>
-              <div>
-                <Label>RPO (heures)</Label>
-                <Input type="number" min={0} value={newApp.rpo_hours} onChange={(e) => setNewApp({ ...newApp, rpo_hours: Number(e.target.value) })} />
-              </div>
-            </div>
             <div>
               <Label>Application alternative</Label>
               <Input value={newApp.remplacablePar} onChange={(e) => setNewApp({ ...newApp, remplacablePar: e.target.value })} placeholder="ex: Backup manuel..." />
@@ -3139,15 +3057,9 @@ const BIAFicheDetail = ({
               <Label>Service</Label>
               <Input value={newSupplier.service} onChange={(e) => setNewSupplier({ ...newSupplier, service: e.target.value })} placeholder="ex: Hébergement cloud" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Contact</Label>
-                <Input value={newSupplier.contact} onChange={(e) => setNewSupplier({ ...newSupplier, contact: e.target.value })} placeholder="Nom du contact" />
-              </div>
-              <div>
-                <Label>RTO (heures)</Label>
-                <Input type="number" min={0} value={newSupplier.rpo_hours} onChange={(e) => setNewSupplier({ ...newSupplier, rpo_hours: Number(e.target.value) })} />
-              </div>
+            <div>
+              <Label>Contact</Label>
+              <Input value={newSupplier.contact} onChange={(e) => setNewSupplier({ ...newSupplier, contact: e.target.value })} placeholder="Nom du contact" />
             </div>
           </div>
           <DialogFooter className="gap-2">
@@ -3349,9 +3261,7 @@ const BIAFicheDetail = ({
           </Button>
         </TabsContent>
 
-        {/* ============================================================
-            ONGLET RESSOURCES REQUISES - AVEC TABLEAUX SANS GRAPHIQUES
-            ============================================================ */}
+        {/* ONGLET RESSOURCES REQUISES - AVEC TABLEAU DE MONTÉE EN CHARGE */}
         <TabsContent value="resources" className="pt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -3367,7 +3277,7 @@ const BIAFicheDetail = ({
             </Button>
           </div>
 
-          {/* PERSONNEL NÉCESSAIRE - TABLEAU UNIQUEMENT TEXTE/CHIFFRES */}
+          {/* PERSONNEL NÉCESSAIRE */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
             <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
               <Users className="h-4 w-4 text-[#2A5141]" />
@@ -3385,7 +3295,7 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
-          {/* POSTES DE TRAVAIL */}
+          {/* POSTES DE TRAVAIL - AVEC workstationCounts */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
             <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
               <Monitor className="h-4 w-4 text-[#2A5141]" />
@@ -3420,7 +3330,7 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
-          {/* ÉQUIPEMENTS - TABLEAU UNIQUEMENT TEXTE/CHIFFRES */}
+          {/* ÉQUIPEMENTS */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
             <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
               <Package className="h-4 w-4 text-[#2A5141]" />
@@ -3494,22 +3404,22 @@ const BIAFicheDetail = ({
               )}
             </div>
           </div>
+
+          {/* ✅ TABLEAU DE MONTÉE EN CHARGE */}
+          <div className="mt-6">
+            <TableauDeMonteeEnCharge processes={processes} serviceName={service.name} />
+          </div>
         </TabsContent>
 
-        {/* ═══════ SECTION APPLICATIONS IT - REDESIGN ═══════ */}
+        {/* ONGLET APPLICATIONS IT - Avec RTO/RPO */}
         <TabsContent value="apps" className="pt-4">
           <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
             <div>
-              <span className="font-medium">RTO</span> = délai de reprise acceptable · 
-              <span className="font-medium ml-1">RPO</span> = perte de données maximale acceptable.
-              <span className="block text-xs text-[#172030]/40 mt-1">
-                Cliquez sur une valeur RTO/RPO pour la modifier.
-              </span>
+              <span className="font-medium">Applications IT</span> liées aux processus.
             </div>
           </div>
 
-          {/* Header avec recherche et bouton ajout */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-3">
               <Server className="h-5 w-5 text-[#172030]" />
@@ -3550,7 +3460,6 @@ const BIAFicheDetail = ({
                     className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
                   >
                     <div className="flex flex-col md:flex-row md:items-start gap-3">
-                      {/* Icône et nom */}
                       <div className="flex items-start gap-3 min-w-[160px]">
                         <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
                           <Server className="h-4 w-4 text-[#172030]" />
@@ -3560,6 +3469,18 @@ const BIAFicheDetail = ({
                           <p className="text-xs text-[#172030]/40">
                             {app.remplacablepar || "Aucune alternative"}
                           </p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {app._linkRto !== undefined && (
+                              <Badge variant="outline" className="text-[9px] bg-blue-50 border-blue-200 text-blue-700">
+                                RTO {app._linkRto}h
+                              </Badge>
+                            )}
+                            {app._linkRpo !== undefined && (
+                              <Badge variant="outline" className="text-[9px] bg-orange-50 border-orange-200 text-orange-700">
+                                RPO {app._linkRpo}h
+                              </Badge>
+                            )}
+                          </div>
                           {displayProcesses.length > 0 && (
                             <div className="flex items-center gap-1 mt-0.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
@@ -3569,7 +3490,6 @@ const BIAFicheDetail = ({
                         </div>
                       </div>
 
-                      {/* Processus associés */}
                       <div className="flex-1 min-w-[80px]">
                         {displayProcesses.length > 0 ? (
                           <div className="flex flex-wrap items-center gap-1">
@@ -3604,63 +3524,6 @@ const BIAFicheDetail = ({
                         )}
                       </div>
 
-                      {/* RTO / RPO stats */}
-                      <div className="flex items-center gap-4 flex-shrink-0">
-                        <div>
-                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">RTO</p>
-                          {editingAppField?.id === app.id && editingAppField?.field === 'rto' ? (
-                            <Input
-                              type="number"
-                              min={0}
-                              defaultValue={app.rto_hours ?? app.rto ?? 0}
-                              className="w-14 h-7 text-center text-sm font-mono border-[#2A5141] focus:ring-[#2A5141]/20"
-                              onBlur={(e) => updateAppRTO(app.id, Number(e.target.value))}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  updateAppRTO(app.id, Number((e.target as HTMLInputElement).value));
-                                }
-                                if (e.key === 'Escape') setEditingAppField(null);
-                              }}
-                              autoFocus
-                            />
-                          ) : (
-                            <button
-                              onClick={() => setEditingAppField({ id: app.id, field: 'rto' })}
-                              className="text-sm font-bold text-[#172030] hover:text-[#2A5141] transition-colors"
-                            >
-                              {app.rto_hours ?? app.rto ?? 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span>
-                            </button>
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">RPO</p>
-                          {editingAppField?.id === app.id && editingAppField?.field === 'rpo' ? (
-                            <Input
-                              type="number"
-                              min={0}
-                              defaultValue={app.rpo_hours ?? app.rpo ?? 0}
-                              className="w-14 h-7 text-center text-sm font-mono border-[#2A5141] focus:ring-[#2A5141]/20"
-                              onBlur={(e) => updateAppRPO(app.id, Number(e.target.value))}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  updateAppRPO(app.id, Number((e.target as HTMLInputElement).value));
-                                }
-                                if (e.key === 'Escape') setEditingAppField(null);
-                              }}
-                              autoFocus
-                            />
-                          ) : (
-                            <button
-                              onClick={() => setEditingAppField({ id: app.id, field: 'rpo' })}
-                              className="text-sm font-bold text-[#172030] hover:text-[#2A5141] transition-colors"
-                            >
-                              {app.rpo_hours ?? app.rpo ?? 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Actions */}
                       <div className="flex items-center gap-0.5 flex-shrink-0">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -3711,19 +3574,15 @@ const BIAFicheDetail = ({
           )}
         </TabsContent>
 
-        {/* ═══════ SECTION PRESTATAIRES - REDESIGN ═══════ */}
+        {/* ONGLET PRESTATAIRES - Avec RTO/RPO */}
         <TabsContent value="suppliers" className="pt-4">
           <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
             <div>
-              Prestataires externes ou intra-groupe nécessaires pour l'exploitation de secours.
-              <span className="block text-xs text-[#172030]/40 mt-1">
-                Cliquez sur la valeur RTO pour la modifier.
-              </span>
+              <span className="font-medium">Prestataires</span> liés aux processus.
             </div>
           </div>
 
-          {/* Header avec recherche et bouton ajout */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-3">
               <Handshake className="h-5 w-5 text-[#172030]" />
@@ -3764,7 +3623,6 @@ const BIAFicheDetail = ({
                     className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
                   >
                     <div className="flex flex-col md:flex-row md:items-start gap-3">
-                      {/* Icône et nom */}
                       <div className="flex items-start gap-3 min-w-[160px]">
                         <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
                           <Truck className="h-4 w-4 text-[#172030]" />
@@ -3772,6 +3630,11 @@ const BIAFicheDetail = ({
                         <div>
                           <p className="font-medium text-sm text-[#172030]">{sup.name}</p>
                           <p className="text-xs text-[#172030]/40">{sup.service || "—"}</p>
+                          {sup._linkRto !== undefined && (
+                            <Badge variant="outline" className="text-[9px] bg-blue-50 border-blue-200 text-blue-700 mt-1">
+                              RTO {sup._linkRto}h
+                            </Badge>
+                          )}
                           {displayProcesses.length > 0 && (
                             <div className="flex items-center gap-1 mt-0.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
@@ -3781,7 +3644,6 @@ const BIAFicheDetail = ({
                         </div>
                       </div>
 
-                      {/* Processus associés */}
                       <div className="flex-1 min-w-[80px]">
                         {displayProcesses.length > 0 ? (
                           <div className="flex flex-wrap items-center gap-1">
@@ -3816,41 +3678,13 @@ const BIAFicheDetail = ({
                         )}
                       </div>
 
-                      {/* RTO et Contact */}
                       <div className="flex items-center gap-4 flex-shrink-0">
-                        <div>
-                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">RTO</p>
-                          {editingSupplierField?.id === sup.id ? (
-                            <Input
-                              type="number"
-                              min={0}
-                              defaultValue={sup.rpo_hours ?? sup.rpo ?? sup.rto_hours ?? 0}
-                              className="w-14 h-7 text-center text-sm font-mono border-[#2A5141] focus:ring-[#2A5141]/20"
-                              onBlur={(e) => updateSupplierRTO(sup.id, Number(e.target.value))}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  updateSupplierRTO(sup.id, Number((e.target as HTMLInputElement).value));
-                                }
-                                if (e.key === 'Escape') setEditingSupplierField(null);
-                              }}
-                              autoFocus
-                            />
-                          ) : (
-                            <button
-                              onClick={() => setEditingSupplierField({ id: sup.id, field: 'rto' })}
-                              className="text-sm font-bold text-[#172030] hover:text-[#2A5141] transition-colors"
-                            >
-                              {sup.rpo_hours ?? sup.rpo ?? sup.rto_hours ?? 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span>
-                            </button>
-                          )}
-                        </div>
                         <div>
                           <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">Contact</p>
                           <p className="text-sm font-medium text-[#172030]">{sup.contact || "—"}</p>
                         </div>
                       </div>
 
-                      {/* Actions */}
                       <div className="flex items-center gap-0.5 flex-shrink-0">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -3999,9 +3833,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   const [selectedCriticality, setSelectedCriticality] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
 
-  const [selectedProcess, setSelectedProcess] = useState<any>(null);
-  const [selectedProcessDeptProcs, setSelectedProcessDeptProcs] = useState<any[]>([]);
-
   const [selectedService, setSelectedService] = useState<ServiceBIA | null>(null);
   const [showBIADetail, setShowBIADetail] = useState(false);
 
@@ -4029,7 +3860,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     };
   }, []);
 
-  // buildBIAServices MODIFIÉ - inclut TOUS les départements, même sans processus
   const buildBIAServices = (entityId: string): ServiceBIA[] => {
     const directions = getChildren(entityId);
     const services: ServiceBIA[] = [];
@@ -4039,8 +3869,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       for (const dept of depts) {
         const deptProcesses = processes.filter(p => p.department === dept.name || p.entityId === dept.id);
         
-        // PLUS DE CONTINUE - on garde le département même sans processus
-
         const criticalCount = deptProcesses.filter(p => {
           const score = computeMaxScoreFromImpacts(p.impacts);
           return score >= 4;
@@ -4121,58 +3949,11 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     };
   };
 
-  const getProcessesForDept = (deptId: string, deptName: string) => {
-    let procs = processes.filter(p => p.department === deptName || p.entityId === deptId);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      procs = procs.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.department.toLowerCase().includes(q) ||
-        p.owner.toLowerCase().includes(q) ||
-        entityName(p.entityId).toLowerCase().includes(q)
-      );
-    }
-    if (selectedCriticality !== "all") {
-      procs = procs.filter(p => {
-        const score = computeMaxScoreFromImpacts(p.impacts);
-        return scoreToCriticality(score) === selectedCriticality;
-      });
-    }
-    return procs;
-  };
-
   const handleDelete = (id: string, name: string) => {
     if (confirm(`⚠️ Voulez-vous vraiment supprimer le processus "${name}" ?\n\nCette action supprimera également toutes les liaisons avec des ressources.`)) {
       deleteProcess(id);
       toast({ title: "Processus supprimé", description: name });
     }
-  };
-
-  const openProcessModal = (proc: any) => {
-    const deptProcs = processes.filter(p => p.department === proc.department || p.entityId === proc.entityId);
-    setSelectedProcessDeptProcs(deptProcs);
-    setSelectedProcess(proc);
-  };
-
-  const getProcessCount = (entityId: string) => {
-    let count = 0;
-    for (const dept of getChildren(entityId)) {
-      count += processes.filter(p => p.department === dept.name || p.entityId === dept.id).length;
-    }
-    count += processes.filter(p => p.entityId === entityId).length;
-    return count;
-  };
-
-  const getCritCount = (entityId: string) => {
-    let count = 0;
-    for (const dept of getChildren(entityId)) {
-      count += processes.filter(p => 
-        (p.department === dept.name || p.entityId === dept.id) && 
-        computeMaxScoreFromImpacts(p.impacts) >= 4
-      ).length;
-    }
-    count += processes.filter(p => p.entityId === entityId && computeMaxScoreFromImpacts(p.impacts) >= 4).length;
-    return count;
   };
 
   const goToRoot = () => {
@@ -4239,6 +4020,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
           </DialogHeader>
           <BiaWizard 
             processId={wizardProcessId} 
+            initialEntityId={wizardDepartmentId}
             onDone={() => {
               closeWizard();
               window.location.reload();
@@ -4249,7 +4031,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
-  // VUE DIRECTIONS - REDESIGN
   if (viewLevel === "directions" && selectedRoot && !showBIADetail) {
     const services = buildBIAServices(selectedRoot);
     const filteredServices = getFilteredServices(services);
@@ -4402,7 +4183,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
-  // VUE DÉPARTEMENTS - avec les cartes redesign
   if (viewLevel === "departments" && selectedDirection && !showBIADetail) {
     const departments = getChildren(selectedDirection);
     const services = buildBIAServices(selectedRoot || "");
@@ -4619,7 +4399,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
-  // VUE ENTREPRISES - redesigned
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

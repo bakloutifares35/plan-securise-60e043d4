@@ -433,9 +433,10 @@ const newProcess = (): Process => ({
 // ════════════════════════════════════════════════════════════════════
 // ✅ COMPOSANT PRINCIPAL - 3 ÉTAPES UNIQUEMENT
 // ════════════════════════════════════════════════════════════════════
-export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: () => void }) => {
+export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: string; initialEntityId?: string; onDone: () => void }) => {
   const { processes, upsertProcess } = useBia();
   const { entities } = useGovernance();
+  
   const initial = useMemo(() => {
     const found = processes.find((p) => p.id === processId);
     if (found) {
@@ -445,34 +446,52 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
   }, [processId, processes]);
   
   const [step, setStep] = useState(0);
-  const [data, setData] = useState<any>(initial);
+  
+  // ✅ Initialisation du state avec pré-remplissage de l'entité si création
+  const [data, setData] = useState<any>(() => {
+    if (processId && initial.entityId) {
+      return initial;
+    }
+    if (!processId && initialEntityId) {
+      const entityExists = entities.some(e => e.id === initialEntityId);
+      if (entityExists) {
+        return { ...initial, entityId: initialEntityId };
+      }
+    }
+    return initial;
+  });
 
   // ==================== LOGIQUE DE CASCADE DE SÉVÉRITÉ ====================
-  // Quand on modifie une cellule, on propage la valeur vers les périodes suivantes
-  // UNIQUEMENT si leur valeur actuelle est inférieure à la nouvelle valeur
-  // RÈGLE : on ne fait JAMAIS diminuer une valeur existante
+  // ✅ RÈGLES DE CASCADE :
+  // 1. Si on augmente une valeur, toutes les périodes suivantes (à droite) doivent avoir au moins cette valeur
+  // 2. Si on diminue une valeur, on ne touche pas aux périodes suivantes (elles conservent leur valeur)
+  // 3. Si on veut baisser une valeur sur une période suivante, on peut le faire manuellement
+  // 4. Les périodes précédentes ne sont JAMAIS modifiées par la cascade (on ne peut pas avoir une valeur 
+  //    plus élevée avant une valeur plus faible)
   const updateImpactWithCascade = (axis: ImpactAxis, periodId: string, newValue: number) => {
     setData((prev: any) => {
-      // Copie profonde des impacts
       const newImpacts = { ...prev.impacts };
-      
-      // Parcourir toutes les périodes à partir de celle modifiée
       const startIndex = TIME_PERIODS_ORDERED.indexOf(periodId);
 
-      for (let i = 0; i < TIME_PERIODS_ORDERED.length; i++) {
+      // Mettre à jour la période modifiée
+      newImpacts[periodId] = { ...newImpacts[periodId], [axis]: newValue };
+
+      // ✅ CASCADE VERS LA DROITE : si on augmente, on propage vers la droite
+      // (mais seulement si la valeur actuelle est inférieure à la nouvelle)
+      for (let i = startIndex + 1; i < TIME_PERIODS_ORDERED.length; i++) {
         const period = TIME_PERIODS_ORDERED[i];
         const currentValue = newImpacts[period]?.[axis] ?? 0;
-
-        if (i === startIndex) {
-          // La période modifiée prend toujours la nouvelle valeur
-          newImpacts[period] = { ...newImpacts[period], [axis]: newValue };
-        } else if (i > startIndex && currentValue < newValue) {
-          // Les périodes suivantes ne peuvent pas être moins graves
+        // On propage uniquement si la nouvelle valeur est plus grande que la valeur actuelle
+        if (newValue > currentValue) {
           newImpacts[period] = { ...newImpacts[period], [axis]: newValue };
         }
-        // Si currentValue >= newValue, on ne touche à rien (déjà cohérent)
-        // Si i < startIndex, on ne touche pas aux périodes antérieures
+        // Sinon on ne touche pas à la valeur (elle reste plus élevée ou égale)
       }
+
+      // ✅ VÉRIFICATION DE COHÉRENCE : 
+      // S'assurer qu'aucune période précédente n'a une valeur inférieure à une période suivante
+      // Si c'est le cas, on ne fait rien car c'est l'utilisateur qui a fait un choix conscient
+      // et la cascade ne doit pas baisser les valeurs automatiquement
 
       return { ...prev, impacts: newImpacts };
     });
@@ -491,19 +510,7 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
   const suggestedRTO = getSuggestedRTOFromImpacts(data.impacts);
   const suggestedRPO = getSuggestedRPOFromImpacts(data.impacts);
 
-  // ==================== MODE RAPIDE ====================
-  const fillAllImpacts = (score: number) => {
-    const newImpacts = emptyImpacts();
-    
-    for (const period of TIME_PERIODS_ORDERED) {
-      for (const axis of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
-        newImpacts[period][axis] = score;
-      }
-    }
-    
-    setData((prev: any) => ({ ...prev, impacts: newImpacts }));
-    toast({ title: "Impacts mis à jour", description: `Score ${score}/5 appliqué à toutes les périodes` });
-  };
+  // ✅ MODE RAPIDE SUPPRIMÉ - Les boutons sont retirés
 
   const canNext = () => {
     if (step === 0) return data.name && data.entityId && data.owner;
@@ -534,6 +541,11 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
   };
   
   const isLastStep = step === STEPS.length - 1;
+
+  // ✅ Options pour les selects RTO, RPO, MTPD
+  const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168];
+  const rpoOptions = [0.25, 0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72];
+  const mtpdOptions = [8, 12, 24, 48, 72, 96, 120, 168, 336, 720];
   
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -642,7 +654,10 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                 </div>
                 <div>
                   <Label>Entité *</Label>
-                  <Select value={data.entityId} onValueChange={(v) => update("entityId", v)}>
+                  <Select 
+                    value={data.entityId} 
+                    onValueChange={(v) => update("entityId", v)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner une entité" />
                     </SelectTrigger>
@@ -673,7 +688,7 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
             </div>
           )}
 
-          {/* ═══════ ÉTAPE 2 - IMPACT - REDESIGNÉ ═══════ */}
+          {/* ═══════ ÉTAPE 2 - IMPACT - REDESIGNÉ (SANS MODES RAPIDES) ═══════ */}
           {step === 1 && (
             <div className="space-y-6">
               <div className="flex items-center justify-between gap-2 mb-4">
@@ -700,33 +715,12 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                 <span className="block text-xs text-[#2A5141] mt-1">
                   ⚡ La sévérité se propage automatiquement vers l'avant : quand vous mettez une valeur, les périodes suivantes s'ajustent si elles sont moins graves. Vous pouvez modifier n'importe quelle cellule à tout moment.
                 </span>
+                <span className="block text-xs text-amber-600 mt-1">
+                  ⚠️ Si vous baissez une valeur sur une période, les périodes suivantes conservent leur valeur (pas de baisse automatique).
+                </span>
               </p>
 
-              {/* ✅ Boutons Mode rapide - REDESIGNÉS */}
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { score: 1, label: "Mineur", color: "#E8F5E9", textColor: "#2E7D32", border: "#A5D6A7" },
-                  { score: 2, label: "Modéré", color: "#FFF8E1", textColor: "#F57F17", border: "#FFE082" },
-                  { score: 3, label: "Majeur", color: "#FFF3E0", textColor: "#E65100", border: "#FFCC80" },
-                  { score: 4, label: "Sévère", color: "#FBE9E7", textColor: "#D84315", border: "#FFAB91" },
-                  { score: 5, label: "Très sévère", color: "#FFEBEE", textColor: "#C62828", border: "#EF9A9A" }
-                ].map((item) => (
-                  <Button
-                    key={item.score}
-                    onClick={() => fillAllImpacts(item.score)}
-                    variant="outline"
-                    className="flex-1 min-w-[80px] text-xs font-medium transition-all hover:shadow-md hover:scale-[1.02]"
-                    style={{
-                      backgroundColor: item.color,
-                      color: item.textColor,
-                      borderColor: item.border,
-                    }}
-                  >
-                    <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: item.textColor }} />
-                    {item.score} – {item.label}
-                  </Button>
-                ))}
-              </div>
+              {/* ❌ MODES RAPIDES SUPPRIMÉS */}
 
               <div className="bg-[#F8F6F2] rounded-lg p-3 text-center border border-[#E8E4DC]">
                 <p className="text-sm text-[#172030]">
@@ -799,7 +793,7 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
             </div>
           )}
 
-          {/* ═══════ ÉTAPE 3 - DÉLAIS & RTO/RPO ═══════ */}
+          {/* ═══════ ÉTAPE 3 - DÉLAIS & RTO/RPO (AVEC SELECTS) ═══════ */}
           {step === 2 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
@@ -817,11 +811,11 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
                     <div className="flex gap-4 mt-2">
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
                         <span className="text-xs text-[#172030]/50">RTO suggéré</span>
-                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRTO} heures</p>
+                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRTO}h</p>
                       </div>
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
                         <span className="text-xs text-[#172030]/50">RPO suggéré</span>
-                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRPO} heure{suggestedRPO > 1 ? 's' : ''}</p>
+                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRPO}h</p>
                       </div>
                     </div>
                   </div>
@@ -833,17 +827,59 @@ export const BiaWizard = ({ processId, onDone }: { processId?: string; onDone: (
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <Label>RTO — Recovery Time Objective (heures)</Label>
-                  <Input type="number" min={0} value={data.rto} onChange={(e) => update("rto", Number(e.target.value))} />
+                  <Select 
+                    value={String(data.rto)} 
+                    onValueChange={(v) => update("rto", Number(v))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sélectionner un RTO" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {rtoOptions.map((val) => (
+                        <SelectItem key={val} value={String(val)}>
+                          {val}h
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-muted-foreground mt-1">Délai maximal de reprise visé.</p>
                 </div>
                 <div>
                   <Label>RPO — Recovery Point Objective (heures)</Label>
-                  <Input type="number" min={0} value={data.rpo} onChange={(e) => update("rpo", Number(e.target.value))} />
+                  <Select 
+                    value={String(data.rpo)} 
+                    onValueChange={(v) => update("rpo", Number(v))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sélectionner un RPO" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {rpoOptions.map((val) => (
+                        <SelectItem key={val} value={String(val)}>
+                          {val}h
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-muted-foreground mt-1">Perte de données maximale acceptée.</p>
                 </div>
                 <div className="md:col-span-2">
                   <Label>MTPD — Maximum Tolerable Period of Disruption (heures)</Label>
-                  <Input type="number" min={0} value={data.mtpd} onChange={(e) => update("mtpd", Number(e.target.value))} />
+                  <Select 
+                    value={String(data.mtpd)} 
+                    onValueChange={(v) => update("mtpd", Number(v))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sélectionner un MTPD" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mtpdOptions.map((val) => (
+                        <SelectItem key={val} value={String(val)}>
+                          {val}h
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-muted-foreground mt-1">Durée maximale d'indisponibilité acceptable avant de mettre en danger l'entreprise.</p>
                 </div>
               </div>
