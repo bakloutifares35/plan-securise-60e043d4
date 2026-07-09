@@ -1,3 +1,2 @@
-# Welcome to your Lovable project
+# Projet BCM
 
-TODO: Document your project here
