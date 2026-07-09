@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { computeMaxScore, scoreToCriticality } from "@/data/bia";
+import { computeMaxScore } from "@/data/bia";
 import { 
   RefreshCw, 
   Filter, 
@@ -23,11 +23,14 @@ import {
   Search, 
   ChevronLeft, 
   ChevronRight,
-  PlusCircle,
-  X
+  X,
+  Edit,
+  Check,
+  Users,
+  PlusCircle
 } from "lucide-react";
 
-// Configuration des colonnes
+// Configuration des colonnes de périodes
 const PERIOD_COLUMNS = [
   { key: "dediee_0h", label: "Dédiée 0h", short: "0h" },
   { key: "p_4h", label: "4h", short: "4h" },
@@ -62,7 +65,6 @@ interface MonteeEnCharge {
   p_j5: number;
   p_j10: number;
   p_j15: number;
-  dmia_heures: number | null;
   effectif_normal: number | null;
   necessite_proximite: string | null;
 }
@@ -72,99 +74,23 @@ interface TableauDeMonteeEnChargeProps {
   serviceName: string;
 }
 
-// Composant Check pour le bouton de validation (déclaré en haut pour clarté)
-const Check = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-  </svg>
-);
-
-// Composant d'input numérique sans spinner
-const NumericInput = ({ 
-  value, 
-  onChange, 
-  className,
-  placeholder = "0",
-  allowDecimal = false,
-  ...props 
-}: { 
-  value: number | null | undefined;
-  onChange: (value: number | null) => void;
-  className?: string;
-  placeholder?: string;
-  allowDecimal?: boolean;
-  [key: string]: any;
-}) => {
-  const [displayValue, setDisplayValue] = useState<string>(value?.toString() ?? '');
-
-  // Synchroniser la valeur affichée avec la valeur externe
-  useEffect(() => {
-    const newDisplayValue = value?.toString() ?? '';
-    if (newDisplayValue !== displayValue) {
-      setDisplayValue(newDisplayValue);
-    }
-  }, [value]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    
-    // Autoriser la chaîne vide
-    if (raw === '') {
-      setDisplayValue('');
-      onChange(null);
-      return;
-    }
-
-    // Valider le format numérique
-    const regex = allowDecimal ? /^\d*\.?\d*$/ : /^\d*$/;
-    if (!regex.test(raw)) {
-      // Ne pas mettre à jour si la valeur ne matche pas
-      return;
-    }
-
-    setDisplayValue(raw);
-    
-    // Convertir en nombre pour la sauvegarde
-    const numValue = parseFloat(raw);
-    if (!isNaN(numValue)) {
-      onChange(numValue);
-    } else {
-      onChange(null);
-    }
-  };
-
-  return (
-    <Input
-      type="text"
-      inputMode="numeric"
-      pattern={allowDecimal ? "[0-9.]*" : "[0-9]*"}
-      value={displayValue}
-      onChange={handleChange}
-      className={cn("h-8 text-center text-sm bg-transparent border-transparent hover:border-[#E8E4DC] focus:border-[#2A5141] focus:ring-1 focus:ring-[#2A5141] transition-all", className)}
-      placeholder={placeholder}
-      {...props}
-    />
-  );
-};
-
 export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMonteeEnChargeProps) => {
   const [monteeData, setMonteeData] = useState<Record<string, MonteeEnCharge>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
-  // ✅ CHANGEMENT DEMANDÉ : true par défaut = tous les processus visibles
+  // ✅ Par défaut : AFFICHER TOUS LES PROCESSUS (showAllProcesses = true)
   const [showAllProcesses, setShowAllProcesses] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  
+  // État pour suivre quelle ligne est en cours d'édition
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  
+  // État pour la gestion du "Autre..." dans la proximité
   const [customProximite, setCustomProximite] = useState<Record<string, string>>({});
   const [showCustomProximite, setShowCustomProximite] = useState<Record<string, boolean>>({});
   
   const ROWS_PER_PAGE = 15;
-  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const getProcessScore = useCallback((process: any) => {
     return computeMaxScore(process.impacts);
@@ -174,7 +100,8 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
   const filteredProcesses = useMemo(() => {
     let result = processes;
     
-    // Filtre de criticité (actif uniquement si showAllProcesses === false)
+    // ✅ Si showAllProcesses est true, on affiche TOUS les processus
+    // Si false, on filtre uniquement les critiques
     if (!showAllProcesses) {
       result = result.filter(p => {
         const score = getProcessScore(p);
@@ -182,7 +109,6 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
       });
     }
     
-    // Filtre de recherche
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(p => 
@@ -203,7 +129,7 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
     return filteredProcesses.slice(start, end);
   }, [filteredProcesses, currentPage]);
 
-  // Charger ou initialiser les données (persistance : lecture Supabase)
+  // Charger les données
   const loadData = useCallback(async () => {
     if (processes.length === 0) {
       setLoading(false);
@@ -233,7 +159,6 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
             p_j5: 0,
             p_j10: 0,
             p_j15: 0,
-            dmia_heures: null,
             effectif_normal: null,
             necessite_proximite: null,
           };
@@ -256,7 +181,6 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
           p_j5: item.p_j5 || 0,
           p_j10: item.p_j10 || 0,
           p_j15: item.p_j15 || 0,
-          dmia_heures: item.dmia_heures,
           effectif_normal: item.effectif_normal,
           necessite_proximite: item.necessite_proximite,
         };
@@ -274,7 +198,6 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
             p_j5: 0,
             p_j10: 0,
             p_j15: 0,
-            dmia_heures: null,
             effectif_normal: null,
             necessite_proximite: null,
           };
@@ -296,7 +219,6 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
           p_j5: 0,
           p_j10: 0,
           p_j15: 0,
-          dmia_heures: null,
           effectif_normal: null,
           necessite_proximite: null,
         };
@@ -311,27 +233,14 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
     loadData();
   }, [loadData]);
 
-  // Sauvegarder une valeur (persistance : écriture Supabase à chaque modif)
-  const saveField = useCallback(async (processId: string, field: keyof MonteeEnCharge, value: any) => {
-    if (value === undefined) return;
-
-    setMonteeData(prev => ({
-      ...prev,
-      [processId]: {
-        ...prev[processId],
-        [field]: value,
-      },
-    }));
+  // Sauvegarder les modifications d'une ligne
+  const saveRow = useCallback(async (processId: string) => {
+    const data = monteeData[processId];
+    if (!data) return;
 
     setSaving(prev => ({ ...prev, [processId]: true }));
 
     try {
-      const data = {
-        ...monteeData[processId],
-        [field]: value,
-      };
-      if (!data) return;
-
       const upsertData: any = {
         processus_id: processId,
         dediee_0h: data.dediee_0h || 0,
@@ -342,7 +251,6 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
         p_j5: data.p_j5 || 0,
         p_j10: data.p_j10 || 0,
         p_j15: data.p_j15 || 0,
-        dmia_heures: data.dmia_heures,
         effectif_normal: data.effectif_normal,
         necessite_proximite: data.necessite_proximite,
       };
@@ -353,23 +261,39 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
         .from('montee_en_charge')
         .upsert(upsertData, { onConflict: 'processus_id' });
 
-      if (error) {
-        console.warn('Erreur sauvegarde:', error);
-        toast({ title: "Erreur", description: "La sauvegarde a échoué, réessayez.", variant: "destructive" });
-      }
+      if (error) throw error;
+
+      toast({
+        title: "Sauvegardé",
+        description: "Montée en charge mise à jour",
+        duration: 1500,
+        className: "bg-green-50 border-green-200 text-green-800",
+      });
+      
+      // Sortir du mode édition
+      setEditingRow(null);
     } catch (error: any) {
-      console.error('Erreur:', error);
-      toast({ title: "Erreur", description: "La sauvegarde a échoué, réessayez.", variant: "destructive" });
+      console.error('Erreur sauvegarde:', error);
+      toast({
+        title: "Erreur de sauvegarde",
+        description: error.message || "Impossible de sauvegarder",
+        variant: "destructive",
+      });
     } finally {
       setSaving(prev => ({ ...prev, [processId]: false }));
     }
   }, [monteeData]);
 
-  // Gérer les changements numériques
-  const handleNumberChange = useCallback((processId: string, field: PeriodKey | 'dmia_heures' | 'effectif_normal', value: number | null) => {
-    if (value !== null && value < 0) return;
-    saveField(processId, field, value);
-  }, [saveField]);
+  // Mettre à jour une valeur dans l'état local (sans sauvegarde)
+  const updateLocalValue = useCallback((processId: string, field: keyof MonteeEnCharge, value: any) => {
+    setMonteeData(prev => ({
+      ...prev,
+      [processId]: {
+        ...prev[processId],
+        [field]: value,
+      },
+    }));
+  }, []);
 
   // Gérer le changement de proximité
   const handleProximiteChange = useCallback((processId: string, value: string) => {
@@ -379,8 +303,8 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
       return;
     }
     setShowCustomProximite(prev => ({ ...prev, [processId]: false }));
-    saveField(processId, 'necessite_proximite', value);
-  }, [saveField]);
+    updateLocalValue(processId, 'necessite_proximite', value);
+  }, [updateLocalValue]);
 
   const handleCustomProximiteChange = useCallback((processId: string, value: string) => {
     setCustomProximite(prev => ({ ...prev, [processId]: value }));
@@ -389,18 +313,12 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
   const handleCustomProximiteSave = useCallback((processId: string) => {
     const value = customProximite[processId]?.trim();
     if (value) {
-      saveField(processId, 'necessite_proximite', value);
+      updateLocalValue(processId, 'necessite_proximite', value);
       setShowCustomProximite(prev => ({ ...prev, [processId]: false }));
     }
-  }, [customProximite, saveField]);
+  }, [customProximite, updateLocalValue]);
 
-  // Calculer les totaux
-  const calculateRowTotal = useCallback((data: MonteeEnCharge) => {
-    return PERIOD_COLUMNS.reduce((sum, col) => {
-      return sum + (data[col.key as PeriodKey] || 0);
-    }, 0);
-  }, []);
-
+  // Calculer les totaux par colonne
   const calculateColumnTotals = useCallback(() => {
     const totals: Record<string, number> = {};
     PERIOD_COLUMNS.forEach(col => { totals[col.key] = 0; });
@@ -431,7 +349,7 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
   if (filteredProcesses.length === 0) {
     return (
       <div className="text-center py-8 text-[#172030]/40">
-        <p>Aucun processus {!showAllProcesses ? 'critique ' : ''}à afficher</p>
+        <p>Aucun processus {showAllProcesses ? '' : 'critique '}à afficher</p>
         {!showAllProcesses && (
           <Button variant="outline" size="sm" className="mt-2" onClick={() => setShowAllProcesses(true)}>
             <Eye className="h-3.5 w-3.5 mr-1" /> Afficher tous
@@ -443,20 +361,19 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
 
   return (
     <div className="space-y-4">
-      {/* En-tête avec contrôles */}
+      {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
             📊 Montée en charge — {serviceName}
           </h3>
           <p className="text-xs text-[#172030]/50">
-            {processes.length} processus • 
+            {filteredProcesses.length} processus • 
             {processes.filter(p => getProcessScore(p) >= 4).length} critiques
             {filteredProcesses.length !== processes.length && ` • ${filteredProcesses.length} affichés`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Barre de recherche */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#172030]/30" />
             <Input
@@ -476,14 +393,15 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
             )}
           </div>
 
+          {/* ✅ Bouton de filtre : "Tous" par défaut (actif) */}
           <Button
-            variant={!showAllProcesses ? "default" : "outline"}
+            variant={showAllProcesses ? "default" : "outline"}
             size="sm"
-            className={cn("gap-1.5 text-xs h-8", !showAllProcesses && "bg-[#2A5141] hover:bg-[#1a3329]")}
+            className={cn("gap-1.5 text-xs h-8", showAllProcesses && "bg-[#2A5141] hover:bg-[#1a3329]")}
             onClick={() => setShowAllProcesses(!showAllProcesses)}
           >
-            {showAllProcesses ? <Filter className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-            {showAllProcesses ? "Critiques" : "Tous"}
+            {showAllProcesses ? <Eye className="h-3.5 w-3.5" /> : <Filter className="h-3.5 w-3.5" />}
+            {showAllProcesses ? "Tous" : "Critiques"}
           </Button>
           <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={loadData}>
             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Rafraîchir
@@ -491,67 +409,68 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
         </div>
       </div>
 
-      {/* Tableau avec scroll */}
-      <div 
-        ref={tableContainerRef}
-        className="border rounded-xl overflow-hidden bg-white shadow-sm max-h-[600px] overflow-y-auto relative"
-      >
+      {/* Tableau */}
+      <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <Table className="table-sticky-header table-sticky-footer">
+          <Table>
             <TableHeader>
               <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-                <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-3 min-w-[160px] sticky left-0 bg-[#F8F6F2] z-20">
+                <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-3 min-w-[150px] sticky left-0 bg-[#F8F6F2] z-10">
                   Processus
                 </TableHead>
                 <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-2 text-center min-w-[70px]">
                   Critique
                 </TableHead>
-                <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-2 text-center min-w-[70px]">
-                  DMIA (h)
-                </TableHead>
-                <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-2 text-center min-w-[80px]">
-                  ETP
-                </TableHead>
                 <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-2 text-center min-w-[130px]">
                   Proximité
                 </TableHead>
                 {PERIOD_COLUMNS.map((col) => (
-                  <TableHead key={col.key} className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-1 text-center min-w-[55px]">
-                    {col.short}
+                  <TableHead key={col.key} className="text-center py-3 px-1 min-w-[55px]">
+                    <div className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">
+                      {col.short}
+                    </div>
+                    <div className="text-[8px] text-[#172030]/30 uppercase tracking-wider font-medium">
+                      NB COLLAB
+                    </div>
                   </TableHead>
                 ))}
-                <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-3 text-center min-w-[70px] bg-[#F8F6F2] sticky right-0 z-10">
+                <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-3 text-center min-w-[60px]">
                   Total
+                </TableHead>
+                <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-3 px-2 text-center min-w-[80px]">
+                  Actions
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedProcesses.map((process, idx) => {
+              {paginatedProcesses.map((process) => {
                 const data = monteeData[process.id];
                 if (!data) return null;
 
                 const score = getProcessScore(process);
                 const isCritical = score >= 4;
-                const rowTotal = calculateRowTotal(data);
+                const isEditing = editingRow === process.id;
                 const isSaving = saving[process.id] || false;
-                const showCustom = showCustomProximite[process.id] || false;
+                
+                const rowTotal = PERIOD_COLUMNS.reduce((sum, col) => {
+                  return sum + (data[col.key as PeriodKey] || 0);
+                }, 0);
+
                 const currentProximite = data.necessite_proximite || "";
                 const selectValue = PROXIMITE_OPTIONS.includes(currentProximite) ? currentProximite : "Autre...";
+                const showCustom = showCustomProximite[process.id] || false;
 
                 return (
                   <TableRow 
                     key={process.id}
                     className={cn(
                       "border-b border-[#E8E4DC] transition-colors",
-                      idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]",
-                      isCritical && "border-l-4 border-l-[#ef4444]"
+                      isCritical && "border-l-4 border-l-[#ef4444]",
+                      isEditing && "bg-blue-50/30"
                     )}
                   >
                     <TableCell className="py-2 px-3 sticky left-0 bg-inherit z-10">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-[#172030]">{process.name}</span>
-                        {isSaving && <Save className="h-3 w-3 text-[#2A5141] animate-pulse" />}
-                      </div>
+                      <span className="text-sm font-medium text-[#172030]">{process.name}</span>
                     </TableCell>
 
                     <TableCell className="py-2 px-2 text-center">
@@ -562,72 +481,59 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
                       )}
                     </TableCell>
 
-                    <TableCell className="py-2 px-2 text-center">
-                      <NumericInput
-                        value={data.dmia_heures}
-                        onChange={(val) => handleNumberChange(process.id, 'dmia_heures', val)}
-                        className="w-16"
-                        placeholder="-"
-                      />
-                    </TableCell>
-
-                    <TableCell className="py-2 px-2 text-center">
-                      <NumericInput
-                        value={data.effectif_normal}
-                        onChange={(val) => handleNumberChange(process.id, 'effectif_normal', val)}
-                        className="w-16"
-                        placeholder="-"
-                        allowDecimal
-                      />
-                    </TableCell>
-
                     <TableCell className="py-2 px-2">
-                      {!showCustom ? (
-                        <Select
-                          value={selectValue === "Autre..." ? "" : (data.necessite_proximite || "")}
-                          onValueChange={(val) => handleProximiteChange(process.id, val)}
-                        >
-                          <SelectTrigger className="h-8 w-[120px] text-sm border-transparent hover:border-[#E8E4DC] focus:border-[#2A5141] focus:ring-1 focus:ring-[#2A5141] bg-transparent">
-                            <SelectValue placeholder="Sélectionner..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PROXIMITE_OPTIONS.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                      {isEditing ? (
+                        !showCustom ? (
+                          <Select
+                            value={selectValue === "Autre..." ? "" : (data.necessite_proximite || "")}
+                            onValueChange={(val) => handleProximiteChange(process.id, val)}
+                          >
+                            <SelectTrigger className="h-8 w-[120px] text-sm border-[#2A5141] focus:ring-1 focus:ring-[#2A5141] bg-white">
+                              <SelectValue placeholder="Sélectionner..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PROXIMITE_OPTIONS.map((option) => (
+                                <SelectItem key={option} value={option}>
+                                  {option}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="text"
+                              value={customProximite[process.id] || ""}
+                              onChange={(e) => handleCustomProximiteChange(process.id, e.target.value)}
+                              className="h-8 w-[100px] text-sm border-[#2A5141] focus:ring-1 focus:ring-[#2A5141] bg-white"
+                              placeholder="Précisez..."
+                              autoFocus
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-[#2A5141] hover:text-[#2A5141]"
+                              onClick={() => handleCustomProximiteSave(process.id)}
+                              disabled={!customProximite[process.id]?.trim()}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-[#172030]/40 hover:text-[#172030]"
+                              onClick={() => {
+                                setShowCustomProximite(prev => ({ ...prev, [process.id]: false }));
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )
                       ) : (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="text"
-                            value={customProximite[process.id] || ""}
-                            onChange={(e) => handleCustomProximiteChange(process.id, e.target.value)}
-                            className="h-8 w-[100px] text-sm bg-transparent border-transparent hover:border-[#E8E4DC] focus:border-[#2A5141] focus:ring-1 focus:ring-[#2A5141] transition-all"
-                            placeholder="Précisez..."
-                            autoFocus
-                          />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() => handleCustomProximiteSave(process.id)}
-                            disabled={!customProximite[process.id]?.trim()}
-                          >
-                            <Check className="h-3.5 w-3.5 text-[#2A5141]" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() => {
-                              setShowCustomProximite(prev => ({ ...prev, [process.id]: false }));
-                            }}
-                          >
-                            <X className="h-3.5 w-3.5 text-[#172030]/40" />
-                          </Button>
-                        </div>
+                        <span className="text-sm text-[#172030]/60">
+                          {data.necessite_proximite || '—'}
+                        </span>
                       )}
                     </TableCell>
 
@@ -635,17 +541,71 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
                       const value = data[col.key as PeriodKey] || 0;
                       return (
                         <TableCell key={col.key} className="py-2 px-1 text-center">
-                          <NumericInput
-                            value={value}
-                            onChange={(val) => handleNumberChange(process.id, col.key, val)}
-                            className="w-14"
-                          />
+                          {isEditing ? (
+                            <Input
+                              type="number"
+                              min="0"
+                              value={value}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                updateLocalValue(process.id, col.key, val);
+                              }}
+                              className="w-14 h-8 text-center text-sm border-[#2A5141] focus:ring-1 focus:ring-[#2A5141]"
+                              placeholder="0"
+                            />
+                          ) : (
+                            <span className="text-sm font-mono text-[#172030]">{value}</span>
+                          )}
                         </TableCell>
                       );
                     })}
 
-                    <TableCell className="py-2 px-3 text-center font-mono font-semibold text-sm text-[#2A5141] bg-[#FAFAF9] sticky right-0 z-10">
+                    <TableCell className="py-2 px-3 text-center font-mono font-semibold text-sm text-[#2A5141]">
                       {rowTotal}
+                    </TableCell>
+
+                    <TableCell className="py-2 px-2 text-center">
+                      {isEditing ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => {
+                              loadData();
+                              setEditingRow(null);
+                              setShowCustomProximite(prev => ({ ...prev, [process.id]: false }));
+                            }}
+                            title="Annuler"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="h-7 w-7 p-0 bg-[#2A5141] hover:bg-[#1a3329]"
+                            onClick={() => saveRow(process.id)}
+                            disabled={isSaving}
+                            title={isSaving ? "Sauvegarde..." : "Enregistrer"}
+                          >
+                            {isSaving ? (
+                              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            ) : (
+                              <Check className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-[#172030]/40 hover:text-[#2A5141] hover:bg-[#F0F5F0]"
+                          onClick={() => setEditingRow(process.id)}
+                          title="Modifier cette ligne"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -658,16 +618,15 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
                 </TableCell>
                 <TableCell className="py-3 px-2 text-center text-sm text-[#172030]/50">—</TableCell>
                 <TableCell className="py-3 px-2 text-center text-sm text-[#172030]/50">—</TableCell>
-                <TableCell className="py-3 px-2 text-center text-sm text-[#172030]/50">—</TableCell>
-                <TableCell className="py-3 px-2 text-center text-sm text-[#172030]/50">—</TableCell>
                 {PERIOD_COLUMNS.map((col) => (
                   <TableCell key={col.key} className="py-3 px-1 text-center font-mono font-semibold text-sm text-[#2A5141]">
                     {columnTotals[col.key] || 0}
                   </TableCell>
                 ))}
-                <TableCell className="py-3 px-3 text-center font-mono font-bold text-sm text-[#2A5141] bg-[#F8F6F2] sticky right-0 z-10">
+                <TableCell className="py-3 px-3 text-center font-mono font-bold text-sm text-[#2A5141]">
                   {totalRowSum}
                 </TableCell>
+                <TableCell className="py-3 px-2 text-center text-sm text-[#172030]/50">—</TableCell>
               </TableRow>
             </tfoot>
           </Table>
@@ -710,15 +669,16 @@ export const TableauDeMonteeEnCharge = ({ processes, serviceName }: TableauDeMon
           <span>Processus critique</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <Save className="h-3 w-3 text-[#2A5141]" />
-          <span>Sauvegarde auto</span>
+          <Edit className="h-3 w-3 text-[#2A5141]" />
+          <span>Cliquez sur ✏️ pour modifier une ligne</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="font-mono text-[#2A5141]">Total</span>
           <span>— Somme des positions</span>
         </div>
-        <div className="text-[#172030]/30 text-[10px]">
-          Cliquez sur une cellule pour modifier • Sauvegarde automatique
+        <div className="flex items-center gap-1.5">
+          <Users className="h-3 w-3 text-[#172030]/40" />
+          <span>Nb collaborateurs requis par période</span>
         </div>
       </div>
     </div>

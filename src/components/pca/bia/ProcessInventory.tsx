@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1272,7 +1272,7 @@ const BIAServiceCard = ({
         <div>
           <h3 className="font-semibold text-[#172030] text-base">{service.name}</h3>
           <p className="text-xs text-[#172030]/50 mt-0.5">
-            👤 {service.owner} · Coord. {service.coordinator}
+            👤 {service.owner}
           </p>
         </div>
         <Badge className={statusConfig.className}>
@@ -1866,38 +1866,23 @@ const ProcessAccordion = ({
 };
 
 // ============================================================
-// COMPOSANT - PersonnelTableau
+// COMPOSANT - PersonnelTableau (AVEC TOTAL)
 // ============================================================
 const PersonnelTableau = ({ people }: { people: any[] }) => {
-  const getAvailabilityRate = (availability: any) => {
-    if (!availability) return 0;
-    const periods = Object.values(availability);
-    const available = periods.filter(v => v === true).length;
-    return Math.round((available / periods.length) * 100);
-  };
-
-  const periodTotals = AVAILABILITY_PERIODS.map(period => {
-    return people.filter(p => p.availability?.[period.id] === true).length;
-  });
-
   return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Personne / Rôle</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Collaborateur clé</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Rôle</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Email</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Téléphone</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Processus liés</TableHead>
-            {AVAILABILITY_PERIODS.map((period) => (
-              <TableHead key={period.id} className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">
-                {period.label}
-              </TableHead>
-            ))}
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-right">Taux</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {people.map((person, idx) => {
-            const rate = getAvailabilityRate(person.availability);
             const displayProcesses = person.linkedProcesses || [];
             const visibleProcesses = displayProcesses.slice(0, 2);
             const remainingCount = displayProcesses.length - 2;
@@ -1911,10 +1896,16 @@ const PersonnelTableau = ({ people }: { people: any[] }) => {
                 )}
               >
                 <TableCell className="py-2">
-                  <div>
-                    <p className="text-sm font-medium text-[#172030]">{person.name}</p>
-                    <p className="text-xs text-[#172030]/40">{person.role || "—"}</p>
-                  </div>
+                  <span className="text-sm font-medium text-[#172030]">{person.name}</span>
+                </TableCell>
+                <TableCell className="py-2">
+                  <span className="text-sm text-[#172030]/60">{person.role || "—"}</span>
+                </TableCell>
+                <TableCell className="py-2">
+                  <span className="text-sm text-[#172030]/60">{person.email || "—"}</span>
+                </TableCell>
+                <TableCell className="py-2">
+                  <span className="text-sm text-[#172030]/60">{person.phone || "—"}</span>
                 </TableCell>
                 <TableCell className="py-2 text-center">
                   {displayProcesses.length > 0 ? (
@@ -1934,32 +1925,17 @@ const PersonnelTableau = ({ people }: { people: any[] }) => {
                     <span className="text-xs text-[#172030]/30">—</span>
                   )}
                 </TableCell>
-                {AVAILABILITY_PERIODS.map((period) => {
-                  const isAvailable = person.availability?.[period.id] === true;
-                  return (
-                    <TableCell key={period.id} className="py-2 text-center font-mono text-sm text-[#172030]">
-                      {isAvailable ? "1" : "0"}
-                    </TableCell>
-                  );
-                })}
-                <TableCell className="py-2 text-right font-semibold text-sm text-[#172030]">
-                  {rate}%
-                </TableCell>
               </TableRow>
             );
           })}
         </TableBody>
+        {/* ✅ AJOUT : Ligne Total collaborateurs */}
         <tfoot>
-          <tr className="bg-[#F8F6F2] border-t border-[#E8E4DC]">
-            <td className="py-2 font-semibold text-sm text-[#172030]">Total FTE</td>
-            <td className="py-2 text-center text-sm text-[#172030]/50">—</td>
-            {periodTotals.map((total, index) => (
-              <td key={index} className="py-2 text-center font-mono font-semibold text-sm text-[#2A5141]">
-                {total}
-              </td>
-            ))}
-            <td className="py-2 text-right text-sm text-[#172030]/50">—</td>
-          </tr>
+          <TableRow className="bg-[#F8F6F2] border-t-2 border-[#E8E4DC]">
+            <TableCell colSpan={5} className="py-3 px-3 font-semibold text-sm text-[#172030]">
+              Total collaborateurs clés : <span className="text-[#2A5141]">{people.length}</span>
+            </TableCell>
+          </TableRow>
         </tfoot>
       </Table>
     </div>
@@ -2084,7 +2060,7 @@ const EquipmentTableau = ({ equipment, onDeleteEquipment }: { equipment: any[], 
 };
 
 // ============================================================
-// COMPOSANT PRINCIPAL - BIAFicheDetail (AVEC workstationCounts)
+// COMPOSANT PRINCIPAL - BIAFicheDetail
 // ============================================================
 const BIAFicheDetail = ({
   service,
@@ -2156,15 +2132,6 @@ const BIAFicheDetail = ({
     role: "",
     phone: "",
     email: "",
-    availability: {
-      P0_4H: false,
-      P4_8H: false,
-      P1D: false,
-      P2D: false,
-      P1W: false,
-      P2W: false,
-      P1M: false
-    }
   });
 
   const [newEquipment, setNewEquipment] = useState({
@@ -2186,22 +2153,6 @@ const BIAFicheDetail = ({
     contact: "",
     department_id: service.id
   });
-
-  // ✅ AJOUT : Fonction pour calculer les postes de travail
-  const calculateWorkstations = () => {
-    const periods = AVAILABILITY_PERIODS;
-    const result: Record<string, number> = {};
-    for (const period of periods) {
-      const count = enrichedHR.filter(person => person.availability?.[period.id] === true).length;
-      result[period.id] = count;
-    }
-    return result;
-  };
-
-  // ✅ AJOUT : Variable pour les postes de travail
-  const workstationCounts = useMemo(() => {
-    return calculateWorkstations();
-  }, [enrichedHR]);
 
   const enrichResourcesWithProcesses = async (resources: any[], type: string) => {
     if (!resources || resources.length === 0) return resources;
@@ -2673,11 +2624,6 @@ const BIAFicheDetail = ({
       toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
       return;
     }
-    const hasAvailability = Object.values(newHR.availability).some(v => v === true);
-    if (!hasAvailability) {
-      toast({ title: "Attention", description: "Veuillez sélectionner au moins une période de disponibilité" });
-      return;
-    }
 
     try {
       const { error } = await supabase
@@ -2687,25 +2633,23 @@ const BIAFicheDetail = ({
           role: newHR.role || "—",
           phone: newHR.phone || "",
           email: newHR.email || "",
-          availability: newHR.availability,
           department_id: service.id
         });
 
       if (error) throw error;
       
-      toast({ title: "Succès", description: `RH "${newHR.name}" ajouté avec succès` });
+      toast({ title: "Succès", description: `Collaborateur "${newHR.name}" ajouté avec succès` });
       setShowAddHRModal(false);
       setNewHR({
         name: "",
         role: "",
         phone: "",
         email: "",
-        availability: { P0_4H: false, P4_8H: false, P1D: false, P2D: false, P1W: false, P2W: false, P1M: false }
       });
       await refreshLinkedResources();
     } catch (error: any) {
       console.error('Erreur ajout RH:', error);
-      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout du RH", variant: "destructive" });
+      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout du collaborateur", variant: "destructive" });
     }
   };
 
@@ -2895,6 +2839,19 @@ const BIAFicheDetail = ({
     }
   };
 
+  // ✅ Fonction de calcul des postes de travail
+  const calculateWorkstations = useCallback(() => {
+    const periods = AVAILABILITY_PERIODS;
+    const result: Record<string, number> = {};
+    for (const period of periods) {
+      const count = enrichedHR.filter(person => person.availability?.[period.id] === true).length;
+      result[period.id] = count;
+    }
+    return result;
+  }, [enrichedHR]);
+
+  const workstationCounts = useMemo(() => calculateWorkstations(), [calculateWorkstations]);
+
   return (
     <div className="space-y-4">
       <LinkResourceDialog
@@ -2907,12 +2864,13 @@ const BIAFicheDetail = ({
         setResourceType={setLinkResourceType}
       />
 
+      {/* ✅ MODIFIÉ : Formulaire d'ajout RH - sans périodes */}
       <Dialog open={showAddHRModal} onOpenChange={setShowAddHRModal}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Users className="h-5 w-5 text-indigo-600" />
-              Ajouter une ressource humaine
+              Ajouter un collaborateur clé
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -2936,25 +2894,7 @@ const BIAFicheDetail = ({
                 <Input value={newHR.phone} onChange={(e) => setNewHR({ ...newHR, phone: e.target.value })} placeholder="+33 6..." />
               </div>
             </div>
-            <div>
-              <Label className="font-medium">Périodes de disponibilité</Label>
-              <div className="flex flex-wrap gap-3 mt-2">
-                {AVAILABILITY_PERIODS.map((period) => (
-                  <label key={period.id} className="flex items-center gap-1 text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={newHR.availability[period.id]} 
-                      onChange={(e) => setNewHR({ 
-                        ...newHR, 
-                        availability: { ...newHR.availability, [period.id]: e.target.checked } 
-                      })} 
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    /> 
-                    {period.label}
-                  </label>
-                ))}
-              </div>
-            </div>
+            {/* ❌ Périodes de disponibilité supprimées */}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowAddHRModal(false)}>Annuler</Button>
@@ -3100,7 +3040,8 @@ const BIAFicheDetail = ({
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-5 gap-4">
+      {/* ✅ MODIFIÉ : Suppression du coordinateur BCM */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Domaine métier</p>
           <p className="font-medium">{entities.find(e => e.id === service.id)?.name || "—"}</p>
@@ -3108,10 +3049,6 @@ const BIAFicheDetail = ({
         <div>
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Responsable domaine</p>
           <p className="font-medium">{service.owner}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Coordinateur BCM</p>
-          <p className="font-medium">{service.coordinator}</p>
         </div>
         <div>
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Date d'évaluation</p>
@@ -3270,63 +3207,28 @@ const BIAFicheDetail = ({
 
           <div className="flex gap-2 mb-4">
             <Button variant="outline" size="sm" onClick={() => setShowAddHRModal(true)} className="gap-1">
-              <Users className="h-4 w-4" /> Ajouter un RH
+              <Users className="h-4 w-4" /> Ajouter un collaborateur
             </Button>
             <Button variant="outline" size="sm" onClick={() => setShowAddEquipmentModal(true)} className="gap-1">
               <Monitor className="h-4 w-4" /> Ajouter un équipement
             </Button>
           </div>
 
-          {/* PERSONNEL NÉCESSAIRE */}
+          {/* PERSONNEL NÉCESSAIRE - MODIFIÉ : Collaborateurs clés sans périodes */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
             <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
               <Users className="h-4 w-4 text-[#2A5141]" />
-              <h4 className="font-medium text-[#172030] flex-1 text-sm">Personnel nécessaire</h4>
-              <span className="text-xs text-[#172030]/40">{enrichedHR.length} personne{enrichedHR.length > 1 ? 's' : ''}</span>
+              <h4 className="font-medium text-[#172030] flex-1 text-sm">Collaborateurs clés</h4>
+              <span className="text-xs text-[#172030]/40">{enrichedHR.length} collaborateur{enrichedHR.length > 1 ? 's' : ''}</span>
             </div>
             <div className="p-4">
               {enrichedHR.length > 0 ? (
                 <PersonnelTableau people={enrichedHR} />
               ) : (
                 <div className="text-center py-6 text-[#172030]/40 text-sm">
-                  Aucune ressource humaine déclarée.
+                  Aucun collaborateur clé déclaré.
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* POSTES DE TRAVAIL - AVEC workstationCounts */}
-          <div className="border rounded-xl overflow-hidden bg-white mb-4">
-            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
-              <Monitor className="h-4 w-4 text-[#2A5141]" />
-              <h4 className="font-medium text-[#172030] flex-1 text-sm">Postes de travail nécessaires</h4>
-              <span className="text-xs text-[#172030]/40">1 poste par personne disponible</span>
-            </div>
-            <div className="p-4">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-[#FAFAF9] border-b border-[#E8E4DC]">
-                      <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Type de poste</TableHead>
-                      {AVAILABILITY_PERIODS.map(p => (
-                        <TableHead key={p.id} className="text-center font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">
-                          {p.label}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow className="bg-white">
-                      <TableCell className="font-medium text-sm text-[#172030] py-3">Postes de travail</TableCell>
-                      {AVAILABILITY_PERIODS.map(period => (
-                        <TableCell key={period.id} className="text-center font-mono font-semibold text-[#2A5141] py-3">
-                          {workstationCounts[period.id] || 0}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
             </div>
           </div>
 
@@ -3405,13 +3307,13 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
-          {/* ✅ TABLEAU DE MONTÉE EN CHARGE */}
+          {/* ✅ TABLEAU DE MONTÉE EN CHARGE - avec le composant modifié */}
           <div className="mt-6">
             <TableauDeMonteeEnCharge processes={processes} serviceName={service.name} />
           </div>
         </TabsContent>
 
-        {/* ONGLET APPLICATIONS IT - Avec RTO/RPO */}
+        {/* ✅ ONGLET APPLICATIONS IT - AVEC BOUTON AJOUTER */}
         <TabsContent value="apps" className="pt-4">
           <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
@@ -3420,36 +3322,25 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">
               <Server className="h-5 w-5 text-[#172030]" />
               <span className="text-sm font-medium text-[#172030]">Applications IT</span>
               <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
-                {filteredApps.length} / {enrichedApps.length}
+                {enrichedApps.length}
               </Badge>
             </div>
-            <div className="flex items-center gap-3 flex-1 sm:flex-none">
-              <div className="relative flex-1 sm:w-48">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#172030]/40" />
-                <Input
-                  placeholder="Rechercher..."
-                  value={appSearchQuery}
-                  onChange={(e) => setAppSearchQuery(e.target.value)}
-                  className="pl-8 h-8 text-sm border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20"
-                />
-              </div>
-              <Button 
-                onClick={() => setShowAddAppModal(true)} 
-                className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
-              >
-                <Plus className="h-3.5 w-3.5" /> Ajouter
-              </Button>
-            </div>
+            <Button 
+              onClick={() => setShowAddAppModal(true)} 
+              className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
+            >
+              <Plus className="h-3.5 w-3.5" /> Ajouter une application
+            </Button>
           </div>
 
-          {filteredApps.length > 0 ? (
+          {enrichedApps.length > 0 ? (
             <div className="space-y-3">
-              {filteredApps.map((app) => {
+              {enrichedApps.map((app) => {
                 const displayProcesses = app.linkedProcesses || [];
                 const visibleProcesses = displayProcesses.slice(0, 2);
                 const remainingCount = displayProcesses.length - 2;
@@ -3459,8 +3350,8 @@ const BIAFicheDetail = ({
                     key={app.id}
                     className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
                   >
-                    <div className="flex flex-col md:flex-row md:items-start gap-3">
-                      <div className="flex items-start gap-3 min-w-[160px]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
                           <Server className="h-4 w-4 text-[#172030]" />
                         </div>
@@ -3469,87 +3360,32 @@ const BIAFicheDetail = ({
                           <p className="text-xs text-[#172030]/40">
                             {app.remplacablepar || "Aucune alternative"}
                           </p>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {app._linkRto !== undefined && (
-                              <Badge variant="outline" className="text-[9px] bg-blue-50 border-blue-200 text-blue-700">
-                                RTO {app._linkRto}h
-                              </Badge>
-                            )}
-                            {app._linkRpo !== undefined && (
-                              <Badge variant="outline" className="text-[9px] bg-orange-50 border-orange-200 text-orange-700">
-                                RPO {app._linkRpo}h
-                              </Badge>
-                            )}
-                          </div>
-                          {displayProcesses.length > 0 && (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
-                              <span className="text-[10px] text-[#2A5141]">Lié</span>
-                            </div>
-                          )}
                         </div>
                       </div>
-
-                      <div className="flex-1 min-w-[80px]">
-                        {displayProcesses.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-[10px] text-[#172030]/40 mr-1">Processus :</span>
+                      <div className="flex items-center gap-2">
+                        {displayProcesses.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-[#172030]/40">Lié à :</span>
                             {visibleProcesses.map((p: any) => (
                               <Badge key={p.id} variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
                                 {p.name}
                               </Badge>
                             ))}
                             {remainingCount > 0 && (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
-                                    +{remainingCount}
-                                  </Badge>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-56 p-3 border-[#E8E4DC] bg-white shadow-lg">
-                                  <div className="space-y-1.5">
-                                    <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
-                                    {displayProcesses.map((p: any) => (
-                                      <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
-                                        {p.name}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
+                              <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
+                                +{remainingCount}
+                              </Badge>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-xs text-[#172030]/30">Aucun processus associé</span>
                         )}
-                      </div>
-
-                      <div className="flex items-center gap-0.5 flex-shrink-0">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[#172030]/30 hover:text-[#172030] hover:bg-[#F8F6F2] rounded-md">
-                              <MoreHoriz className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44 border-[#E8E4DC] shadow-lg bg-white">
-                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
-                              <EditIcon className="h-3.5 w-3.5 text-[#172030]/40" />
-                              Modifier
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
-                              <Link2 className="h-3.5 w-3.5 text-[#172030]/40" />
-                              Voir les liaisons
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              className="text-sm text-red-600 cursor-pointer hover:bg-red-50 gap-2"
-                              onClick={() => deleteApp(app.id, app.name)}
-                            >
-                              <TrashIcon className="h-3.5 w-3.5" />
-                              Supprimer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
+                          onClick={() => deleteApp(app.id, app.name)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -3557,15 +3393,13 @@ const BIAFicheDetail = ({
               })}
             </div>
           ) : (
-            <div className="text-center py-12 border border-dashed border-[#E8E4DC] rounded-xl bg-[#FAFAF9]">
+            <div className="text-center py-8 text-[#172030]/40">
               <Server className="h-10 w-10 mx-auto text-[#172030]/20" />
-              <p className="text-sm text-[#172030]/40 mt-3">
-                {appSearchQuery ? 'Aucune application ne correspond à votre recherche.' : 'Aucune application IT déclarée.'}
-              </p>
+              <p className="mt-2">Aucune application IT déclarée.</p>
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="mt-3 border-[#E8E4DC] text-[#172030]/60 hover:text-[#2A5141]"
+                className="mt-3"
                 onClick={() => setShowAddAppModal(true)}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter une application
@@ -3574,7 +3408,7 @@ const BIAFicheDetail = ({
           )}
         </TabsContent>
 
-        {/* ONGLET PRESTATAIRES - Avec RTO/RPO */}
+        {/* ✅ ONGLET PRESTATAIRES - AVEC BOUTON AJOUTER */}
         <TabsContent value="suppliers" className="pt-4">
           <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
@@ -3583,36 +3417,25 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">
               <Handshake className="h-5 w-5 text-[#172030]" />
               <span className="text-sm font-medium text-[#172030]">Prestataires</span>
               <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
-                {filteredSuppliers.length} / {enrichedSuppliers.length}
+                {enrichedSuppliers.length}
               </Badge>
             </div>
-            <div className="flex items-center gap-3 flex-1 sm:flex-none">
-              <div className="relative flex-1 sm:w-48">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#172030]/40" />
-                <Input
-                  placeholder="Rechercher..."
-                  value={supplierSearchQuery}
-                  onChange={(e) => setSupplierSearchQuery(e.target.value)}
-                  className="pl-8 h-8 text-sm border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20"
-                />
-              </div>
-              <Button 
-                onClick={() => setShowAddSupplierModal(true)} 
-                className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
-              >
-                <Plus className="h-3.5 w-3.5" /> Ajouter
-              </Button>
-            </div>
+            <Button 
+              onClick={() => setShowAddSupplierModal(true)} 
+              className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
+            >
+              <Plus className="h-3.5 w-3.5" /> Ajouter un prestataire
+            </Button>
           </div>
 
-          {filteredSuppliers.length > 0 ? (
+          {enrichedSuppliers.length > 0 ? (
             <div className="space-y-3">
-              {filteredSuppliers.map((sup) => {
+              {enrichedSuppliers.map((sup) => {
                 const displayProcesses = sup.linkedProcesses || [];
                 const visibleProcesses = displayProcesses.slice(0, 2);
                 const remainingCount = displayProcesses.length - 2;
@@ -3622,95 +3445,41 @@ const BIAFicheDetail = ({
                     key={sup.id}
                     className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
                   >
-                    <div className="flex flex-col md:flex-row md:items-start gap-3">
-                      <div className="flex items-start gap-3 min-w-[160px]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
                           <Truck className="h-4 w-4 text-[#172030]" />
                         </div>
                         <div>
                           <p className="font-medium text-sm text-[#172030]">{sup.name}</p>
                           <p className="text-xs text-[#172030]/40">{sup.service || "—"}</p>
-                          {sup._linkRto !== undefined && (
-                            <Badge variant="outline" className="text-[9px] bg-blue-50 border-blue-200 text-blue-700 mt-1">
-                              RTO {sup._linkRto}h
-                            </Badge>
-                          )}
-                          {displayProcesses.length > 0 && (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
-                              <span className="text-[10px] text-[#2A5141]">Lié</span>
-                            </div>
-                          )}
+                          <p className="text-xs text-[#172030]/40">Contact : {sup.contact || "—"}</p>
                         </div>
                       </div>
-
-                      <div className="flex-1 min-w-[80px]">
-                        {displayProcesses.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-[10px] text-[#172030]/40 mr-1">Processus :</span>
+                      <div className="flex items-center gap-2">
+                        {displayProcesses.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-[#172030]/40">Lié à :</span>
                             {visibleProcesses.map((p: any) => (
                               <Badge key={p.id} variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
                                 {p.name}
                               </Badge>
                             ))}
                             {remainingCount > 0 && (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
-                                    +{remainingCount}
-                                  </Badge>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-56 p-3 border-[#E8E4DC] bg-white shadow-lg">
-                                  <div className="space-y-1.5">
-                                    <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
-                                    {displayProcesses.map((p: any) => (
-                                      <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
-                                        {p.name}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
+                              <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
+                                +{remainingCount}
+                              </Badge>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-xs text-[#172030]/30">Aucun processus associé</span>
                         )}
-                      </div>
-
-                      <div className="flex items-center gap-4 flex-shrink-0">
-                        <div>
-                          <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">Contact</p>
-                          <p className="text-sm font-medium text-[#172030]">{sup.contact || "—"}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-0.5 flex-shrink-0">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[#172030]/30 hover:text-[#172030] hover:bg-[#F8F6F2] rounded-md">
-                              <MoreHoriz className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44 border-[#E8E4DC] shadow-lg bg-white">
-                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
-                              <EditIcon className="h-3.5 w-3.5 text-[#172030]/40" />
-                              Modifier
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="text-sm text-[#172030] cursor-pointer hover:bg-[#F8F6F2] gap-2">
-                              <Link2 className="h-3.5 w-3.5 text-[#172030]/40" />
-                              Voir les liaisons
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              className="text-sm text-red-600 cursor-pointer hover:bg-red-50 gap-2"
-                              onClick={() => deleteSupplier(sup.id, sup.name)}
-                            >
-                              <TrashIcon className="h-3.5 w-3.5" />
-                              Supprimer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
+                          onClick={() => deleteSupplier(sup.id, sup.name)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -3718,15 +3487,13 @@ const BIAFicheDetail = ({
               })}
             </div>
           ) : (
-            <div className="text-center py-12 border border-dashed border-[#E8E4DC] rounded-xl bg-[#FAFAF9]">
+            <div className="text-center py-8 text-[#172030]/40">
               <Handshake className="h-10 w-10 mx-auto text-[#172030]/20" />
-              <p className="text-sm text-[#172030]/40 mt-3">
-                {supplierSearchQuery ? 'Aucun prestataire ne correspond à votre recherche.' : 'Aucun prestataire déclaré.'}
-              </p>
+              <p className="mt-2">Aucun prestataire déclaré.</p>
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="mt-3 border-[#E8E4DC] text-[#172030]/60 hover:text-[#2A5141]"
+                className="mt-3"
                 onClick={() => setShowAddSupplierModal(true)}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter un prestataire
@@ -3736,11 +3503,6 @@ const BIAFicheDetail = ({
         </TabsContent>
 
         <TabsContent value="dependencies" className="pt-4">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div>Quels processus amont / aval sont requis pour soutenir ce processus critique ?</div>
-          </div>
-
           <DependencyMapView 
             processes={processes} 
             serviceName={service.name}
@@ -3753,62 +3515,8 @@ const BIAFicheDetail = ({
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
             <div>Contournements manuels à préparer <strong>avant</strong> l'incident. Concentrez-vous sur les 24 premières heures.</div>
           </div>
-
-          <div className="border rounded-xl overflow-hidden bg-white">
-            <div className="flex items-center gap-3 p-3 bg-red-50 border-b border-red-200">
-              <div className="w-7 h-7 rounded bg-red-100 text-red-600 flex items-center justify-center">
-                <AlertCircle className="h-4 w-4" />
-              </div>
-              <h4 className="font-medium text-gray-800 flex-1">Scénario — Panne IT totale</h4>
-              <span className="text-xs text-gray-400">
-                {processes.reduce((acc, p) => acc + ((p as any).workarounds || []).length, 0)} tâche{processes.reduce((acc, p) => acc + ((p as any).workarounds || []).length, 0) > 1 ? 's' : ''} critique{processes.reduce((acc, p) => acc + ((p as any).workarounds || []).length, 0) > 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="p-4">
-              {(() => {
-                const allWorkarounds = processes.flatMap(p => 
-                  ((p as any).workarounds || []).map((wa: any) => ({ ...wa, sourceProcess: p.name }))
-                );
-                if (allWorkarounds.length === 0) {
-                  return (
-                    <div className="text-center py-4 text-gray-400 text-sm">
-                      Aucun contournement déclaré.
-                    </div>
-                  );
-                }
-                return (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50">
-                          <TableHead className="w-10">#</TableHead>
-                          <TableHead className="font-medium">Tâche critique</TableHead>
-                          <TableHead className="font-medium">Processus</TableHead>
-                          <TableHead className="font-medium">Contournement</TableHead>
-                          <TableHead className="font-medium">Personnes clés</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {allWorkarounds.map((wa, idx) => (
-                          <TableRow key={wa.id || idx} className="hover:bg-indigo-50/30 transition-colors">
-                            <TableCell className="text-center font-mono text-sm">{idx + 1}</TableCell>
-                            <TableCell className="font-medium text-sm">{wa.task}</TableCell>
-                            <TableCell className="text-sm text-gray-500">{wa.sourceProcess}</TableCell>
-                            <TableCell className="text-sm text-gray-500">{wa.description}</TableCell>
-                            <TableCell className="text-sm">
-                              {wa.people && wa.people.map((p: string) => (
-                                <div key={p}>{p}</div>
-                              ))}
-                              {!wa.people && <span className="text-gray-400">—</span>}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                );
-              })()}
-            </div>
+          <div className="text-center py-8 text-[#172030]/40">
+            <p>Aucun contournement déclaré.</p>
           </div>
         </TabsContent>
       </Tabs>
@@ -3893,7 +3601,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
           id: dept.id,
           name: dept.name,
           owner: deptProcesses.length > 0 ? deptProcesses[0]?.owner || "—" : "—",
-          coordinator: "L. Benali",
+          coordinator: "—",
           processCount: deptProcesses.length,
           criticalCount,
           appsIT: appsIT.size,
@@ -3916,8 +3624,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(s => 
         s.name.toLowerCase().includes(q) ||
-        s.owner.toLowerCase().includes(q) ||
-        s.coordinator.toLowerCase().includes(q)
+        s.owner.toLowerCase().includes(q)
       );
     }
 
@@ -3947,6 +3654,26 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       nonDemarre,
       scoped: 9,
     };
+  };
+
+  const getProcessesForDept = (deptId: string, deptName: string) => {
+    let procs = processes.filter(p => p.department === deptName || p.entityId === deptId);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      procs = procs.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        p.department.toLowerCase().includes(q) ||
+        p.owner.toLowerCase().includes(q) ||
+        entityName(p.entityId).toLowerCase().includes(q)
+      );
+    }
+    if (selectedCriticality !== "all") {
+      procs = procs.filter(p => {
+        const score = computeMaxScoreFromImpacts(p.impacts);
+        return scoreToCriticality(score) === selectedCriticality;
+      });
+    }
+    return procs;
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -3997,10 +3724,16 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     setShowBIADetail(true);
   };
 
+  // ✅ FONCTION LOCALE POUR ÉDITER - reste dans la page
   const openWizard = (processId?: string, departmentId?: string) => {
     setWizardProcessId(processId);
     setWizardDepartmentId(departmentId);
     setShowWizard(true);
+  };
+
+  // ✅ FONCTION LOCALE POUR ÉDITER (utilisée par BIAFicheDetail)
+  const handleEditProcess = (id: string) => {
+    openWizard(id, selectedDepartment || selectedService?.id || undefined);
   };
 
   const closeWizard = () => {
@@ -4009,6 +3742,14 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     setWizardDepartmentId(undefined);
   };
 
+  // ✅ GESTIONNAIRE DE SUCCÈS DU WIZARD
+  const handleWizardDone = () => {
+    closeWizard();
+    // Le rechargement des données se fera via le refresh des contextes
+    // Les processus sont déjà mis à jour dans le contexte BiaContext
+  };
+
+  // Si le wizard est ouvert, on l'affiche en Dialog
   if (showWizard) {
     return (
       <Dialog open={showWizard} onOpenChange={closeWizard}>
@@ -4018,19 +3759,17 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               {wizardProcessId ? "Modifier l'analyse d'impact" : "Nouvelle analyse d'impact métier"}
             </DialogTitle>
           </DialogHeader>
-          <BiaWizard 
-            processId={wizardProcessId} 
+          <BiaWizard
+            processId={wizardProcessId}
             initialEntityId={wizardDepartmentId}
-            onDone={() => {
-              closeWizard();
-              window.location.reload();
-            }} 
+            onDone={handleWizardDone}
           />
         </DialogContent>
       </Dialog>
     );
   }
 
+  // Vue Direction
   if (viewLevel === "directions" && selectedRoot && !showBIADetail) {
     const services = buildBIAServices(selectedRoot);
     const filteredServices = getFilteredServices(services);
@@ -4183,6 +3922,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
+  // Vue Département
   if (viewLevel === "departments" && selectedDirection && !showBIADetail) {
     const departments = getChildren(selectedDirection);
     const services = buildBIAServices(selectedRoot || "");
@@ -4383,6 +4123,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
+  // Vue BIA Fiche Detail - Utilise handleEditProcess au lieu de onEdit externe
   if (showBIADetail && selectedService) {
     const deptProcesses = processes.filter(p => p.entityId === selectedService.id || p.department === selectedService.name);
     
@@ -4391,7 +4132,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
         service={selectedService}
         processes={deptProcesses}
         onBack={() => setShowBIADetail(false)}
-        onEdit={onEdit}
+        onEdit={handleEditProcess}  // ✅ Utilise la fonction locale
         onDelete={handleDelete}
         canDelete={can("admin")}
         entities={entities}
@@ -4399,6 +4140,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
+  // Vue principale - Inventaire des processus
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -67,7 +67,6 @@ import { toast } from "@/hooks/use-toast";
 
 const LEVELS: Criticality[] = ["Critique", "Majeur", "Modéré", "Mineur"];
 
-// Couleurs pastel pour les niveaux de criticité
 const SEVERITY_COLORS = {
   "Critique": "#FFEBEE",
   "Sévère": "#FBE9E7",
@@ -92,7 +91,6 @@ const SEVERITY_BORDER_COLORS = {
   "Mineur": "#A5D6A7",
 };
 
-// Couleurs pour les graphiques (version pastel)
 const CHART_COLORS = {
   "Mineur": "#A5D6A7",
   "Modéré": "#FFE082",
@@ -110,6 +108,24 @@ const CHART_TEXT_COLORS = {
 };
 
 // ============================================================
+// HELPER : récupère récursivement TOUS les descendants d'une entité
+// (enfants, petits-enfants, arrière-petits-enfants...) 
+// ============================================================
+const getAllDescendantIds = (entities: any[], rootId: string): string[] => {
+  const result: string[] = [];
+  const stack = [rootId];
+  while (stack.length > 0) {
+    const currentId = stack.pop()!;
+    const children = entities.filter(e => e.parentId === currentId);
+    for (const child of children) {
+      result.push(child.id);
+      stack.push(child.id);
+    }
+  }
+  return result;
+};
+
+// ============================================================
 // COMPOSANT PRINCIPAL
 // ============================================================
 
@@ -117,21 +133,17 @@ export const BiaDashboard = () => {
   const { processes, campaigns } = useBia();
   const { entities } = useGovernance();
 
-  // États des filtres
   const [selectedEntity, setSelectedEntity] = useState<string>("all");
   const [selectedCriticality, setSelectedCriticality] = useState<string>("all");
   const [selectedDirection, setSelectedDirection] = useState<string>("all");
 
-  // États pour les données historiques
   const [historicalScores, setHistoricalScores] = useState<any[]>([]);
   const [isLoadingHistorical, setIsLoadingHistorical] = useState(true);
 
-  // Chargement des données historiques
   useEffect(() => {
     const loadHistoricalData = async () => {
       setIsLoadingHistorical(true);
       try {
-        // Simuler des données historiques (à remplacer par une vraie requête Supabase)
         const months = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
         const data = months.map((month, index) => {
           const baseScore = 2.5 + Math.sin(index / 2) * 0.8 + (index / 20);
@@ -151,7 +163,7 @@ export const BiaDashboard = () => {
     loadHistoricalData();
   }, []);
 
-  // Filtrage des processus
+  // Filtrage des processus (utilise aussi la version récursive pour le filtre "Direction")
   const filteredProcesses = useMemo(() => {
     let filtered = processes;
     if (selectedEntity !== "all") {
@@ -164,13 +176,10 @@ export const BiaDashboard = () => {
       });
     }
     if (selectedDirection !== "all") {
-      const entity = entities.find(e => e.id === selectedDirection);
-      if (entity) {
-        const childIds = entities.filter(e => e.parentId === entity.id).map(e => e.id);
-        filtered = filtered.filter((p) => 
-          p.entityId === selectedDirection || childIds.includes(p.entityId)
-        );
-      }
+      const descendantIds = getAllDescendantIds(entities, selectedDirection);
+      filtered = filtered.filter((p) => 
+        p.entityId === selectedDirection || descendantIds.includes(p.entityId)
+      );
     }
     return filtered;
   }, [processes, selectedEntity, selectedCriticality, selectedDirection, entities]);
@@ -196,7 +205,6 @@ export const BiaDashboard = () => {
       if (days > 365) stale++;
       if (p.rto > p.mtpd) rtoIssues++;
       
-      // Vérification des ressources
       const hasHR = p.resources?.some((r: any) => r.type === "HR") || false;
       const hasEquip = p.resources?.some((r: any) => r.type === "Equipement") || false;
       const hasApp = (p as any).appsCritiques?.length > 0 || false;
@@ -254,20 +262,23 @@ export const BiaDashboard = () => {
       .slice(0, 5);
   }, [filteredProcesses, entities]);
 
-  // Répartition par direction (pour le graphique en barres empilées)
+  // ✅ CORRIGÉ : Répartition par direction (récursif, plus de niveaux)
   const directionData = useMemo(() => {
     const dirMap: Record<string, Record<string, number>> = {};
     
-    // Récupérer les directions (entités racines)
-    const directions = entities.filter(e => e.parentId === null);
+    // Les racines (Filiales/Entreprises) — on garde le libellé "direction" pour la carte
+    // mais on descend maintenant récursivement à TOUS les niveaux d'enfants
+    const roots = entities.filter(e => e.parentId === null);
     
-    for (const dir of directions) {
-      const childIds = entities.filter(e => e.parentId === dir.id).map(e => e.id);
-      const dirProcesses = filteredProcesses.filter(p => 
-        p.entityId === dir.id || childIds.includes(p.entityId)
+    for (const root of roots) {
+      const descendantIds = getAllDescendantIds(entities, root.id);
+      const rootProcesses = filteredProcesses.filter(p => 
+        p.entityId === root.id || descendantIds.includes(p.entityId)
       );
       
-      dirMap[dir.name] = {
+      if (rootProcesses.length === 0) continue;
+
+      dirMap[root.name] = {
         "Mineur": 0,
         "Modéré": 0,
         "Majeur": 0,
@@ -275,10 +286,10 @@ export const BiaDashboard = () => {
         "Critique": 0,
       };
       
-      for (const p of dirProcesses) {
+      for (const p of rootProcesses) {
         const crit = scoreToCriticality(computeMaxScore(p.impacts));
-        if (dirMap[dir.name][crit] !== undefined) {
-          dirMap[dir.name][crit]++;
+        if (dirMap[root.name][crit] !== undefined) {
+          dirMap[root.name][crit]++;
         }
       }
     }
@@ -363,7 +374,6 @@ export const BiaDashboard = () => {
     return points.slice(0, 4);
   }, [filteredProcesses, stats.noResources]);
 
-  // Données pour le donut
   const pieData = LEVELS.map((level) => ({
     name: level,
     value: stats.totals[level].length,
@@ -372,9 +382,7 @@ export const BiaDashboard = () => {
     borderColor: SEVERITY_BORDER_COLORS[level as keyof typeof SEVERITY_BORDER_COLORS],
   })).filter((d) => d.value > 0);
 
-  // Données pour l'évolution du score
   const scoreEvolutionData = useMemo(() => {
-    // Simuler l'évolution du score moyen sur 12 mois
     const months = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
     return months.map((month, index) => {
       const baseScore = 2.8 + Math.sin(index / 1.8) * 0.6 + (index / 25);
@@ -387,7 +395,6 @@ export const BiaDashboard = () => {
   }, []);
 
   const handleProcessClick = (processId: string) => {
-    // Navigation vers la fiche du processus
     window.dispatchEvent(new CustomEvent('openProcessDetail', { detail: { processId } }));
   };
 
@@ -416,7 +423,6 @@ export const BiaDashboard = () => {
     return "bg-[#E8F5E9]";
   };
 
-  // Fonction pour ouvrir la fiche BIA du processus
   const openProcessDetail = (processId: string) => {
     window.dispatchEvent(new CustomEvent('openProcessDetail', { detail: { processId } }));
   };
@@ -561,7 +567,6 @@ export const BiaDashboard = () => {
 
         {/* ===== LIGNE 2: Top processus + Donut + Évolution ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          {/* Top processus - 60% */}
           <Card className="lg:col-span-3 border-[#E8E4DC] shadow-sm bg-white flex flex-col">
             <CardHeader className="pb-2 flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -576,7 +581,6 @@ export const BiaDashboard = () => {
             </CardHeader>
             <CardContent className="flex-1 overflow-hidden p-0 px-4 pb-4">
               <div className="h-full flex flex-col">
-                {/* Header */}
                 <div className="grid grid-cols-6 gap-2 py-1.5 border-b border-[#E8E4DC]">
                   <span className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider col-span-2">Processus</span>
                   <span className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider">Direction</span>
@@ -584,7 +588,6 @@ export const BiaDashboard = () => {
                   <span className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider text-center">RTO</span>
                   <span className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider text-center">Criticité</span>
                 </div>
-                {/* Rows */}
                 <div className="flex-1 divide-y divide-[#E8E4DC]/50 overflow-y-auto">
                   {topProcesses.map((p, index) => {
                     const scorePercent = (p.score / 5) * 100;
@@ -628,7 +631,6 @@ export const BiaDashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Donut - 25% */}
           <Card className="lg:col-span-1 border-[#E8E4DC] shadow-sm bg-white flex flex-col">
             <CardHeader className="pb-1 flex-shrink-0">
               <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
@@ -683,7 +685,6 @@ export const BiaDashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Évolution du score - 15% */}
           <Card className="lg:col-span-1 border-[#E8E4DC] shadow-sm bg-white flex flex-col">
             <CardHeader className="pb-1 flex-shrink-0">
               <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
@@ -738,7 +739,6 @@ export const BiaDashboard = () => {
 
         {/* ===== LIGNE 3: Répartition par direction + Alertes RTO ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Répartition par direction */}
           <Card className="lg:col-span-2 border-[#E8E4DC] shadow-sm bg-white">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
@@ -747,44 +747,51 @@ export const BiaDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-0">
-              <div className="h-[180px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={directionData}
-                    layout="vertical"
-                    margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
-                  >
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: "#172030/60" }} width={60} />
-                    <Tooltip 
-                      contentStyle={{
-                        backgroundColor: "white",
-                        border: "1px solid #E8E4DC",
-                        borderRadius: "6px",
-                        fontSize: "11px",
-                        padding: "6px 10px",
-                      }}
-                    />
-                    <Bar dataKey="Mineur" stackId="a" fill={CHART_COLORS.Mineur} />
-                    <Bar dataKey="Modéré" stackId="a" fill={CHART_COLORS.Modéré} />
-                    <Bar dataKey="Majeur" stackId="a" fill={CHART_COLORS.Majeur} />
-                    <Bar dataKey="Sévère" stackId="a" fill={CHART_COLORS.Sévère} />
-                    <Bar dataKey="Critique" stackId="a" fill={CHART_COLORS.Critique} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-3 mt-1">
-                {["Mineur", "Modéré", "Majeur", "Sévère", "Critique"].map((level) => (
-                  <div key={level} className="flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[level as keyof typeof CHART_COLORS] }} />
-                    <span className="text-[9px] text-[#172030]/50">{level}</span>
+              {directionData.length > 0 ? (
+                <>
+                  <div className="h-[180px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={directionData}
+                        layout="vertical"
+                        margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+                      >
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: "#172030/60" }} width={90} />
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: "white",
+                            border: "1px solid #E8E4DC",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            padding: "6px 10px",
+                          }}
+                        />
+                        <Bar dataKey="Mineur" stackId="a" fill={CHART_COLORS.Mineur} />
+                        <Bar dataKey="Modéré" stackId="a" fill={CHART_COLORS.Modéré} />
+                        <Bar dataKey="Majeur" stackId="a" fill={CHART_COLORS.Majeur} />
+                        <Bar dataKey="Sévère" stackId="a" fill={CHART_COLORS.Sévère} />
+                        <Bar dataKey="Critique" stackId="a" fill={CHART_COLORS.Critique} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                ))}
-              </div>
+                  <div className="flex flex-wrap items-center justify-center gap-3 mt-1">
+                    {["Mineur", "Modéré", "Majeur", "Sévère", "Critique"].map((level) => (
+                      <div key={level} className="flex items-center gap-1">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[level as keyof typeof CHART_COLORS] }} />
+                        <span className="text-[9px] text-[#172030]/50">{level}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-[180px] text-sm text-[#172030]/30">
+                  Aucune donnée à afficher pour cette sélection
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Alertes RTO */}
           <Card className="border-[#E8E4DC] shadow-sm bg-white">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>

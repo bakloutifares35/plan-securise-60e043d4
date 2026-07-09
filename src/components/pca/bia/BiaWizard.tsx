@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
   ArrowLeft, ArrowRight, Check, ShieldAlert, TrendingUp, Building2, 
-  ChevronDown, AlertCircle, Info, X
+  ChevronDown, AlertCircle, Info, X, Loader2
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -230,7 +230,6 @@ const ImpactCell = ({
     setOpen(false);
   };
 
-  // Options de sélection avec couleurs pastel
   const options = [
     { score: 1, label: "Mineur", bg: "#E8F5E9", text: "#2E7D32", border: "#A5D6A7" },
     { score: 2, label: "Modéré", bg: "#FFF8E1", text: "#F57F17", border: "#FFE082" },
@@ -436,6 +435,7 @@ const newProcess = (): Process => ({
 export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: string; initialEntityId?: string; onDone: () => void }) => {
   const { processes, upsertProcess } = useBia();
   const { entities } = useGovernance();
+  const [isSaving, setIsSaving] = useState(false);
   
   const initial = useMemo(() => {
     const found = processes.find((p) => p.id === processId);
@@ -447,7 +447,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   
   const [step, setStep] = useState(0);
   
-  // ✅ Initialisation du state avec pré-remplissage de l'entité si création
   const [data, setData] = useState<any>(() => {
     if (processId && initial.entityId) {
       return initial;
@@ -461,43 +460,25 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
     return initial;
   });
 
-  // ==================== LOGIQUE DE CASCADE DE SÉVÉRITÉ ====================
-  // ✅ RÈGLES DE CASCADE :
-  // 1. Si on augmente une valeur, toutes les périodes suivantes (à droite) doivent avoir au moins cette valeur
-  // 2. Si on diminue une valeur, on ne touche pas aux périodes suivantes (elles conservent leur valeur)
-  // 3. Si on veut baisser une valeur sur une période suivante, on peut le faire manuellement
-  // 4. Les périodes précédentes ne sont JAMAIS modifiées par la cascade (on ne peut pas avoir une valeur 
-  //    plus élevée avant une valeur plus faible)
   const updateImpactWithCascade = (axis: ImpactAxis, periodId: string, newValue: number) => {
     setData((prev: any) => {
       const newImpacts = { ...prev.impacts };
       const startIndex = TIME_PERIODS_ORDERED.indexOf(periodId);
 
-      // Mettre à jour la période modifiée
       newImpacts[periodId] = { ...newImpacts[periodId], [axis]: newValue };
 
-      // ✅ CASCADE VERS LA DROITE : si on augmente, on propage vers la droite
-      // (mais seulement si la valeur actuelle est inférieure à la nouvelle)
       for (let i = startIndex + 1; i < TIME_PERIODS_ORDERED.length; i++) {
         const period = TIME_PERIODS_ORDERED[i];
         const currentValue = newImpacts[period]?.[axis] ?? 0;
-        // On propage uniquement si la nouvelle valeur est plus grande que la valeur actuelle
         if (newValue > currentValue) {
           newImpacts[period] = { ...newImpacts[period], [axis]: newValue };
         }
-        // Sinon on ne touche pas à la valeur (elle reste plus élevée ou égale)
       }
-
-      // ✅ VÉRIFICATION DE COHÉRENCE : 
-      // S'assurer qu'aucune période précédente n'a une valeur inférieure à une période suivante
-      // Si c'est le cas, on ne fait rien car c'est l'utilisateur qui a fait un choix conscient
-      // et la cascade ne doit pas baisser les valeurs automatiquement
 
       return { ...prev, impacts: newImpacts };
     });
   };
 
-  // ==================== FONCTIONS DE MISE À JOUR ====================
   const update = (key: string, value: any) => {
     setData((d: any) => ({ ...d, [key]: value }));
   };
@@ -510,16 +491,17 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   const suggestedRTO = getSuggestedRTOFromImpacts(data.impacts);
   const suggestedRPO = getSuggestedRPOFromImpacts(data.impacts);
 
-  // ✅ MODE RAPIDE SUPPRIMÉ - Les boutons sont retirés
-
   const canNext = () => {
     if (step === 0) return data.name && data.entityId && data.owner;
     if (step === 2) return !rtoExceedsMtpd;
     return true;
   };
 
-  // ✅ Sauvegarde
+  // ✅ Sauvegarde optimisée
   const submit = async () => {
+    if (isSaving) return;
+    
+    setIsSaving(true);
     const processToSave = {
       ...data,
       lastUpdated: new Date().toISOString().slice(0, 10),
@@ -529,9 +511,16 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
     
     console.log("💾 Sauvegarde du processus:", processToSave.name);
     
-    await upsertProcess(processToSave);
-    toast({ title: "BIA enregistré", description: `${data.name} — Criticité: ${criticality}` });
-    onDone();
+    try {
+      await upsertProcess(processToSave);
+      toast({ title: "BIA enregistré", description: `${data.name} — Criticité: ${criticality}` });
+      // ✅ Fermer immédiatement après sauvegarde
+      onDone();
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde:", error);
+      toast({ title: "Erreur", description: "Impossible d'enregistrer le BIA", variant: "destructive" });
+      setIsSaving(false);
+    }
   };
 
   const applySuggestions = () => {
@@ -542,7 +531,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   
   const isLastStep = step === STEPS.length - 1;
 
-  // ✅ Options pour les selects RTO, RPO, MTPD
   const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168];
   const rpoOptions = [0.25, 0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72];
   const mtpdOptions = [8, 12, 24, 48, 72, 96, 120, 168, 336, 720];
@@ -564,7 +552,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
         </div>
       </div>
 
-      {/* ✅ Progression - 3 étapes seulement */}
       <div className="bg-secondary/20 rounded-lg p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium">Progression</span>
@@ -595,7 +582,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
         )}
       </div>
 
-      {/* ✅ Score de criticité - REDESIGNÉ */}
       <div className="bg-gradient-to-r from-[#2A5141]/10 to-[#2A5141]/5 rounded-xl p-6 border border-[#2A5141]/20">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4">
@@ -637,7 +623,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
 
       <Card>
         <CardContent className="p-6 space-y-6">
-          {/* ═══════ ÉTAPE 1 - GÉNÉRAL ═══════ */}
+          {/* ÉTAPE 1 - GÉNÉRAL */}
           {step === 0 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
@@ -688,7 +674,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             </div>
           )}
 
-          {/* ═══════ ÉTAPE 2 - IMPACT - REDESIGNÉ (SANS MODES RAPIDES) ═══════ */}
+          {/* ÉTAPE 2 - IMPACT */}
           {step === 1 && (
             <div className="space-y-6">
               <div className="flex items-center justify-between gap-2 mb-4">
@@ -720,15 +706,12 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                 </span>
               </p>
 
-              {/* ❌ MODES RAPIDES SUPPRIMÉS */}
-
               <div className="bg-[#F8F6F2] rounded-lg p-3 text-center border border-[#E8E4DC]">
                 <p className="text-sm text-[#172030]">
                   Score actuel : <strong className="text-[#2A5141]">{globalScore}/5</strong> ({criticality})
                 </p>
               </div>
 
-              {/* ✅ TABLEAU D'IMPACT - AVEC CELLULES CLIQUABLES */}
               <div className="overflow-auto border border-[#E8E4DC] rounded-xl bg-white">
                 <Table>
                   <TableHeader>
@@ -793,7 +776,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             </div>
           )}
 
-          {/* ═══════ ÉTAPE 3 - DÉLAIS & RTO/RPO (AVEC SELECTS) ═══════ */}
+          {/* ÉTAPE 3 - DÉLAIS & RTO/RPO */}
           {step === 2 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
@@ -894,18 +877,28 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
         </CardContent>
       </Card>
 
-      {/* ✅ Navigation - bouton "Enregistrer" à la dernière étape */}
+      {/* Navigation */}
       <div className="flex justify-between">
-        <Button variant="outline" disabled={step === 0} onClick={() => setStep(s => s - 1)}>
+        <Button variant="outline" disabled={step === 0 || isSaving} onClick={() => setStep(s => s - 1)}>
           <ArrowLeft className="h-4 w-4 mr-2" />Précédent
         </Button>
         {!isLastStep ? (
-          <Button onClick={() => setStep(s => s + 1)} disabled={!canNext()} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
+          <Button onClick={() => setStep(s => s + 1)} disabled={!canNext() || isSaving} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
             Suivant <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (
-          <Button onClick={submit} className="bg-[#2A5141] hover:bg-[#1a3329] text-white" disabled={!canNext()}>
-            <Check className="h-4 w-4 mr-2" />Enregistrer le BIA
+          <Button onClick={submit} disabled={!canNext() || isSaving} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Enregistrement...
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4 mr-2" />
+                Enregistrer le BIA
+              </>
+            )}
           </Button>
         )}
       </div>
