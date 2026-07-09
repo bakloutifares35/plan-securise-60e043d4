@@ -11,6 +11,7 @@ import { RiskMethodGate } from "@/components/pca/risk/RiskMethodGate";
 import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
 import TenaciaVoice from "@/components/pca/bia/TenaciaVoice";
 import BIASynthesis from "@/components/pca/bia/BIASynthesis";
+import BIARecoverySequence from "@/components/pca/bia/BIARecoverySequence"; // 👈 NOUVEL IMPORT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -33,6 +34,9 @@ const Index = () => {
     } else if (path === "/bia/synthese") {
       setSection("bia");
       setBiaTab("synthese");
+    } else if (path === "/bia/recovery") { // 👈 AJOUTÉ
+      setSection("bia");
+      setBiaTab("recovery");
     } else if (path === "/tenacia-voice") {
       setSection("tenacia");
     }
@@ -83,11 +87,9 @@ const Index = () => {
                   {section === "governance" && <GovernanceModule onNavigateToSection={handleNavigateToSection} />}
                   {section === "bia" && (
                     <div>
-                      {biaTab === "synthese" ? (
-                        <BIASynthesis />
-                      ) : (
-                        <BiaModule initialTab={biaTab} />
-                      )}
+                      {biaTab === "synthese" && <BIASynthesis />}
+                      {biaTab === "recovery" && <BIARecoverySequence />} {/* 👈 NOUVEAU */}
+                      {biaTab === "dashboard" && <BiaModule initialTab={biaTab} />}
                     </div>
                   )}
                   {section === "risk" && <RiskMethodGate />}

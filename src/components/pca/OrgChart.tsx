@@ -19,7 +19,6 @@ import { toast } from "sonner";
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 import Tesseract from 'tesseract.js';
-// Ajout de jsPDF pour générer de vrais PDF
 import jsPDF from 'jspdf';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
@@ -407,140 +406,216 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     toast.success("📊 Modèle Excel téléchargé avec succès !");
   };
 
-  // ✅ Télécharger le modèle PDF avec jsPDF
-  const downloadPdfTemplate = () => {
-    try {
-      const doc = new jsPDF();
-      
-      // Titre
-      doc.setFontSize(18);
-      doc.setFont("helvetica", "bold");
-      doc.text("ORGANIGRAMME DU GROUPE - MODÈLE", 105, 20, { align: "center" });
-      
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "normal");
-      
-      let y = 35;
-      const lineHeight = 8;
-      
-      // Exemple 1
-      doc.setFont("helvetica", "bold");
-      doc.text("1. Filiale 1", 20, y);
-      y += lineHeight;
-      
-      doc.setFont("helvetica", "normal");
-      doc.text("   - Direction 1", 25, y);
-      y += lineHeight;
-      doc.text("     - Service 1", 30, y);
-      y += lineHeight;
-      doc.text("     - Département 1", 30, y);
-      y += lineHeight + 5;
-      
-      // Exemple 2
-      doc.setFont("helvetica", "bold");
-      doc.text("2. Filiale 2", 20, y);
-      y += lineHeight;
-      
-      doc.setFont("helvetica", "normal");
-      doc.text("   - Direction 2", 25, y);
-      y += lineHeight;
-      doc.text("     - Service 2", 30, y);
-      y += lineHeight;
-      doc.text("     - Département 2", 30, y);
-      y += lineHeight + 10;
-      
-      // Séparateur
-      doc.setDrawColor(200, 200, 200);
-      doc.line(20, y, 190, y);
-      y += 10;
-      
-      // Instructions
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("📌 INSTRUCTIONS POUR L'IMPORT :", 20, y);
-      y += lineHeight + 3;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      const instructions = [
-        "1. Utilisez ce modèle pour structurer votre organigramme",
-        "2. Remplacez les noms par les vôtres (Filiale 1 → Votre Filiale, etc.)",
-        "3. Ajoutez ou supprimez des lignes selon vos besoins",
-        "",
-        "📌 HIÉRARCHIE À RESPECTER :",
-        "   Filiale (niveau 1) → Direction (niveau 2) → Service / Département (niveau 3)",
-        "",
-        "📌 TYPES D'ENTITÉS AUTORISÉS :",
-        "   • FILIALE      → Niveau 1, pas de parent",
-        "   • DIRECTION    → Niveau 2, parent = Filiale",
-        "   • SERVICE      → Niveau 3, parent = Direction",
-        "   • DÉPARTEMENT  → Niveau 3, parent = Direction",
-      ];
-      
-      for (const line of instructions) {
-        doc.text(line, 20, y);
-        y += lineHeight;
-      }
-      
-      y += 5;
-      
-      // Exemple complet
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text("📌 EXEMPLE COMPLET :", 20, y);
-      y += lineHeight + 3;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      const exemple = [
-        "1. Filiale France",
-        "   - Direction Financière",
-        "     - Service Comptabilité",
-        "     - Département Audit",
-        "   - Direction Commerciale",
-        "     - Service Client",
-        "     - Département Marketing",
-        "",
-        "2. Filiale Tunisie",
-        "   - Direction IT",
-        "     - Service Infrastructure",
-        "     - Département Sécurité",
-        "     - Service Développement",
-        "   - Direction RH",
-        "     - Service Recrutement",
-        "     - Département Formation",
-      ];
-      
-      for (const line of exemple) {
-        doc.text(line, 20, y);
-        y += lineHeight;
-      }
-      
-      y += 5;
-      
-      // Avertissement
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(200, 0, 0);
-      doc.text("⚠️ IMPORTANT :", 20, y);
-      y += lineHeight;
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text("   - Les accents sont supportés (é, è, ê, à, ù, etc.)", 20, y);
-      y += lineHeight;
-      doc.text("   - L'IA analysera automatiquement votre document", 20, y);
-      y += lineHeight;
-      doc.text("   - Toutes les entités seront importées avec leur hiérarchie", 20, y);
-      
-      // Sauvegarder
-      doc.save('modele_organigramme.pdf');
-      toast.success("📄 Modèle PDF téléchargé avec succès !");
-    } catch (error) {
-      console.error("Erreur lors de la génération du PDF:", error);
-      toast.error("Erreur lors de la génération du PDF. Vérifiez que la bibliothèque jsPDF est installée.");
-    }
-  };
+  // ✅ Télécharger le modèle PDF avec jsPDF - VERSION CORRIGÉE ET PROPRE
+const downloadPdfTemplate = () => {
+  try {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    let y = 25;
+    const lineHeight = 7;
 
+    // Titre principal
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(23, 32, 48);
+    doc.text("ORGANIGRAMME DU GROUPE - MODÈLE", pageWidth / 2, y, { align: "center" });
+    y += 10;
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 100, 100);
+    doc.text("Structure hiérarchique des entités", pageWidth / 2, y, { align: "center" });
+    y += 12;
+    
+    // Ligne de séparation
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+
+    // ===== EXEMPLE 1 =====
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(23, 32, 48);
+    doc.text("Exemple 1 : Filiale 1", margin, y);
+    y += lineHeight + 3;
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    doc.text("   • Direction Financière", margin + 5, y);
+    y += lineHeight;
+    doc.text("       • Service Comptabilité", margin + 10, y);
+    y += lineHeight;
+    doc.text("       • Département Audit", margin + 10, y);
+    y += lineHeight;
+    doc.text("   • Direction Commerciale", margin + 5, y);
+    y += lineHeight;
+    doc.text("       • Service Client", margin + 10, y);
+    y += lineHeight;
+    doc.text("       • Département Marketing", margin + 10, y);
+    y += lineHeight + 8;
+
+    // ===== EXEMPLE 2 =====
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(23, 32, 48);
+    doc.text("Exemple 2 : Filiale 2", margin, y);
+    y += lineHeight + 3;
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    doc.text("   • Direction IT", margin + 5, y);
+    y += lineHeight;
+    doc.text("       • Service Infrastructure", margin + 10, y);
+    y += lineHeight;
+    doc.text("       • Département Sécurité", margin + 10, y);
+    y += lineHeight;
+    doc.text("       • Service Développement", margin + 10, y);
+    y += lineHeight;
+    doc.text("   • Direction RH", margin + 5, y);
+    y += lineHeight;
+    doc.text("       • Service Recrutement", margin + 10, y);
+    y += lineHeight;
+    doc.text("       • Département Formation", margin + 10, y);
+    y += lineHeight + 10;
+
+    // ===== SÉPARATEUR =====
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+
+    // ===== INSTRUCTIONS =====
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(23, 32, 48);
+    doc.text("INSTRUCTIONS POUR L'IMPORT :", margin, y);
+    y += lineHeight + 3;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    
+    const instructions = [
+      "1. Utilisez ce modèle pour structurer votre organigramme",
+      "2. Remplacez les noms par les vôtres (Filiale 1 → Votre Filiale, etc.)",
+      "3. Ajoutez ou supprimez des lignes selon vos besoins",
+      "",
+      "HIÉRARCHIE À RESPECTER :",
+      "   Filiale (niveau 1) → Direction (niveau 2) → Service / Département (niveau 3)",
+      "",
+      "TYPES D'ENTITÉS AUTORISÉS :",
+      "   • FILIALE      → Niveau 1, pas de parent",
+      "   • DIRECTION    → Niveau 2, parent = Filiale",
+      "   • SERVICE      → Niveau 3, parent = Direction",
+      "   • DÉPARTEMENT  → Niveau 3, parent = Direction",
+    ];
+    
+    for (const line of instructions) {
+      if (line.startsWith("HIÉRARCHIE") || line.startsWith("TYPES D'ENTITÉS") || line.startsWith("   •")) {
+        doc.setFont("helvetica", "bold");
+      } else {
+        doc.setFont("helvetica", "normal");
+      }
+      doc.text(line, margin, y);
+      y += lineHeight;
+    }
+    
+    y += 5;
+
+    // ===== STRUCTURE COMPLÈTE =====
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(23, 32, 48);
+    doc.text("STRUCTURE COMPLÈTE :", margin, y);
+    y += lineHeight + 3;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    
+    const structure = [
+      "",
+      "NIVEAU 1 - FILIALE",
+      "  └── Filiale 1",
+      "      NIVEAU 2 - DIRECTION",
+      "      ├── Direction Financière",
+      "      │   NIVEAU 3 - SERVICE / DÉPARTEMENT",
+      "      │   ├── Service Comptabilité",
+      "      │   └── Département Audit",
+      "      └── Direction Commerciale",
+      "          ├── Service Client",
+      "          └── Département Marketing",
+      "",
+      "NIVEAU 1 - FILIALE ",
+      "  └── Filiale 2",
+      "      NIVEAU 2 - DIRECTION",
+      "      ├── Direction IT",
+      "      │   ├── Service Infrastructure",
+      "      │   ├── Département Sécurité",
+      "      │   └── Service Développement",
+      "      └── Direction RH",
+      "          ├── Service Recrutement",
+      "          └── Département Formation",
+    ];
+    
+    for (const line of structure) {
+      if (line.startsWith("NIVEAU") || line.startsWith("  └──") || line.startsWith("      ├──") || line.startsWith("      └──") || line.startsWith("      │")) {
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(23, 32, 48);
+      } else {
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(60, 60, 60);
+      }
+      doc.text(line, margin, y);
+      y += lineHeight;
+    }
+    
+    y += 5;
+
+    // ===== AVERTISSEMENT =====
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(200, 0, 0);
+    doc.text("⚠ IMPORTANT :", margin, y);
+    y += lineHeight;
+    
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(60, 60, 60);
+    const warnings = [
+      "   • Les accents sont supportés (é, è, ê, à, ù, etc.)",
+      "   • L'IA analysera automatiquement votre document",
+      "   • Toutes les entités seront importées avec leur hiérarchie",
+      "   • Respectez la hiérarchie Filiale → Direction → Service/Département",
+    ];
+    
+    for (const line of warnings) {
+      doc.text(line, margin, y);
+      y += lineHeight;
+    }
+
+    // ===== PIED DE PAGE =====
+    y = pageHeight - 15;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(150, 150, 150);
+    doc.text(
+      `Document généré automatiquement - ${new Date().toLocaleDateString('fr-FR')}`,
+      pageWidth / 2,
+      y,
+      { align: "center" }
+    );
+    
+    // Sauvegarder
+    doc.save('modele_organigramme.pdf');
+    toast.success("📄 Modèle PDF téléchargé avec succès !");
+  } catch (error) {
+    console.error("Erreur lors de la génération du PDF:", error);
+    toast.error("Erreur lors de la génération du PDF. Vérifiez que la bibliothèque jsPDF est installée.");
+  }
+};
   // ✅ Fonction d'import Excel avec validation hiérarchique
   const importExcel = async (rows: any[]) => {
     console.log("📊 Excel - Lignes:", rows.length);

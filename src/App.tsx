@@ -31,10 +31,13 @@ function App() {
                       <Routes>
                         {/* Route principale */}
                         <Route path="/" element={<Index />} />
+                        
                         {/* Routes BIA */}
                         <Route path="/bia" element={<Index />} />
                         <Route path="/bia/synthese" element={<Index />} />
+                        <Route path="/bia/recovery" element={<Index />} /> {/* 👈 AJOUTER CETTE LIGNE */}
                         <Route path="/tenacia-voice" element={<Index />} />
+                        
                         {/* ✅ TOUTES LES AUTRES ROUTES EXISTANTES */}
                         <Route path="/dashboard" element={<Index />} />
                         <Route path="/governance" element={<Index />} />
@@ -47,6 +50,7 @@ function App() {
                         <Route path="/scenarios" element={<Index />} />
                         <Route path="/form" element={<Index />} />
                         <Route path="/ai" element={<Index />} />
+                        
                         {/* 404 */}
                         <Route path="*" element={<NotFound />} />
                       </Routes>

@@ -2154,6 +2154,187 @@ const BIAFicheDetail = ({
     department_id: service.id
   });
 
+  // ============================================================
+  // ⭐ FIX DU BUG : Fonction de fetch SANS cache
+  // ============================================================
+  const fetchProcessResources = async (processId: string) => {
+    const result = {
+      hr: [] as any[],
+      equipment: [] as any[],
+      apps: [] as any[],
+      suppliers: [] as any[]
+    };
+
+    // HR
+    const { data: hrLinks } = await supabase
+      .from('processus_ressources_humaines')
+      .select('ressource_humaine_id')
+      .eq('processus_id', processId);
+
+    if (hrLinks && hrLinks.length > 0) {
+      const hrIds = hrLinks.map((l: any) => l.ressource_humaine_id);
+      const { data: hrData } = await supabase
+        .from('ressources_humaines')
+        .select('*')
+        .in('id', hrIds)
+        .eq('department_id', service.id);
+      result.hr = hrData || [];
+    }
+
+    // Équipements
+    const { data: equipLinks } = await supabase
+      .from('processus_equipements')
+      .select('equipement_id, rto_hours')
+      .eq('processus_id', processId);
+
+    if (equipLinks && equipLinks.length > 0) {
+      const equipIds = equipLinks.map((l: any) => l.equipement_id);
+      const { data: equipData } = await supabase
+        .from('ressources_equipements')
+        .select('*')
+        .in('id', equipIds)
+        .eq('department_id', service.id);
+      
+      const enrichedEquipment = equipData?.map(eq => {
+        const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
+        return { ...eq, _linkRto: link?.rto_hours || 4 };
+      });
+      result.equipment = enrichedEquipment || [];
+    }
+
+    // Apps
+    const { data: appLinks } = await supabase
+      .from('processus_applications')
+      .select('application_id, rto_hours, rpo_hours')
+      .eq('processus_id', processId);
+
+    if (appLinks && appLinks.length > 0) {
+      const appIds = appLinks.map((l: any) => l.application_id);
+      const { data: appData } = await supabase
+        .from('applications_it')
+        .select('*')
+        .in('id', appIds)
+        .eq('department_id', service.id);
+      
+      const enrichedApps = appData?.map(app => {
+        const link = appLinks.find((l: any) => l.application_id === app.id);
+        return { ...app, _linkRto: link?.rto_hours || 4, _linkRpo: link?.rpo_hours || 2 };
+      });
+      result.apps = enrichedApps || [];
+    }
+
+    // Fournisseurs
+    const { data: suppLinks } = await supabase
+      .from('processus_fournisseurs')
+      .select('fournisseur_id, rto_hours')
+      .eq('processus_id', processId);
+
+    if (suppLinks && suppLinks.length > 0) {
+      const suppIds = suppLinks.map((l: any) => l.fournisseur_id);
+      const { data: suppData } = await supabase
+        .from('fournisseurs')
+        .select('*')
+        .in('id', suppIds)
+        .eq('department_id', service.id);
+      
+      const enrichedSuppliers = suppData?.map(sup => {
+        const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
+        return { ...sup, _linkRto: link?.rto_hours || 4 };
+      });
+      result.suppliers = enrichedSuppliers || [];
+    }
+
+    return result;
+  };
+
+  // ============================================================
+  // ⭐ FIX DU BUG : loadLinkedResourcesForProcess garde le cache
+  // ============================================================
+  const loadLinkedResourcesForProcess = async (processId: string) => {
+    // Si en cache, on retourne
+    if (processResourcesCache[processId]) {
+      return processResourcesCache[processId];
+    }
+
+    // Sinon, on fetch et on met en cache
+    const result = await fetchProcessResources(processId);
+    setProcessResourcesCache(prev => ({
+      ...prev,
+      [processId]: result
+    }));
+    return result;
+  };
+
+  // ============================================================
+  // ⭐ FIX DU BUG : loadResourcesAndAssociations force le fetch
+  // ============================================================
+  const loadResourcesAndAssociations = async () => {
+    setIsLoading(true);
+    try {
+      // Charger les ressources du département
+      const { data: hrData, error: hrError } = await supabase
+        .from('ressources_humaines')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!hrError && hrData) {
+        setLoadedHR(hrData);
+        setEnrichedHR(await enrichResourcesWithProcesses(hrData, 'hr'));
+      }
+
+      const { data: equipData, error: equipError } = await supabase
+        .from('ressources_equipements')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!equipError && equipData) {
+        setLoadedEquipment(equipData);
+        setEnrichedEquipment(await enrichResourcesWithProcesses(equipData, 'equipment'));
+      }
+
+      const { data: appData, error: appError } = await supabase
+        .from('applications_it')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!appError && appData) {
+        setLoadedApps(appData);
+        setEnrichedApps(await enrichResourcesWithProcesses(appData, 'app'));
+      }
+
+      const { data: suppData, error: suppError } = await supabase
+        .from('fournisseurs')
+        .select('*')
+        .eq('department_id', service.id);
+      
+      if (!suppError && suppData) {
+        setLoadedSuppliers(suppData);
+        setEnrichedSuppliers(await enrichResourcesWithProcesses(suppData, 'supplier'));
+      }
+
+      setAllResources({
+        hr: hrData || [],
+        equipment: equipData || [],
+        apps: appData || [],
+        suppliers: suppData || []
+      });
+
+      // ⭐ ICI LE FIX : on utilise fetchProcessResources DIRECTEMENT,
+      // sans passer par le cache, puis on met à jour le cache avec les données fraîches
+      const newCache: Record<string, any> = {};
+      for (const p of processes) {
+        const freshData = await fetchProcessResources(p.id);
+        newCache[p.id] = freshData;
+      }
+      setProcessResourcesCache(newCache);
+
+    } catch (error) {
+      console.error('Erreur chargement ressources:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const enrichResourcesWithProcesses = async (resources: any[], type: string) => {
     if (!resources || resources.length === 0) return resources;
 
@@ -2319,173 +2500,12 @@ const BIAFicheDetail = ({
     });
   };
 
-  const loadLinkedResourcesForProcess = async (processId: string) => {
-    try {
-      if (processResourcesCache[processId]) {
-        return processResourcesCache[processId];
-      }
-
-      const result = {
-        hr: [] as any[],
-        equipment: [] as any[],
-        apps: [] as any[],
-        suppliers: [] as any[]
-      };
-
-      const { data: hrLinks } = await supabase
-        .from('processus_ressources_humaines')
-        .select('ressource_humaine_id')
-        .eq('processus_id', processId);
-
-      if (hrLinks && hrLinks.length > 0) {
-        const hrIds = hrLinks.map((l: any) => l.ressource_humaine_id);
-        const { data: hrData } = await supabase
-          .from('ressources_humaines')
-          .select('*')
-          .in('id', hrIds)
-          .eq('department_id', service.id);
-        result.hr = hrData || [];
-      }
-
-      const { data: equipLinks } = await supabase
-        .from('processus_equipements')
-        .select('equipement_id, rto_hours')
-        .eq('processus_id', processId);
-
-      if (equipLinks && equipLinks.length > 0) {
-        const equipIds = equipLinks.map((l: any) => l.equipement_id);
-        const { data: equipData } = await supabase
-          .from('ressources_equipements')
-          .select('*')
-          .in('id', equipIds)
-          .eq('department_id', service.id);
-        
-        const enrichedEquipment = equipData?.map(eq => {
-          const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
-          return { ...eq, _linkRto: link?.rto_hours || 4 };
-        });
-        result.equipment = enrichedEquipment || [];
-      }
-
-      const { data: appLinks } = await supabase
-        .from('processus_applications')
-        .select('application_id, rto_hours, rpo_hours')
-        .eq('processus_id', processId);
-
-      if (appLinks && appLinks.length > 0) {
-        const appIds = appLinks.map((l: any) => l.application_id);
-        const { data: appData } = await supabase
-          .from('applications_it')
-          .select('*')
-          .in('id', appIds)
-          .eq('department_id', service.id);
-        
-        const enrichedApps = appData?.map(app => {
-          const link = appLinks.find((l: any) => l.application_id === app.id);
-          return { ...app, _linkRto: link?.rto_hours || 4, _linkRpo: link?.rpo_hours || 2 };
-        });
-        result.apps = enrichedApps || [];
-      }
-
-      const { data: suppLinks } = await supabase
-        .from('processus_fournisseurs')
-        .select('fournisseur_id, rto_hours')
-        .eq('processus_id', processId);
-
-      if (suppLinks && suppLinks.length > 0) {
-        const suppIds = suppLinks.map((l: any) => l.fournisseur_id);
-        const { data: suppData } = await supabase
-          .from('fournisseurs')
-          .select('*')
-          .in('id', suppIds)
-          .eq('department_id', service.id);
-        
-        const enrichedSuppliers = suppData?.map(sup => {
-          const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
-          return { ...sup, _linkRto: link?.rto_hours || 4 };
-        });
-        result.suppliers = enrichedSuppliers || [];
-      }
-
-      setProcessResourcesCache(prev => ({
-        ...prev,
-        [processId]: result
-      }));
-
-      return result;
-    } catch (error) {
-      console.error('Erreur chargement ressources liées:', error);
-      return { hr: [], equipment: [], apps: [], suppliers: [] };
-    }
-  };
-
   const getTotalResourceCount = (process: any) => {
     const cached = processResourcesCache[process.id];
     if (!cached) {
       return (process.resources?.length || 0) + ((process as any).appsCritiques?.length || 0);
     }
     return cached.hr.length + cached.equipment.length + cached.apps.length + cached.suppliers.length;
-  };
-
-  const loadResourcesAndAssociations = async () => {
-    setIsLoading(true);
-    try {
-      const { data: hrData, error: hrError } = await supabase
-        .from('ressources_humaines')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!hrError && hrData) {
-        setLoadedHR(hrData);
-        setEnrichedHR(await enrichResourcesWithProcesses(hrData, 'hr'));
-      }
-
-      const { data: equipData, error: equipError } = await supabase
-        .from('ressources_equipements')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!equipError && equipData) {
-        setLoadedEquipment(equipData);
-        setEnrichedEquipment(await enrichResourcesWithProcesses(equipData, 'equipment'));
-      }
-
-      const { data: appData, error: appError } = await supabase
-        .from('applications_it')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!appError && appData) {
-        setLoadedApps(appData);
-        setEnrichedApps(await enrichResourcesWithProcesses(appData, 'app'));
-      }
-
-      const { data: suppData, error: suppError } = await supabase
-        .from('fournisseurs')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!suppError && suppData) {
-        setLoadedSuppliers(suppData);
-        setEnrichedSuppliers(await enrichResourcesWithProcesses(suppData, 'supplier'));
-      }
-
-      setAllResources({
-        hr: hrData || [],
-        equipment: equipData || [],
-        apps: appData || [],
-        suppliers: suppData || []
-      });
-
-      for (const p of processes) {
-        await loadLinkedResourcesForProcess(p.id);
-      }
-
-    } catch (error) {
-      console.error('Erreur chargement ressources:', error);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   useEffect(() => {
@@ -2498,8 +2518,11 @@ const BIAFicheDetail = ({
     loadResourcesAndAssociations();
   }, [service.id]);
 
+  // ⭐ FIX : refreshLinkedResources vide le cache puis recharge les données FRAÎCHES
   const refreshLinkedResources = async () => {
+    // On vide le cache pour forcer un rechargement
     setProcessResourcesCache({});
+    // On recharge en forçant le fetch direct
     await loadResourcesAndAssociations();
   };
 
