@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
@@ -36,6 +37,7 @@ export type Section =
   | "bia" 
   | "bia-synthese"
   | "bia-recovery"
+  | "cmdb"
   | "risk" 
   | "ai" 
   | "tenacia"
@@ -60,6 +62,8 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
           { id: "bia-recovery", label: "Séquence de reprise" },
         ]
       },
+      // 👈 NOUVEAU : Référentiel des ressources comme élément indépendant
+      { id: "cmdb", label: "Référentiel des ressources", icon: Database },
       { id: "risk", label: "Risques", icon: AlertTriangle },
       { id: "scenarios", label: "Scénarios", icon: GitBranch },
       { id: "plan", label: "Plans de continuité", icon: ListChecks },
@@ -101,12 +105,12 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<string[]>(['bia']);
 
-  // 👈 Déterminer l'élément actif en fonction de l'URL
   const getActiveFromPath = (path: string): Section => {
     if (path === "/" || path === "/dashboard") return "dashboard";
     if (path === "/bia") return "bia";
     if (path === "/bia/synthese") return "bia-synthese";
     if (path === "/bia/recovery") return "bia-recovery";
+    if (path === "/cmdb") return "cmdb";
     if (path === "/tenacia-voice") return "tenacia";
     if (path === "/governance") return "governance";
     if (path === "/risk") return "risk";
@@ -121,7 +125,6 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     return "dashboard";
   };
 
-  // 👈 Mettre à jour l'état actif quand l'URL change
   useEffect(() => {
     const path = location.pathname;
     const newActive = getActiveFromPath(path);
@@ -155,6 +158,9 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         case 'bia-recovery':
           navigate('/bia/recovery');
           break;
+        case 'cmdb':
+          navigate('/cmdb');
+          break;
         case 'tenacia':
           navigate('/tenacia-voice');
           break;
@@ -174,11 +180,9 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     }
   };
 
-  // 👈 Vérifier si un élément est actif en fonction de l'URL
   const isItemActive = (item: any): boolean => {
     const path = location.pathname;
     
-    // Cas des sous-éléments
     if (item.subItems) {
       return item.subItems.some((sub: any) => {
         if (sub.id === 'bia-synthese' && path === '/bia/synthese') return true;
@@ -188,7 +192,6 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
       });
     }
     
-    // Cas des éléments normaux
     switch(item.id) {
       case 'dashboard':
         return path === '/' || path === '/dashboard';
@@ -198,20 +201,13 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         return path === '/bia/synthese';
       case 'bia-recovery':
         return path === '/bia/recovery';
+      case 'cmdb':
+        return path === '/cmdb';
       case 'tenacia':
         return path === '/tenacia-voice';
       default:
         return path === `/${item.id}`;
     }
-  };
-
-  // 👈 Vérifier si un sous-élément est actif
-  const isSubItemActive = (subId: Section): boolean => {
-    const path = location.pathname;
-    if (subId === 'bia-synthese' && path === '/bia/synthese') return true;
-    if (subId === 'bia-recovery' && path === '/bia/recovery') return true;
-    if (subId === 'bia' && path === '/bia') return true;
-    return false;
   };
 
   return (
@@ -262,8 +258,6 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
                 const Icon = it.icon;
                 const hasSubItems = it.subItems && it.subItems.length > 0;
                 const isExpanded = expandedItems.includes(it.id);
-                
-                // 👈 Utiliser la fonction isItemActive
                 const itemActive = isItemActive(it);
 
                 return (
@@ -308,12 +302,10 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
                       )}
                     </button>
 
-                    {/* SOUS-MENU */}
                     {hasSubItems && isExpanded && (
                       <div className="ml-6 mt-0.5 space-y-0.5">
                         {it.subItems?.map((sub) => {
-                          // 👈 Utiliser la fonction isSubItemActive
-                          const subActive = isSubItemActive(sub.id);
+                          const subActive = isItemActive({ id: sub.id });
                           
                           return (
                             <button

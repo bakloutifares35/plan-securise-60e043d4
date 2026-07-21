@@ -17,13 +17,36 @@ import {
   Eye,
   X,
   Save,
-  Edit3
+  Edit3,
+  ChevronRight,
+  Network,
+  Link2,
+  Unlink,
+  Activity,
+  Zap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 type Pos = { x: number; y: number };
+
+// Couleurs Resillia
+const COLORS = {
+  navy: "#172030",
+  cream: "#F8F6F2",
+  forest: "#2A5141",
+  border: "#E8E4DC",
+  text: "#172030",
+  textMuted: "#6B7280",
+};
+
+const CRITICALITY_COLORS = {
+  Critique: "#DC2626",
+  Majeur: "#F97316",
+  Modéré: "#EAB308",
+  Mineur: "#22C55E",
+};
 
 export const DependencyMap = () => {
   const { processes, setProcesses } = useBia();
@@ -76,31 +99,21 @@ export const DependencyMap = () => {
   }, [processes]);
 
   const edgeColor = (criticality: Criticality) => {
-    switch (criticality) {
-      case "Critique": return "#ef4444";  // ROUGE
-      case "Majeur": return "#f97316";    // ORANGE
-      case "Modéré": return "#eab308";    // JAUNE
-      default: return "#94a3b8";          // GRIS
-    }
+    return CRITICALITY_COLORS[criticality] || "#94A3B8";
   };
 
-  // ✅ COULEURS DES BULLES - C'est ici qu'on définit les vraies couleurs
   const getNodeBgColor = (criticality: Criticality) => {
-    switch (criticality) {
-      case "Critique": return "#ef4444";  // ROUGE
-      case "Majeur": return "#f97316";    // ORANGE
-      case "Modéré": return "#eab308";    // JAUNE
-      default: return "#22c55e";          // VERT
-    }
+    return CRITICALITY_COLORS[criticality] || "#22C55E";
   };
 
   const getNodeShadowColor = (criticality: Criticality) => {
-    switch (criticality) {
-      case "Critique": return "rgba(239,68,68,0.5)";
-      case "Majeur": return "rgba(249,115,22,0.5)";
-      case "Modéré": return "rgba(234,179,8,0.5)";
-      default: return "rgba(34,197,94,0.5)";
-    }
+    const colors = {
+      Critique: "rgba(220,38,38,0.4)",
+      Majeur: "rgba(249,115,22,0.4)",
+      Modéré: "rgba(234,179,8,0.4)",
+      Mineur: "rgba(34,197,94,0.4)",
+    };
+    return colors[criticality] || "rgba(34,197,94,0.3)";
   };
 
   const handleNodeClick = (process: any) => {
@@ -126,7 +139,7 @@ export const DependencyMap = () => {
       );
       setProcesses(updatedProcesses);
       setSelectedProcess({ ...selectedProcess, dependsOn: editedDependsOn });
-      toast.success("Dépendances mises à jour");
+      toast.success("✅ Dépendances mises à jour");
       setIsEditing(false);
     }
   };
@@ -146,48 +159,119 @@ export const DependencyMap = () => {
   return (
     <div className="space-y-6">
       {/* En-tête */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
-            <GitBranch className="h-7 w-7 text-primary" />
+          <h1 className="text-2xl md:text-3xl font-bold" style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}>
+            <Network className="h-7 w-7 inline-block mr-2" style={{ color: COLORS.forest }} />
             Carte des dépendances
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm mt-1" style={{ color: COLORS.textMuted }}>
             Visualisation interactive des dépendances entre processus métier
           </p>
         </div>
-        <div className="flex gap-2">
-          <Badge variant="outline" className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#ef4444" }} />Critique</Badge>
-          <Badge variant="outline" className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#f97316" }} />Majeur</Badge>
-          <Badge variant="outline" className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#eab308" }} />Modéré</Badge>
-          <Badge variant="outline" className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#22c55e" }} />Mineur</Badge>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(CRITICALITY_COLORS).map(([label, color]) => (
+            <Badge key={label} variant="outline" className="flex items-center gap-1.5 border-0" style={{ backgroundColor: `${color}15`, color: color }}>
+              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+              {label}
+            </Badge>
+          ))}
         </div>
       </div>
 
-      {/* Statistiques */}
-      <div className="grid gap-3 md:grid-cols-4">
-        <Card><CardContent className="p-3 flex items-center justify-between"><div><p className="text-xs text-muted-foreground">Processus</p><p className="text-xl font-bold">{processes.length}</p></div><GitBranch className="h-5 w-5 text-primary opacity-70" /></CardContent></Card>
-        <Card><CardContent className="p-3 flex items-center justify-between"><div><p className="text-xs text-muted-foreground">Dépendances</p><p className="text-xl font-bold">{edges.length}</p></div><AlertTriangle className="h-5 w-5 text-orange-500 opacity-70" /></CardContent></Card>
-        <Card><CardContent className="p-3 flex items-center justify-between"><div><p className="text-xs text-muted-foreground">Processus critiques</p><p className="text-xl font-bold text-red-500">{processes.filter(p => computeMaxScore(p.impacts) >= 4).length}</p></div><ShieldAlert className="h-5 w-5 text-red-500 opacity-70" /></CardContent></Card>
-        <Card><CardContent className="p-3 flex items-center justify-between"><div><p className="text-xs text-muted-foreground">Sans dépendances</p><p className="text-xl font-bold">{processes.filter(p => !p.dependsOn || p.dependsOn.length === 0).length}</p></div><Eye className="h-5 w-5 text-green-500 opacity-70" /></CardContent></Card>
+      {/* Statistiques - Style Resillia */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="border-0 shadow-sm" style={{ backgroundColor: COLORS.cream }}>
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Processus</p>
+              <p className="text-2xl font-bold" style={{ color: COLORS.navy }}>{processes.length}</p>
+            </div>
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${COLORS.forest}15` }}>
+              <GitBranch className="h-5 w-5" style={{ color: COLORS.forest }} />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-0 shadow-sm" style={{ backgroundColor: COLORS.cream }}>
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Dépendances</p>
+              <p className="text-2xl font-bold" style={{ color: COLORS.navy }}>{edges.length}</p>
+            </div>
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#FEF3C7" }}>
+              <Link2 className="h-5 w-5" style={{ color: "#D97706" }} />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-0 shadow-sm" style={{ backgroundColor: COLORS.cream }}>
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Critiques</p>
+              <p className="text-2xl font-bold" style={{ color: "#DC2626" }}>
+                {processes.filter(p => computeMaxScore(p.impacts) >= 4).length}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#FEE2E2" }}>
+              <ShieldAlert className="h-5 w-5" style={{ color: "#DC2626" }} />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-0 shadow-sm" style={{ backgroundColor: COLORS.cream }}>
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Sans dépendances</p>
+              <p className="text-2xl font-bold" style={{ color: COLORS.forest }}>
+                {processes.filter(p => !p.dependsOn || p.dependsOn.length === 0).length}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#D1FAE5" }}>
+              <Unlink className="h-5 w-5" style={{ color: "#059669" }} />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Graphe principal */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-lg">Visualisation des dépendances</CardTitle></CardHeader>
-        <CardContent>
-          <div className="w-full overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 rounded-xl border">
+      <Card className="border-0 shadow-sm overflow-hidden" style={{ backgroundColor: COLORS.cream }}>
+        <CardHeader className="pb-2 border-b" style={{ borderColor: COLORS.border }}>
+          <CardTitle className="text-base font-semibold flex items-center gap-2" style={{ color: COLORS.navy }}>
+            <Activity className="h-5 w-5" style={{ color: COLORS.forest }} />
+            Visualisation des dépendances
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="w-full overflow-auto bg-gradient-to-br from-white to-[#FAFAF9] rounded-b-xl">
             <svg viewBox="0 0 800 560" className="w-full h-[560px] cursor-pointer">
               <defs>
-                <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" /></marker>
-                <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f97316" /></marker>
-                <marker id="arrow-yellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#eab308" /></marker>
-                <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" /></marker>
+                <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#DC2626" />
+                </marker>
+                <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#F97316" />
+                </marker>
+                <marker id="arrow-yellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#EAB308" />
+                </marker>
+                <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94A3B8" />
+                </marker>
+                
+                {/* Glow filter */}
+                <filter id="glow">
+                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
               </defs>
               
               <rect x="0" y="0" width="800" height="560" fill="transparent" />
               
-              {/* Lignes de dépendances colorées */}
+              {/* Lignes de dépendances */}
               {edges.map((e, i) => {
                 const a = positions[e.from];
                 const b = positions[e.to];
@@ -200,18 +284,33 @@ export const DependencyMap = () => {
                 else if (criticality === "Majeur") marker = "url(#arrow-orange)";
                 else if (criticality === "Modéré") marker = "url(#arrow-yellow)";
                 
+                const color = edgeColor(criticality);
+                
                 return (
-                  <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                    stroke={edgeColor(criticality)} 
-                    strokeWidth={criticality === "Critique" ? 3 : 2} 
-                    strokeDasharray={criticality === "Critique" ? "none" : "4 2"}
-                    markerEnd={marker} 
-                    opacity={hoveredProcess === e.from || hoveredProcess === e.to ? 1 : 0.6}
-                  />
+                  <g key={i}>
+                    {/* Ombre portée pour la ligne */}
+                    <line 
+                      x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                      stroke={color} 
+                      strokeWidth={criticality === "Critique" ? 3.5 : 2.5} 
+                      strokeDasharray={criticality === "Critique" ? "none" : "6 3"}
+                      opacity={0.15}
+                      strokeLinecap="round"
+                    />
+                    <line 
+                      x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                      stroke={color} 
+                      strokeWidth={criticality === "Critique" ? 3 : 2} 
+                      strokeDasharray={criticality === "Critique" ? "none" : "6 3"}
+                      markerEnd={marker} 
+                      opacity={hoveredProcess === e.from || hoveredProcess === e.to ? 1 : 0.7}
+                      strokeLinecap="round"
+                    />
+                  </g>
                 );
               })}
               
-              {/* ✅ NŒUDS AVEC COULEURS */}
+              {/* Nœuds */}
               {processes.map((p) => {
                 const pos = positions[p.id];
                 if (!pos) return null;
@@ -225,35 +324,89 @@ export const DependencyMap = () => {
                 const bgColor = getNodeBgColor(criticality);
                 const shadowColor = getNodeShadowColor(criticality);
                 
-                // Déterminer la couleur de fond pour le cercle
-                let circleColor = "#22c55e"; // vert par défaut (Mineur)
-                if (criticality === "Critique") circleColor = "#ef4444";
-                else if (criticality === "Majeur") circleColor = "#f97316";
-                else if (criticality === "Modéré") circleColor = "#eab308";
+                const circleColor = CRITICALITY_COLORS[criticality] || "#22C55E";
                 
                 return (
-                  <g key={p.id} onClick={() => handleNodeClick(p)} onMouseEnter={() => setHoveredProcess(p.id)} onMouseLeave={() => setHoveredProcess(null)} style={{ cursor: "pointer" }}>
+                  <g 
+                    key={p.id} 
+                    onClick={() => handleNodeClick(p)} 
+                    onMouseEnter={() => setHoveredProcess(p.id)} 
+                    onMouseLeave={() => setHoveredProcess(null)} 
+                    style={{ cursor: "pointer" }}
+                  >
                     {/* Glow extérieur */}
-                    <circle cx={pos.x} cy={pos.y} r={isHovered ? 38 : 32} fill={circleColor} opacity={0.15} />
-                    {/* Cercle principal COLORÉ */}
-                    <circle cx={pos.x} cy={pos.y} r={isHovered ? 32 : 28} fill={circleColor} stroke="white" strokeWidth={isSelected ? 3 : 2} style={{ filter: isHovered ? `drop-shadow(0 0 8px ${shadowColor})` : "none" }} />
+                    <circle 
+                      cx={pos.x} cy={pos.y} 
+                      r={isHovered ? 42 : 36} 
+                      fill={circleColor} 
+                      opacity={isHovered ? 0.2 : 0.1} 
+                      filter={isHovered ? "url(#glow)" : "none"}
+                    />
+                    
+                    {/* Cercle principal */}
+                    <circle 
+                      cx={pos.x} cy={pos.y} 
+                      r={isHovered ? 34 : 28} 
+                      fill={circleColor} 
+                      stroke="white" 
+                      strokeWidth={isSelected ? 3.5 : 2.5}
+                      style={{ 
+                        filter: isHovered ? `drop-shadow(0 0 12px ${shadowColor})` : "none",
+                        transition: "all 0.2s ease-in-out"
+                      }} 
+                    />
+                    
                     {/* Initiales */}
-                    <text x={pos.x} y={pos.y + 4} textAnchor="middle" className="fill-white text-xs font-bold pointer-events-none">
+                    <text 
+                      x={pos.x} y={pos.y + (isHovered ? 5 : 4)} 
+                      textAnchor="middle" 
+                      className="fill-white font-bold pointer-events-none"
+                      style={{ fontSize: isHovered ? "13px" : "11px", fontFamily: "'Inter', sans-serif" }}
+                    >
                       {p.name.substring(0, 2).toUpperCase()}
                     </text>
                     
-                    {/* Badge du nombre de dépendances */}
+                    {/* Badge de dépendances */}
                     {totalDeps > 0 && (
-                      <>
-                        <circle cx={pos.x + 22} cy={pos.y - 22} r={10} fill="white" stroke={circleColor} strokeWidth={2} />
-                        <text x={pos.x + 22} y={pos.y - 18} textAnchor="middle" className="fill-gray-800 text-[9px] font-bold pointer-events-none">
+                      <g>
+                        <circle 
+                          cx={pos.x + 24} cy={pos.y - 24} 
+                          r={isHovered ? 12 : 10} 
+                          fill="white" 
+                          stroke={circleColor} 
+                          strokeWidth={2.5}
+                          style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.1))" }}
+                        />
+                        <text 
+                          x={pos.x + 24} y={pos.y - 20} 
+                          textAnchor="middle" 
+                          className="fill-current font-bold pointer-events-none"
+                          style={{ 
+                            fontSize: isHovered ? "10px" : "9px", 
+                            color: COLORS.navy,
+                            fontFamily: "'Inter', sans-serif"
+                          }}
+                        >
                           {totalDeps}
                         </text>
-                      </>
+                      </g>
                     )}
                     
                     {/* Nom du processus */}
-                    <text x={pos.x} y={pos.y + 45} textAnchor="middle" className={`fill-foreground text-[10px] font-medium ${isHovered ? "opacity-100" : "opacity-80"}`}>
+                    <text 
+                      x={pos.x} y={pos.y + (isHovered ? 52 : 45)} 
+                      textAnchor="middle" 
+                      className="pointer-events-none font-medium"
+                      style={{ 
+                        fontSize: isHovered ? "11px" : "10px", 
+                        color: isHovered ? COLORS.navy : COLORS.textMuted,
+                        fontFamily: "'Inter', sans-serif",
+                        transition: "all 0.2s ease-in-out",
+                        maxWidth: "120px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis"
+                      }}
+                    >
                       {p.name.length > 22 ? p.name.slice(0, 19) + "…" : p.name}
                     </text>
                   </g>
@@ -262,132 +415,224 @@ export const DependencyMap = () => {
             </svg>
           </div>
           
-          {/* Légende */}
-          <div className="flex flex-wrap gap-4 mt-4 text-xs justify-center">
-            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#ef4444" }} />Critique (score ≥ 4)</div>
-            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#f97316" }} />Majeur (score 3-4)</div>
-            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#eab308" }} />Modéré (score 2-3)</div>
-            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#22c55e" }} />Mineur (score {"<"} 2)</div>
-            <div className="flex items-center gap-1 ml-4"><div className="w-6 h-0.5" style={{ backgroundColor: "#ef4444" }} />Dépendance critique</div>
-            <div className="flex items-center gap-1"><div className="w-6 h-0.5 bg-gray-400 border-t-2 border-dashed border-gray-400" />Dépendance standard</div>
-          </div>
-          
-          {/* Explication des badges */}
-          <div className="text-center mt-3 text-xs text-muted-foreground">
-            🔵 Le chiffre sur chaque bulle indique le nombre total de dépendances (entrantes + sortantes)
+          {/* Légende améliorée */}
+          <div className="flex flex-wrap items-center gap-4 px-6 py-4 border-t" style={{ borderColor: COLORS.border }}>
+            <div className="flex items-center gap-3 flex-wrap">
+              {Object.entries(CRITICALITY_COLORS).map(([label, color]) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="text-xs" style={{ color: COLORS.textMuted }}>{label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="w-px h-5" style={{ backgroundColor: COLORS.border }} />
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-0.5" style={{ backgroundColor: "#DC2626" }} />
+                <span className="text-xs" style={{ color: COLORS.textMuted }}>Critique</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-0.5 border-t-2 border-dashed" style={{ borderColor: "#94A3B8" }} />
+                <span className="text-xs" style={{ color: COLORS.textMuted }}>Standard</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 ml-auto">
+              <div className="h-5 w-5 rounded-full bg-white border-2 flex items-center justify-center" style={{ borderColor: COLORS.border }}>
+                <span className="text-[9px] font-bold" style={{ color: COLORS.navy }}>3</span>
+              </div>
+              <span className="text-xs" style={{ color: COLORS.textMuted }}>Nombre de dépendances</span>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Panel latéral pour MODIFIER les dépendances */}
+      {/* Panel latéral pour MODIFIER les dépendances - Style Resillia */}
       <Sheet open={!!selectedProcess} onOpenChange={() => setSelectedProcess(null)}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto" style={{ backgroundColor: "white" }}>
           {selectedProcess && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <SheetHeader>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`h-8 w-8 rounded-full flex items-center justify-center`} style={{ backgroundColor: getNodeBgColor(scoreToCriticality(computeMaxScore(selectedProcess.impacts))) }}>
-                      <Building2 className="h-4 w-4 text-white" />
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="h-10 w-10 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: getNodeBgColor(scoreToCriticality(computeMaxScore(selectedProcess.impacts))) }}
+                    >
+                      <Building2 className="h-5 w-5 text-white" />
                     </div>
-                    <SheetTitle>{selectedProcess.name}</SheetTitle>
+                    <div>
+                      <SheetTitle className="text-lg" style={{ color: COLORS.navy }}>{selectedProcess.name}</SheetTitle>
+                      <SheetDescription className="text-xs" style={{ color: COLORS.textMuted }}>
+                        {selectedProcess.department} · {selectedProcess.owner}
+                      </SheetDescription>
+                    </div>
                   </div>
                   {!isEditing ? (
-                    <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                      <Edit3 className="h-3 w-3 mr-1" /> Modifier
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setIsEditing(true)}
+                      className="border-[#E8E4DC] hover:bg-[#F8F6F2]"
+                    >
+                      <Edit3 className="h-3.5 w-3.5 mr-1.5" style={{ color: COLORS.forest }} />
+                      <span style={{ color: COLORS.text }}>Modifier</span>
                     </Button>
                   ) : (
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>
-                        <X className="h-3 w-3 mr-1" /> Annuler
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setIsEditing(false)}
+                        className="border-[#E8E4DC] hover:bg-[#F8F6F2]"
+                      >
+                        <X className="h-3.5 w-3.5 mr-1.5" />
+                        Annuler
                       </Button>
-                      <Button size="sm" onClick={saveDependencies}>
-                        <Save className="h-3 w-3 mr-1" /> Sauvegarder
+                      <Button 
+                        size="sm" 
+                        onClick={saveDependencies}
+                        style={{ backgroundColor: COLORS.forest, color: "white" }}
+                        className="hover:bg-[#1a3329]"
+                      >
+                        <Save className="h-3.5 w-3.5 mr-1.5" />
+                        Sauvegarder
                       </Button>
                     </div>
                   )}
                 </div>
-                <SheetDescription>{selectedProcess.department} · {selectedProcess.owner}</SheetDescription>
               </SheetHeader>
 
               {/* Score de criticité */}
-              <div className="bg-muted/30 rounded-lg p-3">
+              <div className="rounded-lg p-4" style={{ backgroundColor: COLORS.cream }}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-muted-foreground">Niveau de criticité</span>
+                  <span className="text-xs font-medium" style={{ color: COLORS.textMuted }}>Niveau de criticité</span>
                   <Badge className={criticalityColor(scoreToCriticality(computeMaxScore(selectedProcess.impacts)))}>
                     {scoreToCriticality(computeMaxScore(selectedProcess.impacts))}
                   </Badge>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-primary transition-all" style={{ width: `${(computeMaxScore(selectedProcess.impacts) / 5) * 100}%` }} />
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ backgroundColor: COLORS.border }}>
+                    <div 
+                      className="h-full rounded-full transition-all" 
+                      style={{ 
+                        width: `${(computeMaxScore(selectedProcess.impacts) / 5) * 100}%`,
+                        backgroundColor: COLORS.forest
+                      }} 
+                    />
                   </div>
-                  <span className="text-sm font-medium">{computeMaxScore(selectedProcess.impacts)}/5</span>
+                  <span className="text-sm font-bold" style={{ color: COLORS.navy }}>
+                    {computeMaxScore(selectedProcess.impacts)}/5
+                  </span>
                 </div>
               </div>
 
               {/* Métriques BCM */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-muted/20 rounded-lg p-2 text-center"><Clock className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">RTO</p><p className="text-lg font-bold">{selectedProcess.rto}h</p></div>
-                <div className="bg-muted/20 rounded-lg p-2 text-center"><Database className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">RPO</p><p className="text-lg font-bold">{selectedProcess.rpo}h</p></div>
-                <div className="bg-muted/20 rounded-lg p-2 text-center"><AlertTriangle className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">MTPD</p><p className="text-lg font-bold">{selectedProcess.mtpd}h</p></div>
-                <div className="bg-muted/20 rounded-lg p-2 text-center"><TrendingUp className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">MBCO</p><p className="text-lg font-bold">{selectedProcess.mbco}%</p></div>
+                <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
+                  <Clock className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
+                  <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>RTO</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.rto}h</p>
+                </div>
+                <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
+                  <Database className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
+                  <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>RPO</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.rpo}h</p>
+                </div>
+                <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
+                  <AlertTriangle className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
+                  <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>MTPD</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.mtpd}h</p>
+                </div>
+                <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
+                  <TrendingUp className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
+                  <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>MBCO</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.mbco}%</p>
+                </div>
               </div>
 
               {/* Édition des dépendances */}
-              <div className="space-y-2">
-                <h4 className="text-sm font-semibold flex items-center gap-2">
-                  <GitBranch className="h-4 w-4" />
-                  Dépendances ({isEditing ? "cochez pour modifier" : selectedProcess.dependsOn?.length || 0})
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2" style={{ color: COLORS.navy }}>
+                  <GitBranch className="h-4 w-4" style={{ color: COLORS.forest }} />
+                  Dépendances 
+                  <Badge variant="outline" className="text-[10px]" style={{ borderColor: COLORS.border }}>
+                    {selectedProcess.dependsOn?.length || 0}
+                  </Badge>
+                  {isEditing && (
+                    <span className="text-[10px] font-normal" style={{ color: COLORS.textMuted }}>(cochez pour modifier)</span>
+                  )}
                 </h4>
                 
                 {isEditing ? (
-                  <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2">
+                  <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-lg p-2" style={{ borderColor: COLORS.border }}>
                     {processes.filter(p => p.id !== selectedProcess.id).map((p) => {
                       const isChecked = editedDependsOn.includes(p.id);
                       const procCriticality = scoreToCriticality(computeMaxScore(p.impacts));
-                      const critColor = procCriticality === "Critique" ? "text-red-600" : procCriticality === "Majeur" ? "text-orange-600" : procCriticality === "Modéré" ? "text-yellow-600" : "text-green-600";
+                      const critColor = procCriticality === "Critique" ? "#DC2626" : procCriticality === "Majeur" ? "#F97316" : procCriticality === "Modéré" ? "#EAB308" : "#22C55E";
                       
                       return (
-                        <label key={p.id} className="flex items-center gap-3 p-2 rounded border border-border hover:bg-secondary/30 cursor-pointer">
-                          <Checkbox checked={isChecked} onCheckedChange={(c) => {
-                            if (c) setEditedDependsOn([...editedDependsOn, p.id]);
-                            else setEditedDependsOn(editedDependsOn.filter(id => id !== p.id));
-                          }} />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{p.name}</p>
-                            <p className="text-xs text-muted-foreground">{p.department}</p>
+                        <label 
+                          key={p.id} 
+                          className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors hover:bg-[#F8F6F2]"
+                        >
+                          <Checkbox 
+                            checked={isChecked} 
+                            onCheckedChange={(c) => {
+                              if (c) setEditedDependsOn([...editedDependsOn, p.id]);
+                              else setEditedDependsOn(editedDependsOn.filter(id => id !== p.id));
+                            }} 
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate" style={{ color: COLORS.navy }}>{p.name}</p>
+                            <p className="text-xs truncate" style={{ color: COLORS.textMuted }}>{p.department}</p>
                           </div>
-                          <Badge variant="outline" className={cn("text-xs", critColor)}>{procCriticality}</Badge>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: critColor }} />
+                            <span className="text-xs font-medium" style={{ color: critColor }}>{procCriticality}</span>
+                          </div>
                         </label>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {selectedProcess.dependsOn && selectedProcess.dependsOn.length > 0 ? (
                       selectedProcess.dependsOn.map((depId: string) => {
                         const depProcess = processes.find(p => p.id === depId);
                         return depProcess ? (
-                          <div key={depId} className="flex items-center justify-between p-2 bg-muted/20 rounded-lg">
-                            <span className="text-sm">{depProcess.name}</span>
-                            <Badge variant="outline" className="text-xs">
+                          <div 
+                            key={depId} 
+                            className="flex items-center justify-between p-2.5 rounded-lg"
+                            style={{ backgroundColor: COLORS.cream }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-2 h-2 rounded-full"
+                                style={{ backgroundColor: getNodeBgColor(scoreToCriticality(computeMaxScore(depProcess.impacts))) }}
+                              />
+                              <span className="text-sm" style={{ color: COLORS.navy }}>{depProcess.name}</span>
+                            </div>
+                            <Badge variant="outline" className="text-[10px]" style={{ borderColor: COLORS.border }}>
                               {scoreToCriticality(computeMaxScore(depProcess.impacts))}
                             </Badge>
                           </div>
                         ) : null;
                       })
                     ) : (
-                      <p className="text-sm text-muted-foreground italic">Aucune dépendance</p>
+                      <p className="text-sm italic py-3 text-center" style={{ color: COLORS.textMuted }}>
+                        Aucune dépendance
+                      </p>
                     )}
                   </div>
                 )}
               </div>
 
               {/* Description */}
-              <div className="space-y-2 pt-2 border-t">
-                <h4 className="text-sm font-semibold">Description</h4>
-                <p className="text-sm text-muted-foreground">{selectedProcess.description || "Aucune description"}</p>
+              <div className="space-y-2 pt-3 border-t" style={{ borderColor: COLORS.border }}>
+                <h4 className="text-sm font-semibold" style={{ color: COLORS.navy }}>Description</h4>
+                <p className="text-sm" style={{ color: COLORS.textMuted }}>
+                  {selectedProcess.description || "Aucune description renseignée"}
+                </p>
               </div>
             </div>
           )}
@@ -396,3 +641,5 @@ export const DependencyMap = () => {
     </div>
   );
 };
+
+export default DependencyMap;

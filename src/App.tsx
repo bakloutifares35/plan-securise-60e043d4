@@ -35,10 +35,13 @@ function App() {
                         {/* Routes BIA */}
                         <Route path="/bia" element={<Index />} />
                         <Route path="/bia/synthese" element={<Index />} />
-                        <Route path="/bia/recovery" element={<Index />} /> {/* 👈 AJOUTER CETTE LIGNE */}
+                        <Route path="/bia/recovery" element={<Index />} />
                         <Route path="/tenacia-voice" element={<Index />} />
                         
-                        {/* ✅ TOUTES LES AUTRES ROUTES EXISTANTES */}
+                        {/* Route Référentiel des ressources (CMDB) */}
+                        <Route path="/cmdb" element={<Index />} />
+                        
+                        {/* TOUTES LES AUTRES ROUTES EXISTANTES */}
                         <Route path="/dashboard" element={<Index />} />
                         <Route path="/governance" element={<Index />} />
                         <Route path="/risk" element={<Index />} />

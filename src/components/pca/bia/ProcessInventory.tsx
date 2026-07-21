@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Plus, Pencil, Trash2, Search, 
@@ -35,18 +35,12 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { BiaWizard } from "./BiaWizard";
 import { TableauDeMonteeEnCharge } from "./TableauDeMonteeEnCharge";
+import ContournementsDeCriseIA from './ContournementsDeCriseIA';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 
 const AVAILABILITY_PERIODS = [
   { id: "P0_4H", label: "0-4h", short: "0-4", color: "bg-emerald-100" },
@@ -209,21 +203,609 @@ const edgeColor = (criticality: Criticality) => {
 };
 
 // ============================================================
-// COMPOSANT - Dialogue de liaison de ressources
+// COMPOSANT - Dialogue de sélection depuis le CMDB (AGGRANDI ET MULTI-SÉLECTION)
 // ============================================================
-const LinkResourceDialog = ({ 
-  open, 
-  onOpenChange, 
-  process, 
+const SelectFromCMDBDialog = ({
+  open,
+  onOpenChange,
+  resourceType,
   allResources,
+  addedResourceIds,
+  onSelect,
+  onAddToCMDB,
+  title,
+  description,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  resourceType: string;
+  allResources: any[];
+  addedResourceIds: string[];
+  onSelect: (resourceId: string[]) => void;
+  onAddToCMDB: () => void;
+  title: string;
+  description: string;
+}) => {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const availableResources = allResources.filter(r => !addedResourceIds.includes(r.id));
+
+  const filteredResources = availableResources.filter(r =>
+    r.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.role?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.service?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.email?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Réinitialiser la sélection quand le dialogue s'ouvre
+  useEffect(() => {
+    if (open) {
+      setSelectedIds([]);
+    }
+  }, [open]);
+
+  const getResourceIcon = () => {
+    switch(resourceType) {
+      case 'HR': return <Users className="h-5 w-5 text-blue-600" />;
+      case 'Equipement': return <Monitor className="h-5 w-5 text-yellow-600" />;
+      case 'App': return <Server className="h-5 w-5 text-purple-600" />;
+      case 'Fournisseur': return <Handshake className="h-5 w-5 text-orange-600" />;
+      default: return <LinkIcon className="h-5 w-5 text-gray-600" />;
+    }
+  };
+
+  const getResourceLabel = () => {
+    switch(resourceType) {
+      case 'HR': return 'collaborateur';
+      case 'Equipement': return 'équipement';
+      case 'App': return 'application';
+      case 'Fournisseur': return 'prestataire';
+      default: return 'ressource';
+    }
+  };
+
+  const getResourcePlural = () => {
+    switch(resourceType) {
+      case 'HR': return 'collaborateurs';
+      case 'Equipement': return 'équipements';
+      case 'App': return 'applications';
+      case 'Fournisseur': return 'prestataires';
+      default: return 'ressources';
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredResources.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredResources.map(r => r.id));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelect = () => {
+    if (selectedIds.length === 0) {
+      toast({ title: "Erreur", description: "Veuillez sélectionner au moins une ressource", variant: "destructive" });
+      return;
+    }
+    onSelect(selectedIds);
+    setSelectedIds([]);
+    setSearchQuery("");
+    onOpenChange(false);
+  };
+
+  const getResourceDetails = (r: any) => {
+    switch(resourceType) {
+      case 'HR': return r.role || "—";
+      case 'Equipement': return r.type || "—";
+      case 'App': return r.service || r.type || "—";
+      case 'Fournisseur': return r.service || "—";
+      default: return "—";
+    }
+  };
+
+  const getResourceExtra = (r: any) => {
+    switch(resourceType) {
+      case 'HR': return r.email || "—";
+      case 'Equipement': return `Qté: ${r.quantity || 1}`;
+      case 'App': return r.remplacablepar || "—";
+      case 'Fournisseur': return r.contact || "—";
+      default: return "—";
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-[#172030] text-xl">
+            {getResourceIcon()}
+            {title}
+          </DialogTitle>
+          <DialogDescription className="text-[#172030]/60">
+            {description}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder={`Rechercher un(e) ${getResourceLabel()}...`}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 border-[#E8E4DC]"
+            />
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-[#172030]/50">
+            <div className="flex items-center gap-3">
+              <span>{filteredResources.length} {getResourceLabel()}{filteredResources.length > 1 ? 's' : ''} disponible{filteredResources.length > 1 ? 's' : ''}</span>
+              {allResources.length - availableResources.length > 0 && (
+                <span className="text-[#172030]/30">
+                  ({allResources.length - availableResources.length} déjà ajouté{allResources.length - availableResources.length > 1 ? 's' : ''})
+                </span>
+              )}
+              {selectedIds.length > 0 && (
+                <Badge className="bg-[#2A5141] text-white text-[10px]">
+                  {selectedIds.length} sélectionné{selectedIds.length > 1 ? 's' : ''}
+                </Badge>
+              )}
+            </div>
+            {filteredResources.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-[10px] text-[#2A5141] hover:bg-[#F8F6F2]"
+                onClick={toggleSelectAll}
+              >
+                {selectedIds.length === filteredResources.length ? "Désélectionner tout" : "Tout sélectionner"}
+              </Button>
+            )}
+          </div>
+
+          <div className="border rounded-lg overflow-hidden max-h-[320px] overflow-y-auto">
+            {filteredResources.length === 0 ? (
+              <div className="p-6 text-center space-y-3">
+                {availableResources.length === 0 ? (
+                  <>
+                    <p className="text-sm text-[#172030]/60">
+                      Tous les {getResourceLabel()}s du CMDB sont déjà ajoutés à la fiche BIA
+                    </p>
+                    <p className="text-xs text-[#172030]/40">
+                      Vous pouvez en créer un(e) nouveau/nouvelle dans le CMDB
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-[#172030]/60">
+                    Aucun(e) {getResourceLabel()} trouvé(e)
+                  </p>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[#2A5141] border-[#2A5141] hover:bg-[#F8F6F2]"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onAddToCMDB();
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Créer un(e) {getResourceLabel()} dans le CMDB
+                </Button>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+                    <TableHead className="w-10 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.length === filteredResources.length && filteredResources.length > 0}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4 rounded border-gray-300 text-[#2A5141] focus:ring-[#2A5141] cursor-pointer"
+                      />
+                    </TableHead>
+                    <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Nom</TableHead>
+                    <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Détail</TableHead>
+                    <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Informations</TableHead>
+                    <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Statut</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredResources.map((r) => {
+                    const isSelected = selectedIds.includes(r.id);
+                    const isAlreadyAdded = addedResourceIds.includes(r.id);
+                    
+                    return (
+                      <TableRow
+                        key={r.id}
+                        className={cn(
+                          "cursor-pointer hover:bg-[#F8F6F2] transition-colors",
+                          isSelected && "bg-[#F0F5F0]",
+                          isAlreadyAdded && "opacity-50"
+                        )}
+                        onClick={() => !isAlreadyAdded && toggleSelect(r.id)}
+                      >
+                        <TableCell className="py-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => !isAlreadyAdded && toggleSelect(r.id)}
+                            disabled={isAlreadyAdded}
+                            className={cn(
+                              "h-4 w-4 rounded border-gray-300 text-[#2A5141] focus:ring-[#2A5141] cursor-pointer",
+                              isAlreadyAdded && "opacity-30 cursor-not-allowed"
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <div className="flex items-center gap-2">
+                            {getResourceIcon()}
+                            <span className="font-medium text-sm text-[#172030]">{r.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-2 text-sm text-[#172030]/60">
+                          {getResourceDetails(r)}
+                        </TableCell>
+                        <TableCell className="py-2 text-sm text-[#172030]/50">
+                          {getResourceExtra(r)}
+                        </TableCell>
+                        <TableCell className="py-2 text-center">
+                          {isAlreadyAdded ? (
+                            <Badge className="bg-gray-100 text-gray-500 border-gray-200 text-[10px]">
+                              Déjà ajouté
+                            </Badge>
+                          ) : isSelected ? (
+                            <Badge className="bg-[#2A5141] text-white text-[10px]">
+                              Sélectionné
+                            </Badge>
+                          ) : (
+                            <span className="text-[10px] text-[#172030]/30">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+
+          {filteredResources.length > 0 && (
+            <div className="flex justify-between items-center pt-2 border-t border-[#E8E4DC]">
+              <Button
+                variant="link"
+                size="sm"
+                className="text-[#2A5141]"
+                onClick={() => {
+                  onOpenChange(false);
+                  onAddToCMDB();
+                }}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Créer un(e) {getResourceLabel()} dans le CMDB
+              </Button>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[#172030]/40">
+                  {selectedIds.length} ressource{selectedIds.length > 1 ? 's' : ''} sélectionnée{selectedIds.length > 1 ? 's' : ''}
+                </span>
+                <Button
+                  onClick={handleSelect}
+                  disabled={selectedIds.length === 0}
+                  className="bg-[#2A5141] hover:bg-[#1a3329] text-white"
+                >
+                  Ajouter {selectedIds.length} {getResourceLabel()}{selectedIds.length > 1 ? 's' : ''} à la fiche BIA
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 border-t pt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ============================================================
+// COMPOSANT - Dialogue d'ajout au CMDB
+// ============================================================
+const AddToCMDBDialog = ({
+  open,
+  onOpenChange,
+  resourceType,
+  onAdd,
+  departmentId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  resourceType: string;
+  onAdd: (data: any) => void;
+  departmentId?: string;
+}) => {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [type, setType] = useState("");
+  const [service, setService] = useState("");
+  const [contact, setContact] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const getResourceLabel = () => {
+    switch(resourceType) {
+      case 'HR': return 'Collaborateur';
+      case 'Equipement': return 'Équipement';
+      case 'App': return 'Application IT';
+      case 'Fournisseur': return 'Prestataire';
+      default: return 'Ressource';
+    }
+  };
+
+  const getResourceIcon = () => {
+    switch(resourceType) {
+      case 'HR': return <Users className="h-5 w-5 text-blue-600" />;
+      case 'Equipement': return <Monitor className="h-5 w-5 text-yellow-600" />;
+      case 'App': return <Server className="h-5 w-5 text-purple-600" />;
+      case 'Fournisseur': return <Handshake className="h-5 w-5 text-orange-600" />;
+      default: return <Plus className="h-5 w-5 text-gray-600" />;
+    }
+  };
+
+  const resetForm = () => {
+    setName("");
+    setRole("");
+    setEmail("");
+    setPhone("");
+    setType("");
+    setService("");
+    setContact("");
+    setQuantity(1);
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      toast({ title: "Erreur", description: "Veuillez saisir un nom", variant: "destructive" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      let table = '';
+      let data: any = { name: name.trim() };
+
+      switch(resourceType) {
+        case 'HR':
+          table = 'ressources_humaines';
+          if (role) data.role = role;
+          if (email) data.email = email;
+          if (phone) data.phone = phone;
+          if (departmentId) data.department_id = departmentId;
+          break;
+        case 'Equipement':
+          table = 'ressources_equipements';
+          if (type) data.type = type;
+          if (quantity) data.quantity = quantity;
+          if (departmentId) data.department_id = departmentId;
+          break;
+        case 'App':
+          table = 'applications_it';
+          if (type) data.type = type;
+          if (service) data.service = service;
+          if (departmentId) data.department_id = departmentId;
+          break;
+        case 'Fournisseur':
+          table = 'fournisseurs';
+          if (service) data.service = service;
+          if (contact) data.contact = contact;
+          if (departmentId) data.department_id = departmentId;
+          break;
+        default: return;
+      }
+
+      const { data: inserted, error } = await supabase
+        .from(table)
+        .insert(data)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Succès", 
+        description: `${getResourceLabel()} "${name}" ajouté(e) au référentiel CMDB` 
+      });
+
+      onAdd({ ...inserted, _resourceType: resourceType });
+      resetForm();
+      onOpenChange(false);
+
+    } catch (error: any) {
+      console.error('Erreur ajout ressource:', error);
+      toast({ 
+        title: "Erreur", 
+        description: error.message || "Erreur lors de l'ajout", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(newOpen) => {
+      if (!newOpen) resetForm();
+      onOpenChange(newOpen);
+    }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {getResourceIcon()}
+            Ajouter un(e) {getResourceLabel().toLowerCase()} au CMDB
+          </DialogTitle>
+          <DialogDescription>
+            La ressource sera ajoutée au référentiel CMDB puis vous pourrez l'ajouter à la fiche BIA
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div>
+            <Label className="text-sm font-medium">Nom *</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={`Nom du/de la ${getResourceLabel().toLowerCase()}`}
+              className="mt-1 border-[#E8E4DC]"
+            />
+          </div>
+
+          {resourceType === 'HR' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Rôle</Label>
+                <Input
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  placeholder="Ex: Responsable, Chef de projet..."
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Email</Label>
+                <Input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="email@entreprise.com"
+                  type="email"
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Téléphone</Label>
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+33 6 12 34 56 78"
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+            </>
+          )}
+
+          {resourceType === 'Equipement' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Type</Label>
+                <Input
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                  placeholder="Ex: PC, Serveur, Imprimante..."
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Quantité</Label>
+                <Input
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value) || 1)}
+                  type="number"
+                  min="1"
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+            </>
+          )}
+
+          {resourceType === 'App' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Type</Label>
+                <Input
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                  placeholder="Ex: SaaS, On-premise, Mobile..."
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Service</Label>
+                <Input
+                  value={service}
+                  onChange={(e) => setService(e.target.value)}
+                  placeholder="Ex: CRM, ERP, Messagerie..."
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+            </>
+          )}
+
+          {resourceType === 'Fournisseur' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Service</Label>
+                <Input
+                  value={service}
+                  onChange={(e) => setService(e.target.value)}
+                  placeholder="Ex: Télécom, Nettoyage, Maintenance..."
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Contact</Label>
+                <Input
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  placeholder="Nom du contact principal"
+                  className="mt-1 border-[#E8E4DC]"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting || !name.trim()}
+            className="bg-[#2A5141] hover:bg-[#1a3329] text-white"
+          >
+            {isSubmitting ? "Ajout en cours..." : "Ajouter au CMDB"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ============================================================
+// COMPOSANT - Dialogue de liaison de ressources (AVEC RTO/RPO)
+// ============================================================
+const LinkResourceDialog = ({
+  open,
+  onOpenChange,
+  process,
+  addedResources,
   onLink,
   resourceType,
-  setResourceType
-}: { 
+  setResourceType,
+  onNavigateToCMDB
+}: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   process: any;
-  allResources: {
+  addedResources: {
     hr: any[];
     equipment: any[];
     apps: any[];
@@ -232,10 +814,12 @@ const LinkResourceDialog = ({
   onLink: (type: string, resourceId: string, rtoHours?: number, rpoHours?: number) => void;
   resourceType: string;
   setResourceType: (type: string) => void;
+  onNavigateToCMDB?: () => void;
 }) => {
   const [selectedResourceId, setSelectedResourceId] = useState<string>("");
   const [linkRtoHours, setLinkRtoHours] = useState<number>(4);
   const [linkRpoHours, setLinkRpoHours] = useState<number>(2);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const rtoOptions = [1, 2, 4, 6, 8, 12, 24, 48, 72];
   const rpoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24];
@@ -244,16 +828,30 @@ const LinkResourceDialog = ({
     setLinkRtoHours(4);
     setLinkRpoHours(2);
     setSelectedResourceId("");
+    setSearchQuery("");
   }, [resourceType]);
 
   const getResourcesForType = () => {
+    let resources: any[] = [];
     switch(resourceType) {
-      case 'HR': return allResources.hr;
-      case 'Equipement': return allResources.equipment;
-      case 'App': return allResources.apps;
-      case 'Fournisseur': return allResources.suppliers;
+      case 'HR': resources = addedResources.hr; break;
+      case 'Equipement': resources = addedResources.equipment; break;
+      case 'App': resources = addedResources.apps; break;
+      case 'Fournisseur': resources = addedResources.suppliers; break;
       default: return [];
     }
+
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      resources = resources.filter(r => 
+        r.name?.toLowerCase().includes(q) ||
+        r.role?.toLowerCase().includes(q) ||
+        r.type?.toLowerCase().includes(q) ||
+        r.service?.toLowerCase().includes(q)
+      );
+    }
+
+    return resources;
   };
 
   const getResourceLabel = () => {
@@ -304,9 +902,12 @@ const LinkResourceDialog = ({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <LinkIcon className="h-5 w-5 text-indigo-600" />
+            <LinkIcon className="h-5 w-5 text-[#2A5141]" />
             Lier une ressource à "{process?.name || ''}"
           </DialogTitle>
+          <DialogDescription>
+            Sélectionnez une ressource parmi celles ajoutées à la fiche BIA
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div>
@@ -316,7 +917,7 @@ const LinkResourceDialog = ({
                 variant={resourceType === 'HR' ? 'default' : 'outline'} 
                 size="sm"
                 className={resourceType === 'HR' ? 'bg-blue-600 hover:bg-blue-700' : ''}
-                onClick={() => { setResourceType('HR'); setSelectedResourceId(''); }}
+                onClick={() => { setResourceType('HR'); setSelectedResourceId(''); setSearchQuery(''); }}
               >
                 <Users className="h-4 w-4 mr-1" /> RH
               </Button>
@@ -324,7 +925,7 @@ const LinkResourceDialog = ({
                 variant={resourceType === 'Equipement' ? 'default' : 'outline'} 
                 size="sm"
                 className={resourceType === 'Equipement' ? 'bg-yellow-600 hover:bg-yellow-700' : ''}
-                onClick={() => { setResourceType('Equipement'); setSelectedResourceId(''); }}
+                onClick={() => { setResourceType('Equipement'); setSelectedResourceId(''); setSearchQuery(''); }}
               >
                 <Monitor className="h-4 w-4 mr-1" /> Équip.
               </Button>
@@ -332,7 +933,7 @@ const LinkResourceDialog = ({
                 variant={resourceType === 'App' ? 'default' : 'outline'} 
                 size="sm"
                 className={resourceType === 'App' ? 'bg-purple-600 hover:bg-purple-700' : ''}
-                onClick={() => { setResourceType('App'); setSelectedResourceId(''); }}
+                onClick={() => { setResourceType('App'); setSelectedResourceId(''); setSearchQuery(''); }}
               >
                 <Server className="h-4 w-4 mr-1" /> App
               </Button>
@@ -340,33 +941,83 @@ const LinkResourceDialog = ({
                 variant={resourceType === 'Fournisseur' ? 'default' : 'outline'} 
                 size="sm"
                 className={resourceType === 'Fournisseur' ? 'bg-orange-600 hover:bg-orange-700' : ''}
-                onClick={() => { setResourceType('Fournisseur'); setSelectedResourceId(''); }}
+                onClick={() => { setResourceType('Fournisseur'); setSelectedResourceId(''); setSearchQuery(''); }}
               >
                 <Handshake className="h-4 w-4 mr-1" /> Prest.
               </Button>
             </div>
           </div>
 
-          <div>
-            <Label>{getResourceLabel()}</Label>
-            <select
-              value={selectedResourceId}
-              onChange={(e) => setSelectedResourceId(e.target.value)}
-              className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="">Sélectionner...</option>
-              {resources.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.name} {r.role ? `(${r.role})` : ''} {r.service ? `(${r.service})` : ''}
-                </option>
-              ))}
-            </select>
-            {resources.length === 0 && (
-              <p className="text-xs text-gray-400 mt-1">Aucune {getResourceLabel().toLowerCase()} disponible</p>
-            )}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Rechercher une ressource..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 border-[#E8E4DC]"
+            />
           </div>
 
-          {showRtoFields && (
+          <div>
+            <Label className="flex items-center justify-between">
+              <span>{getResourceLabel()}</span>
+              <span className="text-xs text-gray-400">{resources.length} disponible{resources.length > 1 ? 's' : ''}</span>
+            </Label>
+            <div className="mt-1 max-h-48 overflow-y-auto border rounded-lg divide-y divide-[#E8E4DC]">
+              {resources.length === 0 ? (
+                <div className="p-4 text-center space-y-2">
+                  <p className="text-sm text-gray-400">
+                    Aucune {getResourceLabel().toLowerCase()} disponible dans la fiche BIA
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Ajoutez d'abord des ressources via l'onglet "Ressources requises"
+                  </p>
+                  {onNavigateToCMDB && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="text-[#2A5141] border-[#2A5141]"
+                      onClick={() => {
+                        onOpenChange(false);
+                        onNavigateToCMDB();
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Gérer le référentiel CMDB
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                resources.map((r) => (
+                  <div
+                    key={r.id}
+                    className={cn(
+                      "flex items-center justify-between p-2 cursor-pointer hover:bg-[#F8F6F2] transition-colors",
+                      selectedResourceId === r.id && "bg-[#F8F6F2] border-l-2 border-[#2A5141]"
+                    )}
+                    onClick={() => setSelectedResourceId(r.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      {getResourceIcon()}
+                      <div>
+                        <p className="text-sm font-medium">{r.name}</p>
+                        <p className="text-xs text-gray-400">
+                          {r.role || r.type || r.service || "—"}
+                        </p>
+                      </div>
+                    </div>
+                    {selectedResourceId === r.id && (
+                      <Badge className="bg-[#2A5141] text-white text-[10px]">
+                        Sélectionné
+                      </Badge>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {showRtoFields && selectedResourceId && (
             <div className="space-y-2">
               <Label className="text-sm font-medium text-[#172030]">
                 Objectifs de reprise pour cette liaison
@@ -377,7 +1028,7 @@ const LinkResourceDialog = ({
                   <select
                     value={linkRtoHours}
                     onChange={(e) => setLinkRtoHours(Number(e.target.value))}
-                    className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
                   >
                     {rtoOptions.map((val) => (
                       <option key={val} value={val}>{val}h</option>
@@ -390,7 +1041,7 @@ const LinkResourceDialog = ({
                     <select
                       value={linkRpoHours}
                       onChange={(e) => setLinkRpoHours(Number(e.target.value))}
-                      className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
                     >
                       {rpoOptions.map((val) => (
                         <option key={val} value={val}>{val}h</option>
@@ -417,12 +1068,427 @@ const LinkResourceDialog = ({
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
-          <Button onClick={handleLink} className="bg-indigo-600 hover:bg-indigo-700">
+          <Button 
+            onClick={handleLink} 
+            disabled={!selectedResourceId}
+            className="bg-[#2A5141] hover:bg-[#1a3329] text-white"
+          >
             <LinkIcon className="h-4 w-4 mr-1" /> Lier
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+};
+
+// ============================================================
+// COMPOSANT - PersonnelTableau
+// ============================================================
+const PersonnelTableau = ({ 
+  people, 
+  onDelete,
+  linkedProcessesMap 
+}: { 
+  people: any[];
+  onDelete?: (id: string, name: string) => void;
+  linkedProcessesMap?: Record<string, any[]>;
+}) => {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Collaborateur clé</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Rôle</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Email</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Téléphone</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Processus liés</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {people.map((person, idx) => {
+            const displayProcesses = linkedProcessesMap?.[person.id] || [];
+            const visibleProcesses = displayProcesses.slice(0, 2);
+            const remainingCount = displayProcesses.length - 2;
+
+            return (
+              <TableRow 
+                key={person.id || idx}
+                className={cn(
+                  "border-b border-[#E8E4DC]",
+                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
+                )}
+              >
+                <TableCell className="py-2">
+                  <span className="text-sm font-medium text-[#172030]">{person.name}</span>
+                </TableCell>
+                <TableCell className="py-2">
+                  <span className="text-sm text-[#172030]/60">{person.role || "—"}</span>
+                </TableCell>
+                <TableCell className="py-2">
+                  <span className="text-sm text-[#172030]/60">{person.email || "—"}</span>
+                </TableCell>
+                <TableCell className="py-2">
+                  <span className="text-sm text-[#172030]/60">{person.phone || "—"}</span>
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {displayProcesses.length > 0 ? (
+                    <div className="flex flex-wrap items-center justify-center gap-1">
+                      {visibleProcesses.map((p: any) => (
+                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                          {p.name}
+                        </Badge>
+                      ))}
+                      {remainingCount > 0 && (
+                        <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
+                          +{remainingCount}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {onDelete && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                      onClick={() => onDelete(person.id, person.name)}
+                      title="Retirer de la fiche BIA"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+        <tfoot>
+          <TableRow className="bg-[#F8F6F2] border-t-2 border-[#E8E4DC]">
+            <TableCell colSpan={6} className="py-3 px-3 font-semibold text-sm text-[#172030]">
+              Total collaborateurs clés : <span className="text-[#2A5141]">{people.length}</span>
+            </TableCell>
+          </TableRow>
+        </tfoot>
+      </Table>
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT - EquipmentTableau
+// ============================================================
+const EquipmentTableau = ({ 
+  equipment, 
+  onDelete,
+  linkedProcessesMap 
+}: { 
+  equipment: any[];
+  onDelete?: (id: string, name: string) => void;
+  linkedProcessesMap?: Record<string, any[]>;
+}) => {
+  const periods = [
+    { key: "P0_4H", label: "0-4h" },
+    { key: "P4_8H", label: "4-8h" },
+    { key: "P1D", label: "1j" },
+    { key: "P2D", label: "2j" },
+  ];
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Équipement</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Type</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Unités</TableHead>
+            {periods.map((p) => (
+              <TableHead key={p.key} className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">
+                {p.label}
+              </TableHead>
+            ))}
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {equipment.map((eq, idx) => {
+            const quantities = eq.quantities || {};
+            const displayProcesses = linkedProcessesMap?.[eq.id] || [];
+            const visibleProcesses = displayProcesses.slice(0, 2);
+            const remainingCount = displayProcesses.length - 2;
+
+            return (
+              <TableRow 
+                key={eq.id || idx}
+                className={cn(
+                  "border-b border-[#E8E4DC]",
+                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
+                )}
+              >
+                <TableCell className="py-2">
+                  <span className="text-sm font-medium text-[#172030]">{eq.name}</span>
+                </TableCell>
+                <TableCell className="py-2 text-sm text-[#172030]/60">{eq.type || "—"}</TableCell>
+                <TableCell className="py-2 text-center font-mono text-sm text-[#172030]">
+                  {eq.quantity || 1}
+                </TableCell>
+                {periods.map((p) => (
+                  <TableCell key={p.key} className="py-2 text-center font-mono text-sm text-[#172030]">
+                    {quantities[p.key] || 0}
+                  </TableCell>
+                ))}
+                <TableCell className="py-2">
+                  {displayProcesses.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {visibleProcesses.map((p: any) => (
+                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                          {p.name}
+                        </Badge>
+                      ))}
+                      {remainingCount > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
+                              +{remainingCount}
+                            </Badge>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
+                              {displayProcesses.map((p: any) => (
+                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
+                                  {p.name}
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">Aucun</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {onDelete && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                      onClick={() => onDelete(eq.id, eq.name)}
+                      title="Retirer de la fiche BIA"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT - AppTableau
+// ============================================================
+const AppTableau = ({ 
+  apps, 
+  onDelete,
+  linkedProcessesMap 
+}: { 
+  apps: any[];
+  onDelete?: (id: string, name: string) => void;
+  linkedProcessesMap?: Record<string, any[]>;
+}) => {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Application</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Type</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Service</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Alternative</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {apps.map((app, idx) => {
+            const displayProcesses = linkedProcessesMap?.[app.id] || [];
+            const visibleProcesses = displayProcesses.slice(0, 2);
+            const remainingCount = displayProcesses.length - 2;
+
+            return (
+              <TableRow 
+                key={app.id || idx}
+                className={cn(
+                  "border-b border-[#E8E4DC]",
+                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
+                )}
+              >
+                <TableCell className="py-2">
+                  <span className="text-sm font-medium text-[#172030]">{app.name}</span>
+                </TableCell>
+                <TableCell className="py-2 text-sm text-[#172030]/60">{app.type || "—"}</TableCell>
+                <TableCell className="py-2 text-sm text-[#172030]/60">{app.service || "—"}</TableCell>
+                <TableCell className="py-2 text-sm text-[#172030]/60">{app.remplacablepar || "—"}</TableCell>
+                <TableCell className="py-2">
+                  {displayProcesses.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {visibleProcesses.map((p: any) => (
+                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                          {p.name}
+                        </Badge>
+                      ))}
+                      {remainingCount > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
+                              +{remainingCount}
+                            </Badge>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
+                              {displayProcesses.map((p: any) => (
+                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
+                                  {p.name}
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">Aucun</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {onDelete && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                      onClick={() => onDelete(app.id, app.name)}
+                      title="Retirer de la fiche BIA"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT - SupplierTableau
+// ============================================================
+const SupplierTableau = ({ 
+  suppliers, 
+  onDelete,
+  linkedProcessesMap 
+}: { 
+  suppliers: any[];
+  onDelete?: (id: string, name: string) => void;
+  linkedProcessesMap?: Record<string, any[]>;
+}) => {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Prestataire</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Service</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Contact</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {suppliers.map((sup, idx) => {
+            const displayProcesses = linkedProcessesMap?.[sup.id] || [];
+            const visibleProcesses = displayProcesses.slice(0, 2);
+            const remainingCount = displayProcesses.length - 2;
+
+            return (
+              <TableRow 
+                key={sup.id || idx}
+                className={cn(
+                  "border-b border-[#E8E4DC]",
+                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
+                )}
+              >
+                <TableCell className="py-2">
+                  <span className="text-sm font-medium text-[#172030]">{sup.name}</span>
+                </TableCell>
+                <TableCell className="py-2 text-sm text-[#172030]/60">{sup.service || "—"}</TableCell>
+                <TableCell className="py-2 text-sm text-[#172030]/60">{sup.contact || "—"}</TableCell>
+                <TableCell className="py-2">
+                  {displayProcesses.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {visibleProcesses.map((p: any) => (
+                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
+                          {p.name}
+                        </Badge>
+                      ))}
+                      {remainingCount > 0 && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
+                              +{remainingCount}
+                            </Badge>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
+                              {displayProcesses.map((p: any) => (
+                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
+                                  {p.name}
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">Aucun</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {onDelete && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                      onClick={() => onDelete(sup.id, sup.name)}
+                      title="Retirer de la fiche BIA"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
   );
 };
 
@@ -453,104 +1519,128 @@ const ProcessDetailView = ({
   const score = computeMaxScoreFromImpacts(process.impacts);
   const crit = scoreToCriticality(score);
 
-  const loadLinkedResources = async () => {
+  const loadLinkedResources = useCallback(async () => {
+    console.log('🔄 ProcessDetailView - Chargement des ressources liées pour:', process.id, process.name);
     setIsLoading(true);
     try {
-      const { data: hrLinks } = await supabase
+      const { data: hrLinks, error: hrError } = await supabase
         .from('processus_ressources_humaines')
         .select('ressource_humaine_id')
         .eq('processus_id', process.id);
+
+      if (hrError) {
+        console.error('❌ Erreur RH:', hrError);
+      }
 
       if (hrLinks && hrLinks.length > 0) {
         const hrIds = hrLinks.map((l: any) => l.ressource_humaine_id);
         const { data: hrData } = await supabase
           .from('ressources_humaines')
           .select('*')
-          .in('id', hrIds)
-          .eq('department_id', serviceId);
+          .in('id', hrIds);
         setLinkedHR(hrData || []);
+        console.log('✅ RH chargés:', hrData?.length || 0);
       } else {
         setLinkedHR([]);
+        console.log('ℹ️ Aucun RH lié');
       }
 
-      const { data: equipLinks } = await supabase
+      const { data: equipLinks, error: equipError } = await supabase
         .from('processus_equipements')
         .select('equipement_id, rto_hours')
         .eq('processus_id', process.id);
+
+      if (equipError) {
+        console.error('❌ Erreur équipements:', equipError);
+      }
 
       if (equipLinks && equipLinks.length > 0) {
         const equipIds = equipLinks.map((l: any) => l.equipement_id);
         const { data: equipData } = await supabase
           .from('ressources_equipements')
           .select('*')
-          .in('id', equipIds)
-          .eq('department_id', serviceId);
+          .in('id', equipIds);
         
         const enrichedEquip = equipData?.map(eq => {
           const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
           return { ...eq, _linkRto: link?.rto_hours || 4 };
         });
         setLinkedEquipment(enrichedEquip || []);
+        console.log('✅ Équipements chargés:', enrichedEquip?.length || 0);
       } else {
         setLinkedEquipment([]);
+        console.log('ℹ️ Aucun équipement lié');
       }
 
-      const { data: appLinks } = await supabase
+      const { data: appLinks, error: appError } = await supabase
         .from('processus_applications')
         .select('application_id, rto_hours, rpo_hours')
         .eq('processus_id', process.id);
+
+      if (appError) {
+        console.error('❌ Erreur applications:', appError);
+      }
 
       if (appLinks && appLinks.length > 0) {
         const appIds = appLinks.map((l: any) => l.application_id);
         const { data: appData } = await supabase
           .from('applications_it')
           .select('*')
-          .in('id', appIds)
-          .eq('department_id', serviceId);
+          .in('id', appIds);
         
         const enrichedApps = appData?.map(app => {
           const link = appLinks.find((l: any) => l.application_id === app.id);
           return { ...app, _linkRto: link?.rto_hours || 4, _linkRpo: link?.rpo_hours || 2 };
         });
         setLinkedApps(enrichedApps || []);
+        console.log('✅ Applications chargées:', enrichedApps?.length || 0);
       } else {
         setLinkedApps([]);
+        console.log('ℹ️ Aucune application liée');
       }
 
-      const { data: suppLinks } = await supabase
+      const { data: suppLinks, error: suppError } = await supabase
         .from('processus_fournisseurs')
         .select('fournisseur_id, rto_hours')
         .eq('processus_id', process.id);
+
+      if (suppError) {
+        console.error('❌ Erreur fournisseurs:', suppError);
+      }
 
       if (suppLinks && suppLinks.length > 0) {
         const suppIds = suppLinks.map((l: any) => l.fournisseur_id);
         const { data: suppData } = await supabase
           .from('fournisseurs')
           .select('*')
-          .in('id', suppIds)
-          .eq('department_id', serviceId);
+          .in('id', suppIds);
         
         const enrichedSuppliers = suppData?.map(sup => {
           const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
           return { ...sup, _linkRto: link?.rto_hours || 4 };
         });
         setLinkedSuppliers(enrichedSuppliers || []);
+        console.log('✅ Fournisseurs chargés:', enrichedSuppliers?.length || 0);
       } else {
         setLinkedSuppliers([]);
+        console.log('ℹ️ Aucun fournisseur lié');
       }
 
+      console.log('✅ ProcessDetailView - Chargement terminé pour:', process.id);
+
     } catch (error) {
-      console.error('Erreur chargement ressources liées:', error);
+      console.error('❌ Erreur générale chargement ressources liées:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [process.id]);
 
   useEffect(() => {
     if (process && process.id) {
+      console.log('🚀 ProcessDetailView - Ouverture du dialogue, chargement:', process.id, process.name);
       loadLinkedResources();
     }
-  }, [process.id]);
+  }, [process.id, loadLinkedResources]);
 
   const unlinkResource = async (type: string, resourceId: string, resourceName: string) => {
     if (!confirm(`Voulez-vous dissocier "${resourceName}" de ce processus ?`)) return;
@@ -598,32 +1688,7 @@ const ProcessDetailView = ({
     }
   };
 
-  const getMergedResources = (type: string) => {
-    const oldResources = process.resources?.filter((r: any) => r.type === type) || [];
-    let newResources: any[] = [];
-    
-    switch(type) {
-      case 'HR': newResources = linkedHR; break;
-      case 'Equipement': newResources = linkedEquipment; break;
-      case 'Fournisseur': newResources = linkedSuppliers; break;
-      default: return oldResources;
-    }
-
-    const merged = [...oldResources];
-    for (const newRes of newResources) {
-      if (!merged.some((r: any) => r.id === newRes.id || r.name === newRes.name)) {
-        merged.push({ ...newRes, _isLinked: true });
-      }
-    }
-    return merged.map((r: any) => ({ ...r, _isLinked: r._isLinked || false }));
-  };
-
-  const totalResources = 
-    getMergedResources('HR').length + 
-    getMergedResources('Equipement').length + 
-    (process.appsCritiques?.length || 0) + 
-    linkedApps.length + 
-    getMergedResources('Fournisseur').length;
+  const totalResources = linkedHR.length + linkedEquipment.length + linkedApps.length + linkedSuppliers.length;
 
   return (
     <Dialog open={!!process} onOpenChange={onClose}>
@@ -690,22 +1755,29 @@ const ProcessDetailView = ({
                   {totalResources} total
                 </Badge>
               </div>
-              <div className="p-4 grid grid-cols-2 gap-4">
-                <div className="border rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="h-4 w-4 text-blue-600" />
-                    <span className="font-medium text-sm">RH</span>
-                    <Badge variant="outline" className="text-xs">
-                      {getMergedResources('HR').length}
-                    </Badge>
-                  </div>
-                  {getMergedResources('HR').length > 0 ? (
-                    getMergedResources('HR').map((r: any, i: number) => (
-                      <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
-                        <span>{r.name}</span>
-                        <div className="flex items-center gap-1">
-                          <Badge variant="outline" className="text-[10px]">{r.role || "—"}</Badge>
-                          {r._isLinked && (
+              
+              {totalResources === 0 ? (
+                <div className="p-6 text-center text-gray-400">
+                  <p className="text-sm">Aucune ressource associée à ce processus</p>
+                  <p className="text-xs mt-1">Utilisez le bouton "Associer" pour lier des ressources</p>
+                </div>
+              ) : (
+                <div className="p-4 grid grid-cols-2 gap-4">
+                  {/* RH */}
+                  <div className="border rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Users className="h-4 w-4 text-blue-600" />
+                      <span className="font-medium text-sm">RH</span>
+                      <Badge variant="outline" className="text-xs">
+                        {linkedHR.length}
+                      </Badge>
+                    </div>
+                    {linkedHR.length > 0 ? (
+                      linkedHR.map((r: any, i: number) => (
+                        <div key={r.id || i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                          <span className="truncate">{r.name}</span>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Badge variant="outline" className="text-[10px]">{r.role || "—"}</Badge>
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -715,35 +1787,34 @@ const ProcessDetailView = ({
                             >
                               <Unlink className="h-3.5 w-3.5" />
                             </Button>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-400">Aucun RH associé</p>
-                  )}
-                </div>
-
-                <div className="border rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Monitor className="h-4 w-4 text-yellow-600" />
-                    <span className="font-medium text-sm">Équipements</span>
-                    <Badge variant="outline" className="text-xs">
-                      {getMergedResources('Equipement').length}
-                    </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-400">Aucun RH associé</p>
+                    )}
                   </div>
-                  {getMergedResources('Equipement').length > 0 ? (
-                    getMergedResources('Equipement').map((r: any, i: number) => (
-                      <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
-                        <span>{r.name}</span>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px]">{r.type || "—"}</Badge>
-                          {r._linkRto !== undefined && (
-                            <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
-                              RTO {r._linkRto}h
-                            </Badge>
-                          )}
-                          {r._isLinked && (
+
+                  {/* Équipements */}
+                  <div className="border rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Monitor className="h-4 w-4 text-yellow-600" />
+                      <span className="font-medium text-sm">Équipements</span>
+                      <Badge variant="outline" className="text-xs">
+                        {linkedEquipment.length}
+                      </Badge>
+                    </div>
+                    {linkedEquipment.length > 0 ? (
+                      linkedEquipment.map((r: any, i: number) => (
+                        <div key={r.id || i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                          <span className="truncate">{r.name}</span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Badge variant="outline" className="text-[10px]">{r.type || "—"}</Badge>
+                            {r._linkRto !== undefined && (
+                              <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                                RTO {r._linkRto}h
+                              </Badge>
+                            )}
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -753,30 +1824,28 @@ const ProcessDetailView = ({
                             >
                               <Unlink className="h-3.5 w-3.5" />
                             </Button>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-400">Aucun équipement associé</p>
-                  )}
-                </div>
-
-                <div className="border rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Server className="h-4 w-4 text-purple-600" />
-                    <span className="font-medium text-sm">Apps IT</span>
-                    <Badge variant="outline" className="text-xs">
-                      {(process.appsCritiques?.length || 0) + linkedApps.length}
-                    </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-400">Aucun équipement associé</p>
+                    )}
                   </div>
-                  {[...(process.appsCritiques || []), ...linkedApps].length > 0 ? (
-                    [...(process.appsCritiques || []), ...linkedApps].map((a: any, i: number) => {
-                      const isLinked = linkedApps.some((la: any) => la.id === a.id);
-                      return (
-                        <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
-                          <span>{a.name}</span>
-                          <div className="flex items-center gap-2">
+
+                  {/* Apps */}
+                  <div className="border rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Server className="h-4 w-4 text-purple-600" />
+                      <span className="font-medium text-sm">Apps IT</span>
+                      <Badge variant="outline" className="text-xs">
+                        {linkedApps.length}
+                      </Badge>
+                    </div>
+                    {linkedApps.length > 0 ? (
+                      linkedApps.map((a: any, i: number) => (
+                        <div key={a.id || i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                          <span className="truncate">{a.name}</span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             {a._linkRto !== undefined && (
                               <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
                                 RTO {a._linkRto}h
@@ -787,46 +1856,43 @@ const ProcessDetailView = ({
                                 RPO {a._linkRpo}h
                               </Badge>
                             )}
-                            {isLinked && (
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
-                                onClick={() => unlinkResource('App', a.id, a.name)}
-                                title="Dissocier"
-                              >
-                                <Unlink className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                              onClick={() => unlinkResource('App', a.id, a.name)}
+                              title="Dissocier"
+                            >
+                              <Unlink className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
                         </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-sm text-gray-400">Aucune app associée</p>
-                  )}
-                </div>
-
-                <div className="border rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Handshake className="h-4 w-4 text-orange-600" />
-                    <span className="font-medium text-sm">Prestataires</span>
-                    <Badge variant="outline" className="text-xs">
-                      {getMergedResources('Fournisseur').length}
-                    </Badge>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-400">Aucune app associée</p>
+                    )}
                   </div>
-                  {getMergedResources('Fournisseur').length > 0 ? (
-                    getMergedResources('Fournisseur').map((r: any, i: number) => (
-                      <div key={i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
-                        <span>{r.name}</span>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px]">{r.service || "—"}</Badge>
-                          {r._linkRto !== undefined && (
-                            <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
-                              RTO {r._linkRto}h
-                            </Badge>
-                          )}
-                          {r._isLinked && (
+
+                  {/* Prestataires */}
+                  <div className="border rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Handshake className="h-4 w-4 text-orange-600" />
+                      <span className="font-medium text-sm">Prestataires</span>
+                      <Badge variant="outline" className="text-xs">
+                        {linkedSuppliers.length}
+                      </Badge>
+                    </div>
+                    {linkedSuppliers.length > 0 ? (
+                      linkedSuppliers.map((r: any, i: number) => (
+                        <div key={r.id || i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
+                          <span className="truncate">{r.name}</span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Badge variant="outline" className="text-[10px]">{r.service || "—"}</Badge>
+                            {r._linkRto !== undefined && (
+                              <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                                RTO {r._linkRto}h
+                              </Badge>
+                            )}
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -836,32 +1902,16 @@ const ProcessDetailView = ({
                             >
                               <Unlink className="h-3.5 w-3.5" />
                             </Button>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-400">Aucun prestataire associé</p>
-                  )}
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-400">Aucun prestataire associé</p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-
-            {process.depends_on && process.depends_on.length > 0 && (
-              <div className="border rounded-lg p-3">
-                <p className="text-xs text-gray-400 font-semibold mb-2">Dépendances</p>
-                <div className="flex flex-wrap gap-2">
-                  {process.depends_on.map((depId: string) => {
-                    const dep = allProcesses.find(p => p.id === depId);
-                    return dep ? (
-                      <Badge key={depId} variant="outline" className="bg-indigo-50">
-                        {dep.name}
-                      </Badge>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </DialogContent>
@@ -1605,7 +2655,7 @@ const ImpactMatrix = ({
 };
 
 // ============================================================
-// PROCESS ACCORDION - Avec RTO/RPO visibles
+// PROCESS ACCORDION
 // ============================================================
 const ProcessAccordion = ({ 
   process, 
@@ -1866,200 +2916,6 @@ const ProcessAccordion = ({
 };
 
 // ============================================================
-// COMPOSANT - PersonnelTableau (AVEC TOTAL)
-// ============================================================
-const PersonnelTableau = ({ people }: { people: any[] }) => {
-  return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Collaborateur clé</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Rôle</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Email</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Téléphone</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Processus liés</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {people.map((person, idx) => {
-            const displayProcesses = person.linkedProcesses || [];
-            const visibleProcesses = displayProcesses.slice(0, 2);
-            const remainingCount = displayProcesses.length - 2;
-
-            return (
-              <TableRow 
-                key={person.id || idx}
-                className={cn(
-                  "border-b border-[#E8E4DC]",
-                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
-                )}
-              >
-                <TableCell className="py-2">
-                  <span className="text-sm font-medium text-[#172030]">{person.name}</span>
-                </TableCell>
-                <TableCell className="py-2">
-                  <span className="text-sm text-[#172030]/60">{person.role || "—"}</span>
-                </TableCell>
-                <TableCell className="py-2">
-                  <span className="text-sm text-[#172030]/60">{person.email || "—"}</span>
-                </TableCell>
-                <TableCell className="py-2">
-                  <span className="text-sm text-[#172030]/60">{person.phone || "—"}</span>
-                </TableCell>
-                <TableCell className="py-2 text-center">
-                  {displayProcesses.length > 0 ? (
-                    <div className="flex flex-wrap items-center justify-center gap-1">
-                      {visibleProcesses.map((p: any) => (
-                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
-                          {p.name}
-                        </Badge>
-                      ))}
-                      {remainingCount > 0 && (
-                        <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
-                          +{remainingCount}
-                        </Badge>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-[#172030]/30">—</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-        {/* ✅ AJOUT : Ligne Total collaborateurs */}
-        <tfoot>
-          <TableRow className="bg-[#F8F6F2] border-t-2 border-[#E8E4DC]">
-            <TableCell colSpan={5} className="py-3 px-3 font-semibold text-sm text-[#172030]">
-              Total collaborateurs clés : <span className="text-[#2A5141]">{people.length}</span>
-            </TableCell>
-          </TableRow>
-        </tfoot>
-      </Table>
-    </div>
-  );
-};
-
-// ============================================================
-// COMPOSANT - EquipmentTableau
-// ============================================================
-const EquipmentTableau = ({ equipment, onDeleteEquipment }: { equipment: any[], onDeleteEquipment?: (id: string, name: string) => void }) => {
-  const periods = [
-    { key: "P0_4H", label: "0-4h" },
-    { key: "P4_8H", label: "4-8h" },
-    { key: "P1D", label: "1j" },
-    { key: "P2D", label: "2j" },
-  ];
-
-  const handleDelete = (id: string, name: string) => {
-    if (!confirm(`⚠️ Supprimer définitivement l'équipement "${name}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
-    if (onDeleteEquipment) onDeleteEquipment(id, name);
-  };
-
-  return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Équipement</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Type</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Unités</TableHead>
-            {periods.map((p) => (
-              <TableHead key={p.key} className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">
-                {p.label}
-              </TableHead>
-            ))}
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {equipment.map((eq, idx) => {
-            const quantities = eq.quantities || {};
-            const linkedProcesses = eq.linkedProcesses || [];
-            const visibleProcesses = linkedProcesses.slice(0, 2);
-            const remainingCount = linkedProcesses.length - 2;
-
-            return (
-              <TableRow 
-                key={eq.id || idx}
-                className={cn(
-                  "border-b border-[#E8E4DC]",
-                  idx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
-                )}
-              >
-                <TableCell className="py-2">
-                  <span className="text-sm font-medium text-[#172030]">{eq.name}</span>
-                  {eq._linkRto !== undefined && (
-                    <span className="ml-2 text-[10px] text-blue-600">RTO {eq._linkRto}h</span>
-                  )}
-                </TableCell>
-                <TableCell className="py-2 text-sm text-[#172030]/60">{eq.type || "—"}</TableCell>
-                <TableCell className="py-2 text-center font-mono text-sm text-[#172030]">
-                  {eq.quantity || 1}
-                </TableCell>
-                {periods.map((p) => (
-                  <TableCell key={p.key} className="py-2 text-center font-mono text-sm text-[#172030]">
-                    {quantities[p.key] || 0}
-                  </TableCell>
-                ))}
-                <TableCell className="py-2">
-                  {linkedProcesses.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-1">
-                      {visibleProcesses.map((p: any) => (
-                        <Badge key={p.id} variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
-                          {p.name}
-                        </Badge>
-                      ))}
-                      {remainingCount > 0 && (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
-                              +{remainingCount}
-                            </Badge>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-48 p-3 border-[#E8E4DC] bg-white shadow-lg">
-                            <div className="space-y-1.5">
-                              <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
-                              {linkedProcesses.map((p: any) => (
-                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
-                                  {p.name}
-                                </div>
-                              ))}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-[#172030]/30">Aucun</span>
-                  )}
-                </TableCell>
-                <TableCell className="py-2 text-center">
-                  {onDeleteEquipment && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
-                      onClick={() => handleDelete(eq.id, eq.name)}
-                      title="Supprimer cet équipement"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  );
-};
-
-// ============================================================
 // COMPOSANT PRINCIPAL - BIAFicheDetail
 // ============================================================
 const BIAFicheDetail = ({
@@ -2070,6 +2926,7 @@ const BIAFicheDetail = ({
   onDelete,
   canDelete,
   entities,
+  onNavigateToCMDB,
 }: {
   service: ServiceBIA;
   processes: any[];
@@ -2078,86 +2935,375 @@ const BIAFicheDetail = ({
   onDelete: (id: string, name: string) => void;
   canDelete: boolean;
   entities: any[];
+  onNavigateToCMDB?: () => void;
 }) => {
   const [activeTab, setActiveTab] = useState("impact");
-  const [editedFields, setEditedFields] = useState({
-    evaluationDate: service.lastReviewed || new Date().toLocaleDateString('fr-FR'),
-    validatedBy: "— En attente",
+
+  const [addedHR, setAddedHR] = useState<any[]>([]);
+  const [addedEquipment, setAddedEquipment] = useState<any[]>([]);
+  const [addedApps, setAddedApps] = useState<any[]>([]);
+  const [addedSuppliers, setAddedSuppliers] = useState<any[]>([]);
+
+  const [linkedProcessesMap, setLinkedProcessesMap] = useState<{
+    hr: Record<string, any[]>;
+    equipment: Record<string, any[]>;
+    apps: Record<string, any[]>;
+    suppliers: Record<string, any[]>;
+  }>({
+    hr: {},
+    equipment: {},
+    apps: {},
+    suppliers: {}
   });
 
-  const [filterCriticality, setFilterCriticality] = useState<string>("all");
-  const [filterResponsible, setFilterResponsible] = useState<string>("all");
-
-  const [showAddHRModal, setShowAddHRModal] = useState(false);
-  const [showAddEquipmentModal, setShowAddEquipmentModal] = useState(false);
-  const [showAddAppModal, setShowAddAppModal] = useState(false);
-  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  const [showSelectHR, setShowSelectHR] = useState(false);
+  const [showSelectEquipment, setShowSelectEquipment] = useState(false);
+  const [showSelectApp, setShowSelectApp] = useState(false);
+  const [showSelectSupplier, setShowSelectSupplier] = useState(false);
   
-  const [loadedHR, setLoadedHR] = useState<any[]>([]);
-  const [loadedEquipment, setLoadedEquipment] = useState<any[]>([]);
-  const [loadedApps, setLoadedApps] = useState<any[]>([]);
-  const [loadedSuppliers, setLoadedSuppliers] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const [processResourcesCache, setProcessResourcesCache] = useState<Record<string, {
-    hr: any[];
-    equipment: any[];
-    apps: any[];
-    suppliers: any[];
-  }>>({});
-
-  const [selectedProcessForLink, setSelectedProcessForLink] = useState<string>(
-    processes.length > 0 ? processes[0].id : ''
-  );
+  const [showAddHR, setShowAddHR] = useState(false);
+  const [showAddEquipment, setShowAddEquipment] = useState(false);
+  const [showAddApp, setShowAddApp] = useState(false);
+  const [showAddSupplier, setShowAddSupplier] = useState(false);
 
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkProcess, setLinkProcess] = useState<any>(null);
   const [linkResourceType, setLinkResourceType] = useState<string>("HR");
-  const [allResources, setAllResources] = useState<{
-    hr: any[];
-    equipment: any[];
-    apps: any[];
-    suppliers: any[];
-  }>({ hr: [], equipment: [], apps: [], suppliers: [] });
 
+  const [allHR, setAllHR] = useState<any[]>([]);
+  const [allEquipment, setAllEquipment] = useState<any[]>([]);
+  const [allApps, setAllApps] = useState<any[]>([]);
+  const [allSuppliers, setAllSuppliers] = useState<any[]>([]);
+
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedProcessDetail, setSelectedProcessDetail] = useState<any>(null);
+  const [processResourcesCache, setProcessResourcesCache] = useState<Record<string, any>>({});
 
-  const [enrichedHR, setEnrichedHR] = useState<any[]>([]);
-  const [enrichedEquipment, setEnrichedEquipment] = useState<any[]>([]);
-  const [enrichedApps, setEnrichedApps] = useState<any[]>([]);
-  const [enrichedSuppliers, setEnrichedSuppliers] = useState<any[]>([]);
+  const loadBIAResources = useCallback(async () => {
+    try {
+      const { data: hrBiaLinks } = await supabase
+        .from('bia_ressources_humaines')
+        .select('ressource_humaine_id')
+        .eq('service_id', service.id);
 
-  const [newHR, setNewHR] = useState({
-    name: "",
-    role: "",
-    phone: "",
-    email: "",
-  });
+      if (hrBiaLinks && hrBiaLinks.length > 0) {
+        const hrIds = hrBiaLinks.map((l: any) => l.ressource_humaine_id);
+        const { data: hrData } = await supabase
+          .from('ressources_humaines')
+          .select('*')
+          .in('id', hrIds);
+        if (hrData) setAddedHR(hrData);
+      } else {
+        setAddedHR([]);
+      }
 
-  const [newEquipment, setNewEquipment] = useState({
-    name: "",
-    type: "",
-    quantity: 1,
-    quantities: { P0_4H: 2, P4_8H: 3, P1D: 3, P2D: 4 }
-  });
+      const { data: equipBiaLinks } = await supabase
+        .from('bia_equipements')
+        .select('equipement_id')
+        .eq('service_id', service.id);
 
-  const [newApp, setNewApp] = useState({
-    name: "",
-    remplacablePar: "",
-    department_id: service.id
-  });
+      if (equipBiaLinks && equipBiaLinks.length > 0) {
+        const equipIds = equipBiaLinks.map((l: any) => l.equipement_id);
+        const { data: equipData } = await supabase
+          .from('ressources_equipements')
+          .select('*')
+          .in('id', equipIds);
+        if (equipData) setAddedEquipment(equipData);
+      } else {
+        setAddedEquipment([]);
+      }
 
-  const [newSupplier, setNewSupplier] = useState({
-    name: "",
-    service: "",
-    contact: "",
-    department_id: service.id
-  });
+      const { data: appBiaLinks } = await supabase
+        .from('bia_applications')
+        .select('application_id')
+        .eq('service_id', service.id);
 
-  // ============================================================
-  // ⭐ FIX DU BUG : Fonction de fetch SANS cache
-  // ============================================================
-  const fetchProcessResources = async (processId: string) => {
+      if (appBiaLinks && appBiaLinks.length > 0) {
+        const appIds = appBiaLinks.map((l: any) => l.application_id);
+        const { data: appData } = await supabase
+          .from('applications_it')
+          .select('*')
+          .in('id', appIds);
+        if (appData) setAddedApps(appData);
+      } else {
+        setAddedApps([]);
+      }
+
+      const { data: suppBiaLinks } = await supabase
+        .from('bia_fournisseurs')
+        .select('fournisseur_id')
+        .eq('service_id', service.id);
+
+      if (suppBiaLinks && suppBiaLinks.length > 0) {
+        const suppIds = suppBiaLinks.map((l: any) => l.fournisseur_id);
+        const { data: suppData } = await supabase
+          .from('fournisseurs')
+          .select('*')
+          .in('id', suppIds);
+        if (suppData) setAddedSuppliers(suppData);
+      } else {
+        setAddedSuppliers([]);
+      }
+
+    } catch (error) {
+      console.error('Erreur chargement ressources BIA:', error);
+    }
+  }, [service.id]);
+
+  const addResourceToBIA = async (type: string, resourceId: string) => {
+    try {
+      let table = '';
+      let idColumn = '';
+      let data: any = { service_id: service.id };
+
+      switch(type) {
+        case 'HR':
+          table = 'bia_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          data[idColumn] = resourceId;
+          if (addedHR.some(r => r.id === resourceId)) {
+            toast({ title: "Info", description: "Cette ressource est déjà dans la fiche BIA" });
+            return;
+          }
+          break;
+        case 'Equipement':
+          table = 'bia_equipements';
+          idColumn = 'equipement_id';
+          data[idColumn] = resourceId;
+          if (addedEquipment.some(r => r.id === resourceId)) {
+            toast({ title: "Info", description: "Cette ressource est déjà dans la fiche BIA" });
+            return;
+          }
+          break;
+        case 'App':
+          table = 'bia_applications';
+          idColumn = 'application_id';
+          data[idColumn] = resourceId;
+          if (addedApps.some(r => r.id === resourceId)) {
+            toast({ title: "Info", description: "Cette ressource est déjà dans la fiche BIA" });
+            return;
+          }
+          break;
+        case 'Fournisseur':
+          table = 'bia_fournisseurs';
+          idColumn = 'fournisseur_id';
+          data[idColumn] = resourceId;
+          if (addedSuppliers.some(r => r.id === resourceId)) {
+            toast({ title: "Info", description: "Cette ressource est déjà dans la fiche BIA" });
+            return;
+          }
+          break;
+        default: return;
+      }
+
+      const { error } = await supabase.from(table).insert(data);
+      if (error) throw error;
+
+      await loadBIAResources();
+      
+      const resource = allHR.find(r => r.id === resourceId) || 
+                       allEquipment.find(r => r.id === resourceId) ||
+                       allApps.find(r => r.id === resourceId) ||
+                       allSuppliers.find(r => r.id === resourceId);
+      
+      toast({ 
+        title: "Succès", 
+        description: `"${resource?.name || 'Ressource'}" ajouté à la fiche BIA` 
+      });
+
+    } catch (error: any) {
+      console.error('Erreur ajout ressource BIA:', error);
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const addMultipleResourcesToBIA = async (type: string, resourceIds: string[]) => {
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const id of resourceIds) {
+      try {
+        await addResourceToBIA(type, id);
+        successCount++;
+      } catch (error) {
+        errorCount++;
+      }
+    }
+    
+    if (successCount > 0) {
+      toast({ 
+        title: "Succès", 
+        description: `${successCount} ressource${successCount > 1 ? 's' : ''} ajoutée${successCount > 1 ? 's' : ''} à la fiche BIA` 
+      });
+    }
+    if (errorCount > 0) {
+      toast({ 
+        title: "Attention", 
+        description: `${errorCount} ressource${errorCount > 1 ? 's' : ''} n'a${errorCount > 1 ? 'ont' : ''} pas pu être ajoutée`, 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const removeResourceFromBIA = async (type: string, resourceId: string, resourceName: string) => {
+    if (!confirm(`Retirer "${resourceName}" de la fiche BIA ?`)) return;
+
+    try {
+      let table = '';
+      let idColumn = '';
+
+      switch(type) {
+        case 'HR':
+          table = 'bia_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          break;
+        case 'Equipement':
+          table = 'bia_equipements';
+          idColumn = 'equipement_id';
+          break;
+        case 'App':
+          table = 'bia_applications';
+          idColumn = 'application_id';
+          break;
+        case 'Fournisseur':
+          table = 'bia_fournisseurs';
+          idColumn = 'fournisseur_id';
+          break;
+        default: return;
+      }
+
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('service_id', service.id)
+        .eq(idColumn, resourceId);
+
+      if (error) throw error;
+
+      await loadBIAResources();
+      toast({ title: "Succès", description: `"${resourceName}" retiré de la fiche BIA` });
+
+    } catch (error: any) {
+      console.error('Erreur retrait ressource:', error);
+      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const loadCMDBResources = useCallback(async () => {
+    try {
+      const { data: hrData } = await supabase.from('ressources_humaines').select('*');
+      if (hrData) setAllHR(hrData);
+
+      const { data: equipData } = await supabase.from('ressources_equipements').select('*');
+      if (equipData) setAllEquipment(equipData);
+
+      const { data: appData } = await supabase.from('applications_it').select('*');
+      if (appData) setAllApps(appData);
+
+      const { data: suppData } = await supabase.from('fournisseurs').select('*');
+      if (suppData) setAllSuppliers(suppData);
+
+    } catch (error) {
+      console.error('Erreur chargement CMDB:', error);
+    }
+  }, []);
+
+  const loadLinkedProcessesForResources = useCallback(async () => {
+    try {
+      const newLinkedMap = {
+        hr: {} as Record<string, any[]>,
+        equipment: {} as Record<string, any[]>,
+        apps: {} as Record<string, any[]>,
+        suppliers: {} as Record<string, any[]>
+      };
+
+      for (const p of processes) {
+        const { data: hrLinks } = await supabase
+          .from('processus_ressources_humaines')
+          .select('ressource_humaine_id')
+          .eq('processus_id', p.id);
+        
+        if (hrLinks) {
+          for (const link of hrLinks) {
+            const id = link.ressource_humaine_id;
+            if (!newLinkedMap.hr[id]) newLinkedMap.hr[id] = [];
+            if (!newLinkedMap.hr[id].some((x: any) => x.id === p.id)) {
+              newLinkedMap.hr[id].push({ id: p.id, name: p.name });
+            }
+          }
+        }
+
+        const { data: equipLinks } = await supabase
+          .from('processus_equipements')
+          .select('equipement_id')
+          .eq('processus_id', p.id);
+        
+        if (equipLinks) {
+          for (const link of equipLinks) {
+            const id = link.equipement_id;
+            if (!newLinkedMap.equipment[id]) newLinkedMap.equipment[id] = [];
+            if (!newLinkedMap.equipment[id].some((x: any) => x.id === p.id)) {
+              newLinkedMap.equipment[id].push({ id: p.id, name: p.name });
+            }
+          }
+        }
+
+        const { data: appLinks } = await supabase
+          .from('processus_applications')
+          .select('application_id')
+          .eq('processus_id', p.id);
+        
+        if (appLinks) {
+          for (const link of appLinks) {
+            const id = link.application_id;
+            if (!newLinkedMap.apps[id]) newLinkedMap.apps[id] = [];
+            if (!newLinkedMap.apps[id].some((x: any) => x.id === p.id)) {
+              newLinkedMap.apps[id].push({ id: p.id, name: p.name });
+            }
+          }
+        }
+
+        const { data: suppLinks } = await supabase
+          .from('processus_fournisseurs')
+          .select('fournisseur_id')
+          .eq('processus_id', p.id);
+        
+        if (suppLinks) {
+          for (const link of suppLinks) {
+            const id = link.fournisseur_id;
+            if (!newLinkedMap.suppliers[id]) newLinkedMap.suppliers[id] = [];
+            if (!newLinkedMap.suppliers[id].some((x: any) => x.id === p.id)) {
+              newLinkedMap.suppliers[id].push({ id: p.id, name: p.name });
+            }
+          }
+        }
+      }
+
+      setLinkedProcessesMap(newLinkedMap);
+    } catch (error) {
+      console.error('Erreur chargement liens:', error);
+    }
+  }, [processes]);
+
+  useEffect(() => {
+    const loadAll = async () => {
+      setIsLoading(true);
+      await loadCMDBResources();
+      await loadBIAResources();
+      await loadLinkedProcessesForResources();
+      setIsLoading(false);
+    };
+    loadAll();
+  }, [loadCMDBResources, loadBIAResources, loadLinkedProcessesForResources]);
+
+  const handleAddToCMDB = async (type: string, newResource: any) => {
+    await loadCMDBResources();
+    await addResourceToBIA(type, newResource.id);
+  };
+
+  const getProcessResources = useCallback(async (processId: string) => {
+    console.log('🔍 getProcessResources pour:', processId);
+    
     const result = {
       hr: [] as any[],
       equipment: [] as any[],
@@ -2165,369 +3311,114 @@ const BIAFicheDetail = ({
       suppliers: [] as any[]
     };
 
-    // HR
     const { data: hrLinks } = await supabase
       .from('processus_ressources_humaines')
       .select('ressource_humaine_id')
       .eq('processus_id', processId);
-
+    
     if (hrLinks && hrLinks.length > 0) {
-      const hrIds = hrLinks.map((l: any) => l.ressource_humaine_id);
-      const { data: hrData } = await supabase
-        .from('ressources_humaines')
-        .select('*')
-        .in('id', hrIds)
-        .eq('department_id', service.id);
-      result.hr = hrData || [];
+      const ids = hrLinks.map((l: any) => l.ressource_humaine_id);
+      const filteredIds = ids.filter(id => addedHR.some(r => r.id === id));
+      if (filteredIds.length > 0) {
+        const { data } = await supabase.from('ressources_humaines').select('*').in('id', filteredIds);
+        if (data) result.hr = data;
+      }
     }
 
-    // Équipements
     const { data: equipLinks } = await supabase
       .from('processus_equipements')
       .select('equipement_id, rto_hours')
       .eq('processus_id', processId);
-
+    
     if (equipLinks && equipLinks.length > 0) {
-      const equipIds = equipLinks.map((l: any) => l.equipement_id);
-      const { data: equipData } = await supabase
-        .from('ressources_equipements')
-        .select('*')
-        .in('id', equipIds)
-        .eq('department_id', service.id);
-      
-      const enrichedEquipment = equipData?.map(eq => {
-        const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
-        return { ...eq, _linkRto: link?.rto_hours || 4 };
-      });
-      result.equipment = enrichedEquipment || [];
+      const ids = equipLinks.map((l: any) => l.equipement_id);
+      const filteredIds = ids.filter(id => addedEquipment.some(r => r.id === id));
+      if (filteredIds.length > 0) {
+        const { data } = await supabase.from('ressources_equipements').select('*').in('id', filteredIds);
+        if (data) {
+          result.equipment = data.map(eq => {
+            const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
+            return { ...eq, _linkRto: link?.rto_hours || 4 };
+          });
+        }
+      }
     }
 
-    // Apps
     const { data: appLinks } = await supabase
       .from('processus_applications')
       .select('application_id, rto_hours, rpo_hours')
       .eq('processus_id', processId);
-
+    
     if (appLinks && appLinks.length > 0) {
-      const appIds = appLinks.map((l: any) => l.application_id);
-      const { data: appData } = await supabase
-        .from('applications_it')
-        .select('*')
-        .in('id', appIds)
-        .eq('department_id', service.id);
-      
-      const enrichedApps = appData?.map(app => {
-        const link = appLinks.find((l: any) => l.application_id === app.id);
-        return { ...app, _linkRto: link?.rto_hours || 4, _linkRpo: link?.rpo_hours || 2 };
-      });
-      result.apps = enrichedApps || [];
+      const ids = appLinks.map((l: any) => l.application_id);
+      const filteredIds = ids.filter(id => addedApps.some(r => r.id === id));
+      if (filteredIds.length > 0) {
+        const { data } = await supabase.from('applications_it').select('*').in('id', filteredIds);
+        if (data) {
+          result.apps = data.map(app => {
+            const link = appLinks.find((l: any) => l.application_id === app.id);
+            return { ...app, _linkRto: link?.rto_hours || 4, _linkRpo: link?.rpo_hours || 2 };
+          });
+        }
+      }
     }
 
-    // Fournisseurs
     const { data: suppLinks } = await supabase
       .from('processus_fournisseurs')
       .select('fournisseur_id, rto_hours')
       .eq('processus_id', processId);
-
+    
     if (suppLinks && suppLinks.length > 0) {
-      const suppIds = suppLinks.map((l: any) => l.fournisseur_id);
-      const { data: suppData } = await supabase
-        .from('fournisseurs')
-        .select('*')
-        .in('id', suppIds)
-        .eq('department_id', service.id);
-      
-      const enrichedSuppliers = suppData?.map(sup => {
-        const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
-        return { ...sup, _linkRto: link?.rto_hours || 4 };
-      });
-      result.suppliers = enrichedSuppliers || [];
-    }
-
-    return result;
-  };
-
-  // ============================================================
-  // ⭐ FIX DU BUG : loadLinkedResourcesForProcess garde le cache
-  // ============================================================
-  const loadLinkedResourcesForProcess = async (processId: string) => {
-    // Si en cache, on retourne
-    if (processResourcesCache[processId]) {
-      return processResourcesCache[processId];
-    }
-
-    // Sinon, on fetch et on met en cache
-    const result = await fetchProcessResources(processId);
-    setProcessResourcesCache(prev => ({
-      ...prev,
-      [processId]: result
-    }));
-    return result;
-  };
-
-  // ============================================================
-  // ⭐ FIX DU BUG : loadResourcesAndAssociations force le fetch
-  // ============================================================
-  const loadResourcesAndAssociations = async () => {
-    setIsLoading(true);
-    try {
-      // Charger les ressources du département
-      const { data: hrData, error: hrError } = await supabase
-        .from('ressources_humaines')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!hrError && hrData) {
-        setLoadedHR(hrData);
-        setEnrichedHR(await enrichResourcesWithProcesses(hrData, 'hr'));
-      }
-
-      const { data: equipData, error: equipError } = await supabase
-        .from('ressources_equipements')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!equipError && equipData) {
-        setLoadedEquipment(equipData);
-        setEnrichedEquipment(await enrichResourcesWithProcesses(equipData, 'equipment'));
-      }
-
-      const { data: appData, error: appError } = await supabase
-        .from('applications_it')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!appError && appData) {
-        setLoadedApps(appData);
-        setEnrichedApps(await enrichResourcesWithProcesses(appData, 'app'));
-      }
-
-      const { data: suppData, error: suppError } = await supabase
-        .from('fournisseurs')
-        .select('*')
-        .eq('department_id', service.id);
-      
-      if (!suppError && suppData) {
-        setLoadedSuppliers(suppData);
-        setEnrichedSuppliers(await enrichResourcesWithProcesses(suppData, 'supplier'));
-      }
-
-      setAllResources({
-        hr: hrData || [],
-        equipment: equipData || [],
-        apps: appData || [],
-        suppliers: suppData || []
-      });
-
-      // ⭐ ICI LE FIX : on utilise fetchProcessResources DIRECTEMENT,
-      // sans passer par le cache, puis on met à jour le cache avec les données fraîches
-      const newCache: Record<string, any> = {};
-      for (const p of processes) {
-        const freshData = await fetchProcessResources(p.id);
-        newCache[p.id] = freshData;
-      }
-      setProcessResourcesCache(newCache);
-
-    } catch (error) {
-      console.error('Erreur chargement ressources:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const enrichResourcesWithProcesses = async (resources: any[], type: string) => {
-    if (!resources || resources.length === 0) return resources;
-
-    let table = '';
-    let idColumn = '';
-    let idColumnInResource = '';
-
-    switch(type) {
-      case 'hr':
-        table = 'processus_ressources_humaines';
-        idColumn = 'ressource_humaine_id';
-        idColumnInResource = 'id';
-        break;
-      case 'equipment':
-        table = 'processus_equipements';
-        idColumn = 'equipement_id';
-        idColumnInResource = 'id';
-        break;
-      case 'app':
-        table = 'processus_applications';
-        idColumn = 'application_id';
-        idColumnInResource = 'id';
-        break;
-      case 'supplier':
-        table = 'processus_fournisseurs';
-        idColumn = 'fournisseur_id';
-        idColumnInResource = 'id';
-        break;
-      default:
-        return resources;
-    }
-
-    const resourceIds = resources.map(r => r.id);
-
-    if (resourceIds.length === 0) return resources;
-
-    const { data: links, error } = await supabase
-      .from(table)
-      .select(`${idColumn}, processus_id`)
-      .in(idColumn, resourceIds);
-
-    if (error) {
-      console.error(`Erreur chargement liens ${type}:`, error);
-      return enrichResourcesWithProcessesFallback(resources, type);
-    }
-
-    const processIds = links ? links.map(l => l.processus_id) : [];
-    let processMap: Record<string, string> = {};
-
-    if (processIds.length > 0) {
-      const { data: processData } = await supabase
-        .from('processus_metier')
-        .select('id, name')
-        .in('id', processIds);
-      
-      if (processData) {
-        processMap = processData.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {});
-      }
-    }
-
-    const linksByResource: Record<string, any[]> = {};
-    if (links) {
-      for (const link of links) {
-        const resourceId = link[idColumn];
-        if (!linksByResource[resourceId]) {
-          linksByResource[resourceId] = [];
-        }
-        linksByResource[resourceId].push(link);
-      }
-    }
-
-    return resources.map(resource => {
-      const resourceLinks = linksByResource[resource.id] || [];
-      const linkedProcesses = resourceLinks.map(link => ({
-        id: link.processus_id,
-        name: processMap[link.processus_id] || link.processus_id
-      }));
-
-      let oldLinkedProcesses: any[] = [];
-      
-      if (type === 'app') {
-        for (const p of processes) {
-          const apps = (p as any).appsCritiques || [];
-          if (apps.some((a: any) => a.id === resource.id || a.name === resource.name)) {
-            oldLinkedProcesses.push({ id: p.id, name: p.name });
-          }
-        }
-      } else {
-        for (const p of processes) {
-          const resourcesList = p.resources || [];
-          const found = resourcesList.some((r: any) => {
-            if (type === 'hr') {
-              if ((r as any).hrPeople) {
-                return (r as any).hrPeople.some((person: any) => person.id === resource.id || person.name === resource.name);
-              }
-              return r.id === resource.id || r.name === resource.name;
-            }
-            return r.type === (type === 'equipment' ? 'Equipement' : 'Fournisseur') && 
-                   (r.id === resource.id || r.name === resource.name);
+      const ids = suppLinks.map((l: any) => l.fournisseur_id);
+      const filteredIds = ids.filter(id => addedSuppliers.some(r => r.id === id));
+      if (filteredIds.length > 0) {
+        const { data } = await supabase.from('fournisseurs').select('*').in('id', filteredIds);
+        if (data) {
+          result.suppliers = data.map(sup => {
+            const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
+            return { ...sup, _linkRto: link?.rto_hours || 4 };
           });
-          if (found) {
-            oldLinkedProcesses.push({ id: p.id, name: p.name });
-          }
         }
       }
-
-      const allLinked = [...linkedProcesses];
-      for (const oldP of oldLinkedProcesses) {
-        if (!allLinked.some(p => p.id === oldP.id)) {
-          allLinked.push(oldP);
-        }
-      }
-
-      return {
-        ...resource,
-        linkedProcesses: allLinked,
-        linkedProcessNames: allLinked.map(p => p.name).join(', ')
-      };
-    });
-  };
-
-  const enrichResourcesWithProcessesFallback = (resources: any[], type: string) => {
-    return resources.map(resource => {
-      const linked: any[] = [];
-      
-      for (const p of processes) {
-        let isLinked = false;
-        
-        if (type === 'app') {
-          const apps = (p as any).appsCritiques || [];
-          isLinked = apps.some((a: any) => a.id === resource.id || a.name === resource.name);
-        } else if (type === 'supplier') {
-          const resourcesList = p.resources || [];
-          isLinked = resourcesList.some((r: any) => r.type === "Fournisseur" && (r.id === resource.id || r.name === resource.name));
-        } else if (type === 'equipment') {
-          const resourcesList = p.resources || [];
-          isLinked = resourcesList.some((r: any) => r.type === "Equipement" && (r.id === resource.id || r.name === resource.name));
-        } else if (type === 'hr') {
-          const resourcesList = p.resources || [];
-          for (const r of resourcesList) {
-            if (r.type === "HR") {
-              if ((r as any).hrPeople && (r as any).hrPeople.some((person: any) => person.id === resource.id || person.name === resource.name)) {
-                isLinked = true;
-                break;
-              } else if (r.id === resource.id || r.name === resource.name) {
-                isLinked = true;
-                break;
-              }
-            }
-          }
-        }
-        
-        if (isLinked) {
-          linked.push({ id: p.id, name: p.name });
-        }
-      }
-      
-      return {
-        ...resource,
-        linkedProcesses: linked,
-        linkedProcessNames: linked.map(p => p.name).join(', ')
-      };
-    });
-  };
-
-  const getTotalResourceCount = (process: any) => {
-    const cached = processResourcesCache[process.id];
-    if (!cached) {
-      return (process.resources?.length || 0) + ((process as any).appsCritiques?.length || 0);
     }
-    return cached.hr.length + cached.equipment.length + cached.apps.length + cached.suppliers.length;
-  };
+
+    setProcessResourcesCache(prev => ({ ...prev, [processId]: result }));
+    return result;
+  }, [addedHR, addedEquipment, addedApps, addedSuppliers]);
+
+  const preloadAllProcesses = useCallback(async () => {
+    if (processes.length === 0) return;
+    console.log('🔄 Préchargement de tous les processus...');
+    const promises = processes.map(p => getProcessResources(p.id));
+    await Promise.all(promises);
+    console.log('✅ Préchargement terminé');
+  }, [processes, getProcessResources]);
 
   useEffect(() => {
-    if (selectedProcessForLink) {
-      loadResourcesAndAssociations();
+    if (!isLoading) {
+      preloadAllProcesses();
     }
-  }, [selectedProcessForLink]);
-
-  useEffect(() => {
-    loadResourcesAndAssociations();
-  }, [service.id]);
-
-  // ⭐ FIX : refreshLinkedResources vide le cache puis recharge les données FRAÎCHES
-  const refreshLinkedResources = async () => {
-    // On vide le cache pour forcer un rechargement
-    setProcessResourcesCache({});
-    // On recharge en forçant le fetch direct
-    await loadResourcesAndAssociations();
-  };
+  }, [isLoading, preloadAllProcesses]);
 
   const linkResourceToProcess = async (type: string, resourceId: string, rtoHours?: number, rpoHours?: number) => {
     if (!linkProcess) return;
+
+    let isInBIA = false;
+    switch(type) {
+      case 'HR': isInBIA = addedHR.some(r => r.id === resourceId); break;
+      case 'Equipement': isInBIA = addedEquipment.some(r => r.id === resourceId); break;
+      case 'App': isInBIA = addedApps.some(r => r.id === resourceId); break;
+      case 'Fournisseur': isInBIA = addedSuppliers.some(r => r.id === resourceId); break;
+    }
+
+    if (!isInBIA) {
+      toast({ 
+        title: "Erreur", 
+        description: "Cette ressource n'est pas dans la fiche BIA. Ajoutez-la d'abord via l'onglet 'Ressources requises'.",
+        variant: "destructive" 
+      });
+      return;
+    }
 
     try {
       let table = '';
@@ -2577,195 +3468,19 @@ const BIAFicheDetail = ({
       if (error) throw error;
 
       toast({ title: "Succès", description: `Ressource liée au processus "${linkProcess.name}"` });
-      await refreshLinkedResources();
+      
+      await loadLinkedProcessesForResources();
+      await getProcessResources(linkProcess.id);
+      await preloadAllProcesses();
+
     } catch (error: any) {
       console.error('Erreur liaison:', error);
       toast({ title: "Erreur", description: error.message || "Erreur lors de la liaison", variant: "destructive" });
     }
   };
 
-  const handleDeletePerson = async (id: string, name: string) => {
-    try {
-      const { error: linkError } = await supabase
-        .from('processus_ressources_humaines')
-        .delete()
-        .eq('ressource_humaine_id', id);
-
-      if (linkError) console.error('Erreur suppression liaisons RH:', linkError);
-
-      const { error } = await supabase
-        .from('ressources_humaines')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      toast({ title: "Succès", description: `"${name}" supprimé avec succès` });
-      await refreshLinkedResources();
-    } catch (error: any) {
-      console.error('Erreur suppression RH:', error);
-      toast({ title: "Erreur", description: error.message || "Erreur lors de la suppression", variant: "destructive" });
-    }
-  };
-
-  const handleDeleteEquipment = async (id: string, name: string) => {
-    try {
-      const { data: links, error: linkCheckError } = await supabase
-        .from('processus_equipements')
-        .select('processus_id')
-        .eq('equipement_id', id);
-
-      if (linkCheckError) throw linkCheckError;
-
-      if (links && links.length > 0) {
-        const { error: deleteLinksError } = await supabase
-          .from('processus_equipements')
-          .delete()
-          .eq('equipement_id', id);
-
-        if (deleteLinksError) throw deleteLinksError;
-        toast({ description: `${links.length} liaison(s) supprimée(s)` });
-      }
-
-      const { error } = await supabase
-        .from('ressources_equipements')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      toast({ title: "Succès", description: `Équipement "${name}" supprimé avec succès` });
-      await refreshLinkedResources();
-    } catch (error: any) {
-      console.error('Erreur suppression équipement:', error);
-      toast({ title: "Erreur", description: error.message || "Erreur lors de la suppression", variant: "destructive" });
-    }
-  };
-
-  const addHR = async () => {
-    if (!newHR.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom" });
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('ressources_humaines')
-        .insert({
-          name: newHR.name,
-          role: newHR.role || "—",
-          phone: newHR.phone || "",
-          email: newHR.email || "",
-          department_id: service.id
-        });
-
-      if (error) throw error;
-      
-      toast({ title: "Succès", description: `Collaborateur "${newHR.name}" ajouté avec succès` });
-      setShowAddHRModal(false);
-      setNewHR({
-        name: "",
-        role: "",
-        phone: "",
-        email: "",
-      });
-      await refreshLinkedResources();
-    } catch (error: any) {
-      console.error('Erreur ajout RH:', error);
-      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout du collaborateur", variant: "destructive" });
-    }
-  };
-
-  const addEquipment = async () => {
-    if (!newEquipment.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom d'équipement" });
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('ressources_equipements')
-        .insert({
-          name: newEquipment.name,
-          type: newEquipment.type || "—",
-          quantity: newEquipment.quantity || 1,
-          quantities: newEquipment.quantities,
-          department_id: service.id
-        });
-
-      if (error) throw error;
-      
-      toast({ title: "Succès", description: `Équipement "${newEquipment.name}" ajouté avec succès` });
-      setShowAddEquipmentModal(false);
-      setNewEquipment({
-        name: "",
-        type: "",
-        quantity: 1,
-        quantities: { P0_4H: 2, P4_8H: 3, P1D: 3, P2D: 4 }
-      });
-      await refreshLinkedResources();
-    } catch (error: any) {
-      console.error('Erreur ajout équipement:', error);
-      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout de l'équipement", variant: "destructive" });
-    }
-  };
-
-  const addApp = async () => {
-    if (!newApp.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom d'application" });
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('applications_it').insert({
-        name: newApp.name,
-        remplacablepar: newApp.remplacablePar || "",
-        department_id: service.id
-      });
-
-      if (error) throw error;
-      
-      toast({ title: "Succès", description: `Application "${newApp.name}" ajoutée avec succès` });
-      setShowAddAppModal(false);
-      setNewApp({ name: "", remplacablePar: "", department_id: service.id });
-      await refreshLinkedResources();
-    } catch (error: any) {
-      console.error('Erreur ajout application:', error);
-      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout de l'application", variant: "destructive" });
-    }
-  };
-
-  const addSupplier = async () => {
-    if (!newSupplier.name.trim()) {
-      toast({ title: "Champ requis", description: "Veuillez saisir un nom de prestataire" });
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('fournisseurs').insert({
-        name: newSupplier.name,
-        service: newSupplier.service || "—",
-        contact: newSupplier.contact || "",
-        department_id: service.id
-      });
-
-      if (error) throw error;
-      
-      toast({ title: "Succès", description: `Prestataire "${newSupplier.name}" ajouté avec succès` });
-      setShowAddSupplierModal(false);
-      setNewSupplier({ name: "", service: "", contact: "", department_id: service.id });
-      await refreshLinkedResources();
-    } catch (error: any) {
-      console.error('Erreur ajout prestataire:', error);
-      toast({ title: "Erreur", description: error.message || "Erreur lors de l'ajout du prestataire", variant: "destructive" });
-    }
-  };
-
-  const [appSearchQuery, setAppSearchQuery] = useState<string>("");
-  const [supplierSearchQuery, setSupplierSearchQuery] = useState<string>("");
-
   const handleProcessClick = (process: any) => {
-    loadLinkedResourcesForProcess(process.id).then(() => {
+    getProcessResources(process.id).then(() => {
       setSelectedProcessDetail(process);
     });
   };
@@ -2777,260 +3492,114 @@ const BIAFicheDetail = ({
   };
 
   const handleDeleteProcess = (id: string, name: string) => {
-    if (confirm(`⚠️ Voulez-vous vraiment supprimer le processus "${name}" ?\n\nCette action supprimera également toutes les liaisons avec des ressources.`)) {
+    if (confirm(`⚠️ Voulez-vous vraiment supprimer le processus "${name}" ?`)) {
       onDelete(id, name);
-      setTimeout(() => {
-        refreshLinkedResources();
-      }, 500);
     }
   };
 
-  const filteredProcesses = useMemo(() => {
-    return processes.filter(p => {
-      if (filterCriticality !== "all") {
-        const score = computeMaxScoreFromImpacts(p.impacts);
-        const crit = scoreToCriticality(score);
-        if (crit !== filterCriticality) return false;
-      }
-      if (filterResponsible !== "all") {
-        if (p.owner !== filterResponsible) return false;
-      }
-      return true;
-    });
-  }, [processes, filterCriticality, filterResponsible]);
-
-  const responsibleOptions = useMemo(() => {
-    const owners = new Set<string>();
-    processes.forEach(p => {
-      if (p.owner) owners.add(p.owner);
-    });
-    return Array.from(owners);
-  }, [processes]);
-
-  const filteredApps = useMemo(() => {
-    let apps = [...enrichedApps];
-    if (appSearchQuery.trim()) {
-      const q = appSearchQuery.toLowerCase().trim();
-      apps = apps.filter(app => 
-        app.name?.toLowerCase().includes(q) ||
-        app.remplacablepar?.toLowerCase().includes(q)
-      );
-    }
-    return apps;
-  }, [enrichedApps, appSearchQuery]);
-
-  const filteredSuppliers = useMemo(() => {
-    let suppliers = [...enrichedSuppliers];
-    if (supplierSearchQuery.trim()) {
-      const q = supplierSearchQuery.toLowerCase().trim();
-      suppliers = suppliers.filter(sup => 
-        sup.name?.toLowerCase().includes(q) ||
-        sup.service?.toLowerCase().includes(q) ||
-        sup.contact?.toLowerCase().includes(q)
-      );
-    }
-    return suppliers;
-  }, [enrichedSuppliers, supplierSearchQuery]);
-
-  const deleteApp = async (appId: string, appName: string) => {
-    if (!confirm(`⚠️ Supprimer l'application "${appName}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
-    try {
-      const { error } = await supabase
-        .from('applications_it')
-        .delete()
-        .eq('id', appId);
-      if (error) throw error;
-      toast({ title: "Succès", description: `"${appName}" supprimée` });
-      refreshLinkedResources();
-    } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    }
+  const getTotalResourceCount = (process: any) => {
+    const cached = processResourcesCache[process.id];
+    if (!cached) return 0;
+    return cached.hr.length + cached.equipment.length + cached.apps.length + cached.suppliers.length;
   };
-
-  const deleteSupplier = async (supplierId: string, supplierName: string) => {
-    if (!confirm(`⚠️ Supprimer le prestataire "${supplierName}" ?\n\nCette action est irréversible et supprimera également toutes ses liaisons avec des processus.`)) return;
-    try {
-      const { error } = await supabase
-        .from('fournisseurs')
-        .delete()
-        .eq('id', supplierId);
-      if (error) throw error;
-      toast({ title: "Succès", description: `"${supplierName}" supprimé` });
-      refreshLinkedResources();
-    } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    }
-  };
-
-  // ✅ Fonction de calcul des postes de travail
-  const calculateWorkstations = useCallback(() => {
-    const periods = AVAILABILITY_PERIODS;
-    const result: Record<string, number> = {};
-    for (const period of periods) {
-      const count = enrichedHR.filter(person => person.availability?.[period.id] === true).length;
-      result[period.id] = count;
-    }
-    return result;
-  }, [enrichedHR]);
-
-  const workstationCounts = useMemo(() => calculateWorkstations(), [calculateWorkstations]);
 
   return (
     <div className="space-y-4">
+      <SelectFromCMDBDialog
+        open={showSelectHR}
+        onOpenChange={setShowSelectHR}
+        resourceType="HR"
+        allResources={allHR}
+        addedResourceIds={addedHR.map(r => r.id)}
+        onSelect={(ids) => addMultipleResourcesToBIA('HR', ids)}
+        onAddToCMDB={() => { setShowSelectHR(false); setShowAddHR(true); }}
+        title="Ajouter des collaborateurs"
+        description="Sélectionnez un ou plusieurs collaborateurs depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+      />
+
+      <SelectFromCMDBDialog
+        open={showSelectEquipment}
+        onOpenChange={setShowSelectEquipment}
+        resourceType="Equipement"
+        allResources={allEquipment}
+        addedResourceIds={addedEquipment.map(r => r.id)}
+        onSelect={(ids) => addMultipleResourcesToBIA('Equipement', ids)}
+        onAddToCMDB={() => { setShowSelectEquipment(false); setShowAddEquipment(true); }}
+        title="Ajouter des équipements"
+        description="Sélectionnez un ou plusieurs équipements depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+      />
+
+      <SelectFromCMDBDialog
+        open={showSelectApp}
+        onOpenChange={setShowSelectApp}
+        resourceType="App"
+        allResources={allApps}
+        addedResourceIds={addedApps.map(r => r.id)}
+        onSelect={(ids) => addMultipleResourcesToBIA('App', ids)}
+        onAddToCMDB={() => { setShowSelectApp(false); setShowAddApp(true); }}
+        title="Ajouter des applications"
+        description="Sélectionnez une ou plusieurs applications depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+      />
+
+      <SelectFromCMDBDialog
+        open={showSelectSupplier}
+        onOpenChange={setShowSelectSupplier}
+        resourceType="Fournisseur"
+        allResources={allSuppliers}
+        addedResourceIds={addedSuppliers.map(r => r.id)}
+        onSelect={(ids) => addMultipleResourcesToBIA('Fournisseur', ids)}
+        onAddToCMDB={() => { setShowSelectSupplier(false); setShowAddSupplier(true); }}
+        title="Ajouter des prestataires"
+        description="Sélectionnez un ou plusieurs prestataires depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+      />
+
+      <AddToCMDBDialog
+        open={showAddHR}
+        onOpenChange={setShowAddHR}
+        resourceType="HR"
+        onAdd={(data) => handleAddToCMDB('HR', data)}
+        departmentId={service.id}
+      />
+
+      <AddToCMDBDialog
+        open={showAddEquipment}
+        onOpenChange={setShowAddEquipment}
+        resourceType="Equipement"
+        onAdd={(data) => handleAddToCMDB('Equipement', data)}
+        departmentId={service.id}
+      />
+
+      <AddToCMDBDialog
+        open={showAddApp}
+        onOpenChange={setShowAddApp}
+        resourceType="App"
+        onAdd={(data) => handleAddToCMDB('App', data)}
+        departmentId={service.id}
+      />
+
+      <AddToCMDBDialog
+        open={showAddSupplier}
+        onOpenChange={setShowAddSupplier}
+        resourceType="Fournisseur"
+        onAdd={(data) => handleAddToCMDB('Fournisseur', data)}
+        departmentId={service.id}
+      />
+
       <LinkResourceDialog
         open={linkDialogOpen}
         onOpenChange={setLinkDialogOpen}
         process={linkProcess}
-        allResources={allResources}
+        addedResources={{
+          hr: addedHR,
+          equipment: addedEquipment,
+          apps: addedApps,
+          suppliers: addedSuppliers
+        }}
         onLink={linkResourceToProcess}
         resourceType={linkResourceType}
         setResourceType={setLinkResourceType}
+        onNavigateToCMDB={onNavigateToCMDB}
       />
-
-      {/* ✅ MODIFIÉ : Formulaire d'ajout RH - sans périodes */}
-      <Dialog open={showAddHRModal} onOpenChange={setShowAddHRModal}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <Users className="h-5 w-5 text-indigo-600" />
-              Ajouter un collaborateur clé
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Nom *</Label>
-                <Input value={newHR.name} onChange={(e) => setNewHR({ ...newHR, name: e.target.value })} placeholder="Nom complet" />
-              </div>
-              <div>
-                <Label>Rôle</Label>
-                <Input value={newHR.role} onChange={(e) => setNewHR({ ...newHR, role: e.target.value })} placeholder="ex: Chef de projet" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Email</Label>
-                <Input type="email" value={newHR.email} onChange={(e) => setNewHR({ ...newHR, email: e.target.value })} placeholder="nom@email.com" />
-              </div>
-              <div>
-                <Label>Téléphone</Label>
-                <Input value={newHR.phone} onChange={(e) => setNewHR({ ...newHR, phone: e.target.value })} placeholder="+33 6..." />
-              </div>
-            </div>
-            {/* ❌ Périodes de disponibilité supprimées */}
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowAddHRModal(false)}>Annuler</Button>
-            <Button onClick={addHR} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showAddEquipmentModal} onOpenChange={setShowAddEquipmentModal}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <Monitor className="h-5 w-5 text-indigo-600" />
-              Ajouter un équipement
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Nom *</Label>
-                <Input value={newEquipment.name} onChange={(e) => setNewEquipment({ ...newEquipment, name: e.target.value })} placeholder="ex: Serveur Dell R740" />
-              </div>
-              <div>
-                <Label>Type</Label>
-                <Input value={newEquipment.type} onChange={(e) => setNewEquipment({ ...newEquipment, type: e.target.value })} placeholder="ex: Serveur, Poste, Switch" />
-              </div>
-            </div>
-            <div>
-              <Label>Quantité</Label>
-              <Input type="number" min={1} value={newEquipment.quantity} onChange={(e) => setNewEquipment({ ...newEquipment, quantity: Number(e.target.value) })} />
-            </div>
-            <div>
-              <Label className="font-medium">Quantités par période</Label>
-              <div className="grid grid-cols-5 gap-2 mt-2">
-                {Object.entries({ P0_4H: "0-4h", P4_8H: "4-8h", P1D: "1j", P2D: "2j", P1W: "1sem" }).map(([key, label]) => (
-                  <div key={key} className="flex flex-col items-center">
-                    <span className="text-xs text-gray-500">{label}</span>
-                    <Input 
-                      type="number"
-                      className="w-14 h-8 text-center text-sm"
-                      value={newEquipment.quantities[key as keyof typeof newEquipment.quantities]}
-                      onChange={(e) => 
-                        setNewEquipment({ 
-                          ...newEquipment, 
-                          quantities: { ...newEquipment.quantities, [key]: Number(e.target.value) }
-                        })
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowAddEquipmentModal(false)}>Annuler</Button>
-            <Button onClick={addEquipment} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showAddAppModal} onOpenChange={setShowAddAppModal}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <Server className="h-5 w-5 text-indigo-600" />
-              Ajouter une application IT
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Nom *</Label>
-              <Input value={newApp.name} onChange={(e) => setNewApp({ ...newApp, name: e.target.value })} placeholder="ex: SAP S/4HANA" />
-            </div>
-            <div>
-              <Label>Application alternative</Label>
-              <Input value={newApp.remplacablePar} onChange={(e) => setNewApp({ ...newApp, remplacablePar: e.target.value })} placeholder="ex: Backup manuel..." />
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowAddAppModal(false)}>Annuler</Button>
-            <Button onClick={addApp} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showAddSupplierModal} onOpenChange={setShowAddSupplierModal}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <Handshake className="h-5 w-5 text-indigo-600" />
-              Ajouter un prestataire
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Nom *</Label>
-              <Input value={newSupplier.name} onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })} placeholder="ex: AWS, OVH..." />
-            </div>
-            <div>
-              <Label>Service</Label>
-              <Input value={newSupplier.service} onChange={(e) => setNewSupplier({ ...newSupplier, service: e.target.value })} placeholder="ex: Hébergement cloud" />
-            </div>
-            <div>
-              <Label>Contact</Label>
-              <Input value={newSupplier.contact} onChange={(e) => setNewSupplier({ ...newSupplier, contact: e.target.value })} placeholder="Nom du contact" />
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowAddSupplierModal(false)}>Annuler</Button>
-            <Button onClick={addSupplier} className="bg-indigo-600 hover:bg-indigo-700">Ajouter</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {selectedProcessDetail && (
         <ProcessDetailView
@@ -3039,7 +3608,10 @@ const BIAFicheDetail = ({
           onClose={() => setSelectedProcessDetail(null)}
           onEditProcess={onEdit}
           serviceId={service.id}
-          onResourceUnlinked={refreshLinkedResources}
+          onResourceUnlinked={() => {
+            getProcessResources(selectedProcessDetail.id);
+            preloadAllProcesses();
+          }}
         />
       )}
 
@@ -3063,7 +3635,6 @@ const BIAFicheDetail = ({
         </div>
       </div>
 
-      {/* ✅ MODIFIÉ : Suppression du coordinateur BCM */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Domaine métier</p>
@@ -3075,21 +3646,11 @@ const BIAFicheDetail = ({
         </div>
         <div>
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Date d'évaluation</p>
-          <div className="flex items-center gap-1">
-            <p className="font-medium">{editedFields.evaluationDate}</p>
-            <button className="text-indigo-500 hover:text-indigo-700">
-              <Pencil className="h-3 w-3" />
-            </button>
-          </div>
+          <p className="font-medium">{new Date().toLocaleDateString('fr-FR')}</p>
         </div>
         <div>
           <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Validé par</p>
-          <div className="flex items-center gap-1">
-            <p className="font-medium">{editedFields.validatedBy}</p>
-            <button className="text-indigo-500 hover:text-indigo-700">
-              <Pencil className="h-3 w-3" />
-            </button>
-          </div>
+          <p className="font-medium">— En attente</p>
         </div>
       </div>
 
@@ -3144,52 +3705,8 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-[#172030]/40" />
-              <span className="text-xs font-medium text-[#172030]/60">Filtres</span>
-            </div>
-            <select
-              value={filterCriticality}
-              onChange={(e) => setFilterCriticality(e.target.value)}
-              className="h-8 px-2.5 text-xs border border-[#E8E4DC] rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#2A5141] text-[#172030]"
-            >
-              <option value="all">Toutes les criticités</option>
-              <option value="Critique">Critique</option>
-              <option value="Majeur">Majeur</option>
-              <option value="Modéré">Modéré</option>
-              <option value="Mineur">Mineur</option>
-            </select>
-            <select
-              value={filterResponsible}
-              onChange={(e) => setFilterResponsible(e.target.value)}
-              className="h-8 px-2.5 text-xs border border-[#E8E4DC] rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#2A5141] text-[#172030]"
-            >
-              <option value="all">Tous les responsables</option>
-              {responsibleOptions.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-            {(filterCriticality !== "all" || filterResponsible !== "all") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs text-[#172030]/40 hover:text-[#172030]"
-                onClick={() => {
-                  setFilterCriticality("all");
-                  setFilterResponsible("all");
-                }}
-              >
-                <X className="h-3 w-3 mr-1" /> Réinitialiser
-              </Button>
-            )}
-            <span className="text-xs text-[#172030]/40 ml-auto">
-              {filteredProcesses.length} processus
-            </span>
-          </div>
-
           <div className="space-y-3">
-            {filteredProcesses.map((p, idx) => {
+            {processes.map((p, idx) => {
               const count = getTotalResourceCount(p);
               const resources = processResourcesCache[p.id];
               return (
@@ -3221,127 +3738,85 @@ const BIAFicheDetail = ({
           </Button>
         </TabsContent>
 
-        {/* ONGLET RESSOURCES REQUISES - AVEC TABLEAU DE MONTÉE EN CHARGE */}
         <TabsContent value="resources" className="pt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
             <div>Ressources minimales pour maintenir les processus critiques dans la première semaine après un sinistre.</div>
           </div>
 
-          <div className="flex gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={() => setShowAddHRModal(true)} className="gap-1">
-              <Users className="h-4 w-4" /> Ajouter un collaborateur
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-1.5 border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2]"
+              onClick={() => setShowSelectHR(true)}
+            >
+              <Users className="h-3.5 w-3.5" />
+              Ajouter un collaborateur
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowAddEquipmentModal(true)} className="gap-1">
-              <Monitor className="h-4 w-4" /> Ajouter un équipement
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-1.5 border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2]"
+              onClick={() => setShowSelectEquipment(true)}
+            >
+              <Monitor className="h-3.5 w-3.5" />
+              Ajouter un équipement
             </Button>
           </div>
 
-          {/* PERSONNEL NÉCESSAIRE - MODIFIÉ : Collaborateurs clés sans périodes */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
             <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
               <Users className="h-4 w-4 text-[#2A5141]" />
               <h4 className="font-medium text-[#172030] flex-1 text-sm">Collaborateurs clés</h4>
-              <span className="text-xs text-[#172030]/40">{enrichedHR.length} collaborateur{enrichedHR.length > 1 ? 's' : ''}</span>
+              <span className="text-xs text-[#172030]/40">{addedHR.length} collaborateur{addedHR.length > 1 ? 's' : ''}</span>
             </div>
             <div className="p-4">
-              {enrichedHR.length > 0 ? (
-                <PersonnelTableau people={enrichedHR} />
+              {addedHR.length > 0 ? (
+                <PersonnelTableau 
+                  people={addedHR} 
+                  onDelete={(id, name) => removeResourceFromBIA('HR', id, name)}
+                  linkedProcessesMap={linkedProcessesMap.hr}
+                />
               ) : (
                 <div className="text-center py-6 text-[#172030]/40 text-sm">
-                  Aucun collaborateur clé déclaré.
+                  Aucun collaborateur ajouté. Cliquez sur "Ajouter un collaborateur" pour en sélectionner depuis le CMDB.
                 </div>
               )}
             </div>
           </div>
 
-          {/* ÉQUIPEMENTS */}
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
             <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
               <Package className="h-4 w-4 text-[#2A5141]" />
               <h4 className="font-medium text-[#172030] flex-1 text-sm">Équipements & infrastructure</h4>
-              <span className="text-xs text-[#172030]/40">{enrichedEquipment.length} équipement{enrichedEquipment.length > 1 ? 's' : ''}</span>
+              <span className="text-xs text-[#172030]/40">{addedEquipment.length} équipement{addedEquipment.length > 1 ? 's' : ''}</span>
             </div>
             <div className="p-4">
-              {enrichedEquipment.length > 0 ? (
-                <EquipmentTableau equipment={enrichedEquipment} onDeleteEquipment={handleDeleteEquipment} />
+              {addedEquipment.length > 0 ? (
+                <EquipmentTableau 
+                  equipment={addedEquipment} 
+                  onDelete={(id, name) => removeResourceFromBIA('Equipement', id, name)}
+                  linkedProcessesMap={linkedProcessesMap.equipment}
+                />
               ) : (
                 <div className="text-center py-6 text-[#172030]/40 text-sm">
-                  Aucun équipement déclaré.
+                  Aucun équipement ajouté. Cliquez sur "Ajouter un équipement" pour en sélectionner depuis le CMDB.
                 </div>
               )}
             </div>
           </div>
 
-          {/* DOCUMENTS */}
-          <div className="border rounded-xl overflow-hidden bg-white">
-            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
-              <FileText className="h-4 w-4 text-[#2A5141]" />
-              <h4 className="font-medium text-[#172030] flex-1 text-sm">Documents & supports critiques</h4>
-              <span className="text-xs text-[#172030]/40">
-                {processes.reduce((acc, p) => acc + ((p.documents || []).length), 0)} élément{processes.reduce((acc, p) => acc + ((p.documents || []).length), 0) > 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="p-4">
-              {processes.some(p => p.documents && p.documents.length > 0) ? (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-[#FAFAF9] border-b border-[#E8E4DC]">
-                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Document / support</TableHead>
-                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Processus</TableHead>
-                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Disponible sous</TableHead>
-                        <TableHead className="font-semibold text-[11px] text-[#172030]/50 uppercase tracking-wider py-3">Classification</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {processes.flatMap(p => 
-                        (p.documents || []).map((doc: any) => ({ ...doc, processName: p.name }))
-                      ).map((doc, idx) => (
-                        <TableRow key={doc.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAF9]'}>
-                          <TableCell className="font-medium text-sm text-[#172030] py-3">{doc.name}</TableCell>
-                          <TableCell className="text-sm text-[#172030]/60 py-3">{doc.processName}</TableCell>
-                          <TableCell className="py-3">
-                            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2A5141]">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#2A5141]" />
-                              {doc.availableUnder || "≤ 2h"}
-                            </span>
-                          </TableCell>
-                          <TableCell className="py-3">
-                            <span className={cn(
-                              "inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded border",
-                              doc.confidential 
-                                ? "text-[#ef4444] border-red-200 bg-red-50" 
-                                : "text-[#172030]/60 border-[#E8E4DC] bg-[#F8F6F2]"
-                            )}>
-                              {doc.confidential ? "Confidentiel" : "Interne"}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <div className="text-center py-6 text-[#172030]/40 text-sm">
-                  Aucun document critique déclaré.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ✅ TABLEAU DE MONTÉE EN CHARGE - avec le composant modifié */}
           <div className="mt-6">
             <TableauDeMonteeEnCharge processes={processes} serviceName={service.name} />
           </div>
         </TabsContent>
 
-        {/* ✅ ONGLET APPLICATIONS IT - AVEC BOUTON AJOUTER */}
         <TabsContent value="apps" className="pt-4">
           <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
             <div>
-              <span className="font-medium">Applications IT</span> liées aux processus.
+              <span className="font-medium">Applications IT</span> ajoutées à la fiche BIA.
             </div>
           </div>
 
@@ -3350,93 +3825,48 @@ const BIAFicheDetail = ({
               <Server className="h-5 w-5 text-[#172030]" />
               <span className="text-sm font-medium text-[#172030]">Applications IT</span>
               <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
-                {enrichedApps.length}
+                {addedApps.length}
               </Badge>
             </div>
             <Button 
-              onClick={() => setShowAddAppModal(true)} 
-              className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
+              variant="outline" 
+              size="sm" 
+              className="text-[#2A5141] border-[#2A5141] hover:bg-[#F8F6F2]"
+              onClick={() => setShowSelectApp(true)}
             >
-              <Plus className="h-3.5 w-3.5" /> Ajouter une application
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Ajouter une application
             </Button>
           </div>
 
-          {enrichedApps.length > 0 ? (
-            <div className="space-y-3">
-              {enrichedApps.map((app) => {
-                const displayProcesses = app.linkedProcesses || [];
-                const visibleProcesses = displayProcesses.slice(0, 2);
-                const remainingCount = displayProcesses.length - 2;
-
-                return (
-                  <div 
-                    key={app.id}
-                    className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
-                          <Server className="h-4 w-4 text-[#172030]" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm text-[#172030]">{app.name}</p>
-                          <p className="text-xs text-[#172030]/40">
-                            {app.remplacablepar || "Aucune alternative"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {displayProcesses.length > 0 && (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-[#172030]/40">Lié à :</span>
-                            {visibleProcesses.map((p: any) => (
-                              <Badge key={p.id} variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
-                                {p.name}
-                              </Badge>
-                            ))}
-                            {remainingCount > 0 && (
-                              <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
-                                +{remainingCount}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
-                          onClick={() => deleteApp(app.id, app.name)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {addedApps.length > 0 ? (
+            <AppTableau 
+              apps={addedApps}
+              onDelete={(id, name) => removeResourceFromBIA('App', id, name)}
+              linkedProcessesMap={linkedProcessesMap.apps}
+            />
           ) : (
             <div className="text-center py-8 text-[#172030]/40">
               <Server className="h-10 w-10 mx-auto text-[#172030]/20" />
-              <p className="mt-2">Aucune application IT déclarée.</p>
+              <p className="mt-2">Aucune application ajoutée.</p>
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="mt-3"
-                onClick={() => setShowAddAppModal(true)}
+                className="mt-3 text-[#2A5141] border-[#2A5141]"
+                onClick={() => setShowSelectApp(true)}
               >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter une application
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Ajouter une application
               </Button>
             </div>
           )}
         </TabsContent>
 
-        {/* ✅ ONGLET PRESTATAIRES - AVEC BOUTON AJOUTER */}
         <TabsContent value="suppliers" className="pt-4">
           <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
             <div>
-              <span className="font-medium">Prestataires</span> liés aux processus.
+              <span className="font-medium">Prestataires</span> ajoutés à la fiche BIA.
             </div>
           </div>
 
@@ -3445,81 +3875,38 @@ const BIAFicheDetail = ({
               <Handshake className="h-5 w-5 text-[#172030]" />
               <span className="text-sm font-medium text-[#172030]">Prestataires</span>
               <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
-                {enrichedSuppliers.length}
+                {addedSuppliers.length}
               </Badge>
             </div>
             <Button 
-              onClick={() => setShowAddSupplierModal(true)} 
-              className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm h-8 text-sm"
+              variant="outline" 
+              size="sm" 
+              className="text-[#2A5141] border-[#2A5141] hover:bg-[#F8F6F2]"
+              onClick={() => setShowSelectSupplier(true)}
             >
-              <Plus className="h-3.5 w-3.5" /> Ajouter un prestataire
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Ajouter un prestataire
             </Button>
           </div>
 
-          {enrichedSuppliers.length > 0 ? (
-            <div className="space-y-3">
-              {enrichedSuppliers.map((sup) => {
-                const displayProcesses = sup.linkedProcesses || [];
-                const visibleProcesses = displayProcesses.slice(0, 2);
-                const remainingCount = displayProcesses.length - 2;
-
-                return (
-                  <div 
-                    key={sup.id}
-                    className="border border-[#E8E4DC] rounded-xl p-4 bg-white hover:border-[#2A5141]/40 hover:shadow-sm transition-all duration-200"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-[#F8F6F2] flex items-center justify-center flex-shrink-0">
-                          <Truck className="h-4 w-4 text-[#172030]" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm text-[#172030]">{sup.name}</p>
-                          <p className="text-xs text-[#172030]/40">{sup.service || "—"}</p>
-                          <p className="text-xs text-[#172030]/40">Contact : {sup.contact || "—"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {displayProcesses.length > 0 && (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-[#172030]/40">Lié à :</span>
-                            {visibleProcesses.map((p: any) => (
-                              <Badge key={p.id} variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#172030] font-normal">
-                                {p.name}
-                              </Badge>
-                            ))}
-                            {remainingCount > 0 && (
-                              <Badge variant="outline" className="text-[10px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
-                                +{remainingCount}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
-                          onClick={() => deleteSupplier(sup.id, sup.name)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {addedSuppliers.length > 0 ? (
+            <SupplierTableau 
+              suppliers={addedSuppliers}
+              onDelete={(id, name) => removeResourceFromBIA('Fournisseur', id, name)}
+              linkedProcessesMap={linkedProcessesMap.suppliers}
+            />
           ) : (
             <div className="text-center py-8 text-[#172030]/40">
               <Handshake className="h-10 w-10 mx-auto text-[#172030]/20" />
-              <p className="mt-2">Aucun prestataire déclaré.</p>
+              <p className="mt-2">Aucun prestataire ajouté.</p>
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="mt-3"
-                onClick={() => setShowAddSupplierModal(true)}
+                className="mt-3 text-[#2A5141] border-[#2A5141]"
+                onClick={() => setShowSelectSupplier(true)}
               >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter un prestataire
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Ajouter un prestataire
               </Button>
             </div>
           )}
@@ -3534,13 +3921,18 @@ const BIAFicheDetail = ({
         </TabsContent>
 
         <TabsContent value="workarounds" className="pt-4">
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div>Contournements manuels à préparer <strong>avant</strong> l'incident. Concentrez-vous sur les 24 premières heures.</div>
+          <div className="bg-[#F8F6F2] border border-[#E8E4DC] rounded-lg p-3 text-sm text-[#172030] mb-4 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-[#2A5141]" />
+            <div>
+              <span className="font-medium">Contournements de crise</span> générés par IA à partir des données du processus.
+              Concentrez-vous sur les 24 premières heures. Sélectionnez un processus pour générer des recommandations.
+            </div>
           </div>
-          <div className="text-center py-8 text-[#172030]/40">
-            <p>Aucun contournement déclaré.</p>
-          </div>
+
+          <ContournementsDeCriseIA 
+            serviceId={service.id} 
+            onSave={() => {}} 
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -3576,6 +3968,12 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   const getChildren = (parentId: string) => entities.filter(e => e.parentId === parentId);
 
   const getDepartmentCount = (entityId: string) => getChildren(entityId).length;
+
+  const navigateToCMDB = () => {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/cmdb';
+    }
+  };
 
   useEffect(() => {
     const handleOpenWizard = (event: CustomEvent) => {
@@ -3679,28 +4077,8 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     };
   };
 
-  const getProcessesForDept = (deptId: string, deptName: string) => {
-    let procs = processes.filter(p => p.department === deptName || p.entityId === deptId);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      procs = procs.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.department.toLowerCase().includes(q) ||
-        p.owner.toLowerCase().includes(q) ||
-        entityName(p.entityId).toLowerCase().includes(q)
-      );
-    }
-    if (selectedCriticality !== "all") {
-      procs = procs.filter(p => {
-        const score = computeMaxScoreFromImpacts(p.impacts);
-        return scoreToCriticality(score) === selectedCriticality;
-      });
-    }
-    return procs;
-  };
-
   const handleDelete = (id: string, name: string) => {
-    if (confirm(`⚠️ Voulez-vous vraiment supprimer le processus "${name}" ?\n\nCette action supprimera également toutes les liaisons avec des ressources.`)) {
+    if (confirm(`⚠️ Voulez-vous vraiment supprimer le processus "${name}" ?`)) {
       deleteProcess(id);
       toast({ title: "Processus supprimé", description: name });
     }
@@ -3747,14 +4125,12 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     setShowBIADetail(true);
   };
 
-  // ✅ FONCTION LOCALE POUR ÉDITER - reste dans la page
   const openWizard = (processId?: string, departmentId?: string) => {
     setWizardProcessId(processId);
     setWizardDepartmentId(departmentId);
     setShowWizard(true);
   };
 
-  // ✅ FONCTION LOCALE POUR ÉDITER (utilisée par BIAFicheDetail)
   const handleEditProcess = (id: string) => {
     openWizard(id, selectedDepartment || selectedService?.id || undefined);
   };
@@ -3765,14 +4141,10 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     setWizardDepartmentId(undefined);
   };
 
-  // ✅ GESTIONNAIRE DE SUCCÈS DU WIZARD
   const handleWizardDone = () => {
     closeWizard();
-    // Le rechargement des données se fera via le refresh des contextes
-    // Les processus sont déjà mis à jour dans le contexte BiaContext
   };
 
-  // Si le wizard est ouvert, on l'affiche en Dialog
   if (showWizard) {
     return (
       <Dialog open={showWizard} onOpenChange={closeWizard}>
@@ -3792,7 +4164,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
-  // Vue Direction
   if (viewLevel === "directions" && selectedRoot && !showBIADetail) {
     const services = buildBIAServices(selectedRoot);
     const filteredServices = getFilteredServices(services);
@@ -3945,7 +4316,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
-  // Vue Département
   if (viewLevel === "departments" && selectedDirection && !showBIADetail) {
     const departments = getChildren(selectedDirection);
     const services = buildBIAServices(selectedRoot || "");
@@ -4146,7 +4516,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     );
   }
 
-  // Vue BIA Fiche Detail - Utilise handleEditProcess au lieu de onEdit externe
   if (showBIADetail && selectedService) {
     const deptProcesses = processes.filter(p => p.entityId === selectedService.id || p.department === selectedService.name);
     
@@ -4155,15 +4524,15 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
         service={selectedService}
         processes={deptProcesses}
         onBack={() => setShowBIADetail(false)}
-        onEdit={handleEditProcess}  // ✅ Utilise la fonction locale
+        onEdit={handleEditProcess}
         onDelete={handleDelete}
         canDelete={can("admin")}
         entities={entities}
+        onNavigateToCMDB={navigateToCMDB}
       />
     );
   }
 
-  // Vue principale - Inventaire des processus
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

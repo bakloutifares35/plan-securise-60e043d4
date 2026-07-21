@@ -9,6 +9,7 @@ import { DependencyMap } from "./DependencyMap";
 import { ConsolidatedReport } from "./ConsolidatedReport";
 import { CampaignHistory } from "./CampaignHistory";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useBia } from "@/contexts/BiaContext";
 
 type Tab = "dashboard" | "inventory" | "matrix" | "deps" | "report" | "history";
 
@@ -22,13 +23,19 @@ const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
 ];
 
 export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string }) => {
+  const { loadProcesses } = useBia();
   const [tab, setTab] = useState<Tab>(initialTab as Tab);
   const [editId, setEditId] = useState<string | undefined>();
   const [showWizard, setShowWizard] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  
-  // ✅ Sauvegarder l'onglet actuel avant d'ouvrir le wizard
   const [previousTab, setPreviousTab] = useState<Tab>("inventory");
+
+  // ✅ CHARGER LES DONNÉES AU MONTAGE
+  useEffect(() => {
+    if (loadProcesses) {
+      loadProcesses();
+    }
+  }, []);
 
   useEffect(() => {
     if (initialTab && initialTab !== tab) {
@@ -37,7 +44,6 @@ export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string })
   }, [initialTab]);
 
   const openWizard = (id?: string) => {
-    // ✅ Sauvegarder l'onglet actuel
     setPreviousTab(tab);
     setEditId(id);
     setShowWizard(true);
@@ -58,13 +64,14 @@ export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string })
           <BiaWizard 
             processId={editId} 
             onDone={() => {
-              // ✅ Fermer le wizard
               setShowWizard(false);
               setEditId(undefined);
-              // ✅ Revenir EXACTEMENT à l'onglet où on était
               setTab(previousTab);
-              // ✅ Forcer le re-render
               setRefreshKey(prev => prev + 1);
+              // ✅ Recharger les données après la fermeture du wizard
+              if (loadProcesses) {
+                loadProcesses();
+              }
             }} 
           />
         </DialogContent>

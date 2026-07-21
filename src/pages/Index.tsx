@@ -11,7 +11,8 @@ import { RiskMethodGate } from "@/components/pca/risk/RiskMethodGate";
 import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
 import TenaciaVoice from "@/components/pca/bia/TenaciaVoice";
 import BIASynthesis from "@/components/pca/bia/BIASynthesis";
-import BIARecoverySequence from "@/components/pca/bia/BIARecoverySequence"; // 👈 NOUVEL IMPORT
+import BIARecoverySequence from "@/components/pca/bia/BIARecoverySequence";
+import CMDBModule from "@/components/pca/bia/CMDBModule";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -23,7 +24,6 @@ const Index = () => {
   const [section, setSection] = useState<Section>("dashboard");
   const [biaTab, setBiaTab] = useState<string>("dashboard");
 
-  // 👈 Lire l'URL pour déterminer la section et l'onglet
   useEffect(() => {
     const path = location.pathname;
     if (path === "/") {
@@ -34,9 +34,11 @@ const Index = () => {
     } else if (path === "/bia/synthese") {
       setSection("bia");
       setBiaTab("synthese");
-    } else if (path === "/bia/recovery") { // 👈 AJOUTÉ
+    } else if (path === "/bia/recovery") {
       setSection("bia");
       setBiaTab("recovery");
+    } else if (path === "/cmdb") {
+      setSection("cmdb");
     } else if (path === "/tenacia-voice") {
       setSection("tenacia");
     }
@@ -70,6 +72,7 @@ const Index = () => {
                       <SelectItem value="ai">BCM AI Consultant</SelectItem>
                       <SelectItem value="governance">Gouvernance PCA</SelectItem>
                       <SelectItem value="bia">Business Impact Analysis</SelectItem>
+                      <SelectItem value="cmdb">Référentiel des ressources</SelectItem>
                       <SelectItem value="risk">Analyse des Risques</SelectItem>
                       <SelectItem value="form">Identification des risques</SelectItem>
                       <SelectItem value="plan">Plan de continuité</SelectItem>
@@ -88,10 +91,11 @@ const Index = () => {
                   {section === "bia" && (
                     <div>
                       {biaTab === "synthese" && <BIASynthesis />}
-                      {biaTab === "recovery" && <BIARecoverySequence />} {/* 👈 NOUVEAU */}
+                      {biaTab === "recovery" && <BIARecoverySequence />}
                       {biaTab === "dashboard" && <BiaModule initialTab={biaTab} />}
                     </div>
                   )}
+                  {section === "cmdb" && <CMDBModule />}
                   {section === "risk" && <RiskMethodGate />}
                   {section === "tenacia" && <TenaciaVoice />}
                 </div>
