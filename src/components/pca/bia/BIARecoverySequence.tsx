@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { 
-  AlertCircle, Clock, Server, Users, Monitor, Handshake, Building2,
-  ChevronDown, ChevronRight, AlertTriangle, CheckCircle, Link2,
-  GitBranch, Database, Shield, RefreshCw, Calendar, Filter,
-  LayoutGrid, List, Download, Eye, EyeOff, Zap, Target,
-  Activity, BarChart3, TrendingUp, TrendingDown
+  Clock, Users, Building, User, AlertTriangle, CheckCircle, 
+  Link, Database, RefreshCw, Zap, Calendar, Activity, 
+  TrendingDown, Target, Layers, GanttChart, Download,
+  Eye, EyeOff, ChevronDown, ChevronRight, AlertOctagon,
+  Check, Shield, Filter, X
 } from 'lucide-react';
 import { useBia } from '@/contexts/BiaContext';
 import { useGovernance } from '@/contexts/GovernanceContext';
@@ -13,7 +13,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Select,
   SelectContent,
@@ -21,7 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { toast } from '@/hooks/use-toast';
+import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Types
 interface ProcessWithResources {
@@ -48,14 +48,7 @@ interface WaveData {
   color: string;
   bgColor: string;
   textColor: string;
-  icon: React.ReactNode;
-}
-
-interface Dependency {
-  from: string;
-  to: string;
-  fromName: string;
-  toName: string;
+  borderColor: string;
 }
 
 const BIARecoverySequence: React.FC = () => {
@@ -65,8 +58,9 @@ const BIARecoverySequence: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [enrichedProcesses, setEnrichedProcesses] = useState<ProcessWithResources[]>([]);
   const [selectedDirection, setSelectedDirection] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<"waves" | "gantt">("waves");
-  const [expandedWaves, setExpandedWaves] = useState<Set<string>>(new Set(['wave-0', 'wave-1']));
+  const [viewMode, setViewMode] = useState<"vagues" | "chronologie">("vagues");
+  const [expandedWaves, setExpandedWaves] = useState<Set<number>>(new Set([0, 1]));
+  const [selectedWaveFilter, setSelectedWaveFilter] = useState<number | null>(null);
 
   // ============================================================
   // 1. CHARGEMENT DES DONNÉES
@@ -81,7 +75,6 @@ const BIARecoverySequence: React.FC = () => {
         return;
       }
 
-      // Charger les ressources liées
       const { data: hrLinks } = await supabase
         .from('processus_ressources_humaines')
         .select('processus_id, ressource_humaine_id')
@@ -110,10 +103,6 @@ const BIARecoverySequence: React.FC = () => {
           .select('*')
           .in('id', equipIds);
         equipData = data || [];
-        equipData = equipData.map(eq => {
-          const link = equipLinks?.find(l => l.equipement_id === eq.id);
-          return { ...eq, _linkRto: link?.rto_hours || 4 };
-        });
       }
 
       const { data: appLinks } = await supabase
@@ -129,14 +118,6 @@ const BIARecoverySequence: React.FC = () => {
           .select('*')
           .in('id', appIds);
         appData = data || [];
-        appData = appData.map(app => {
-          const link = appLinks?.find(l => l.application_id === app.id);
-          return { 
-            ...app, 
-            _linkRto: link?.rto_hours || 4,
-            _linkRpo: link?.rpo_hours || 2
-          };
-        });
       }
 
       const { data: suppLinks } = await supabase
@@ -152,13 +133,8 @@ const BIARecoverySequence: React.FC = () => {
           .select('*')
           .in('id', suppIds);
         suppData = data || [];
-        suppData = suppData.map(sup => {
-          const link = suppLinks?.find(l => l.fournisseur_id === sup.id);
-          return { ...sup, _linkRto: link?.rto_hours || 4 };
-        });
       }
 
-      // Construire les maps
       const hrMap: Record<string, any[]> = {};
       const equipMap: Record<string, any[]> = {};
       const appMap: Record<string, any[]> = {};
@@ -263,49 +239,14 @@ const BIARecoverySequence: React.FC = () => {
   };
 
   // ============================================================
-  // 3. WAVES / VAGUES
+  // 3. WAVES
   // ============================================================
   const waves: WaveData[] = [
-    { 
-      label: '≤ 2h', 
-      maxRto: 2, 
-      color: '#DC2626', 
-      bgColor: 'bg-red-50', 
-      textColor: 'text-red-600',
-      icon: <Zap className="h-4 w-4" />
-    },
-    { 
-      label: '≤ 24h', 
-      maxRto: 24, 
-      color: '#EA580C', 
-      bgColor: 'bg-orange-50', 
-      textColor: 'text-orange-600',
-      icon: <Clock className="h-4 w-4" />
-    },
-    { 
-      label: '≤ 48h', 
-      maxRto: 48, 
-      color: '#D97706', 
-      bgColor: 'bg-amber-50', 
-      textColor: 'text-amber-600',
-      icon: <Calendar className="h-4 w-4" />
-    },
-    { 
-      label: '≤ 120h', 
-      maxRto: 120, 
-      color: '#CA8A04', 
-      bgColor: 'bg-yellow-50', 
-      textColor: 'text-yellow-600',
-      icon: <Activity className="h-4 w-4" />
-    },
-    { 
-      label: '> 120h', 
-      maxRto: Infinity, 
-      color: '#6B7280', 
-      bgColor: 'bg-gray-50', 
-      textColor: 'text-gray-500',
-      icon: <TrendingDown className="h-4 w-4" />
-    },
+    { label: '≤ 2h', maxRto: 2, color: '#DC2626', bgColor: 'bg-red-50', textColor: 'text-red-700', borderColor: 'border-red-200' },
+    { label: '≤ 24h', maxRto: 24, color: '#EA580C', bgColor: 'bg-orange-50', textColor: 'text-orange-700', borderColor: 'border-orange-200' },
+    { label: '≤ 48h', maxRto: 48, color: '#D97706', bgColor: 'bg-amber-50', textColor: 'text-amber-700', borderColor: 'border-amber-200' },
+    { label: '≤ 120h', maxRto: 120, color: '#65A30D', bgColor: 'bg-green-50', textColor: 'text-green-700', borderColor: 'border-green-200' },
+    { label: '> 120h', maxRto: Infinity, color: '#6B7280', bgColor: 'bg-gray-50', textColor: 'text-gray-500', borderColor: 'border-gray-200' },
   ];
 
   const getWaveIndex = (rto: number): number => {
@@ -315,59 +256,29 @@ const BIARecoverySequence: React.FC = () => {
     return waves.length - 1;
   };
 
-  const getProcessesByWave = useMemo(() => {
-    const result: Record<number, ProcessWithResources[]> = {};
-    for (let i = 0; i < waves.length; i++) {
-      result[i] = [];
-    }
-
-    for (const p of enrichedProcesses) {
-      const rto = p.rto || 0;
-      const waveIndex = getWaveIndex(rto);
-      result[waveIndex].push(p);
-    }
-
-    return result;
-  }, [enrichedProcesses]);
-
   // ============================================================
   // 4. DÉPENDANCES
   // ============================================================
-  const dependencies = useMemo((): Dependency[] => {
-    const deps: Dependency[] = [];
+  const dependencies = useMemo(() => {
+    const deps: { from: string; to: string; toName: string }[] = [];
     for (const p of enrichedProcesses) {
       const depIds = p.depends_on || [];
       for (const depId of depIds) {
         const target = enrichedProcesses.find(x => x.id === depId);
         if (target) {
-          deps.push({
-            from: p.id,
-            to: depId,
-            fromName: p.name,
-            toName: target.name
-          });
+          deps.push({ from: p.id, to: depId, toName: target.name });
         }
       }
     }
     return deps;
   }, [enrichedProcesses]);
 
-  const getDependencies = (processId: string): string[] => {
-    const deps: string[] = [];
-    for (const dep of dependencies) {
-      if (dep.from === processId) {
-        deps.push(dep.toName);
-      }
-    }
-    return deps;
-  };
-
   const hasDependencies = (processId: string): boolean => {
     return dependencies.some(d => d.from === processId);
   };
 
-  const isDependedOn = (processId: string): boolean => {
-    return dependencies.some(d => d.to === processId);
+  const getDependencyNames = (processId: string): string[] => {
+    return dependencies.filter(d => d.from === processId).map(d => d.toName);
   };
 
   // ============================================================
@@ -389,8 +300,10 @@ const BIARecoverySequence: React.FC = () => {
     return result;
   }, [enrichedProcesses, selectedDirection, getDirectionName]);
 
-  // Recalculer les vagues avec les filtres
-  const filteredProcessesByWave = useMemo(() => {
+  // ============================================================
+  // 6. PROCESSUS PAR VAGUE
+  // ============================================================
+  const processesByWave = useMemo(() => {
     const result: Record<number, ProcessWithResources[]> = {};
     for (let i = 0; i < waves.length; i++) {
       result[i] = [];
@@ -406,41 +319,55 @@ const BIARecoverySequence: React.FC = () => {
   }, [filteredProcesses]);
 
   // ============================================================
-  // 6. STATS
+  // 7. STATS
   // ============================================================
+  const totalProcesses = filteredProcesses.length;
+  const totalResources = filteredProcesses.reduce((acc, p) => 
+    acc + p.linkedHR.length + p.linkedEquipment.length + p.linkedApps.length + p.linkedSuppliers.length, 0
+  );
+
   const waveStats = useMemo(() => {
-    const stats: { wave: number; count: number; label: string; color: string }[] = [];
+    const stats = [];
     for (let i = 0; i < waves.length; i++) {
-      const count = filteredProcessesByWave[i]?.length || 0;
+      const count = processesByWave[i]?.length || 0;
       if (count > 0 || i < 4) {
         stats.push({
           wave: i,
           count,
           label: waves[i].label,
-          color: waves[i].color
+          color: waves[i].color,
+          bgColor: waves[i].bgColor,
+          textColor: waves[i].textColor,
+          borderColor: waves[i].borderColor
         });
       }
     }
     return stats;
-  }, [filteredProcessesByWave]);
+  }, [processesByWave]);
 
-  const totalCritical = useMemo(() => {
-    return filteredProcesses.filter(p => computeMaxScore(p.impacts) >= 4).length;
-  }, [filteredProcesses, computeMaxScore]);
-
-  // ============================================================
-  // 7. TOGGLE WAVES
-  // ============================================================
-  const toggleWave = (waveKey: string) => {
+  const toggleWave = (waveIndex: number) => {
     setExpandedWaves(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(waveKey)) {
-        newSet.delete(waveKey);
+      if (newSet.has(waveIndex)) {
+        newSet.delete(waveIndex);
       } else {
-        newSet.add(waveKey);
+        newSet.add(waveIndex);
       }
       return newSet;
     });
+  };
+
+  // Filtrer par vague sélectionnée
+  const handleWaveClick = (waveIndex: number) => {
+    if (selectedWaveFilter === waveIndex) {
+      setSelectedWaveFilter(null);
+    } else {
+      setSelectedWaveFilter(waveIndex);
+      // Ouvrir automatiquement la vague
+      if (!expandedWaves.has(waveIndex)) {
+        toggleWave(waveIndex);
+      }
+    }
   };
 
   // ============================================================
@@ -448,11 +375,11 @@ const BIARecoverySequence: React.FC = () => {
   // ============================================================
   if (isLoading) {
     return (
-      <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <div className="p-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <RefreshCw className="h-8 w-8 animate-spin text-[#2A5141] mx-auto mb-4" />
-            <p className="text-sm text-[#172030]/60">Chargement des données...</p>
+            <p className="text-sm text-gray-500">Chargement des données...</p>
           </div>
         </div>
       </div>
@@ -461,13 +388,13 @@ const BIARecoverySequence: React.FC = () => {
 
   if (!enrichedProcesses || enrichedProcesses.length === 0) {
     return (
-      <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <div className="p-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-center h-64">
-          <Card className="border-[#E8E4DC] shadow-sm">
+          <Card className="border-gray-200 shadow-sm">
             <CardContent className="p-8 text-center">
-              <Database className="h-12 w-12 text-[#172030]/30 mx-auto mb-4" />
-              <p className="text-[#172030] font-medium">Aucune donnée BIA disponible</p>
-              <p className="text-sm text-[#172030]/50">Veuillez créer des processus dans le module BIA</p>
+              <Database className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-700 font-medium">Aucune donnée BIA disponible</p>
+              <p className="text-sm text-gray-500">Veuillez créer des processus dans le module BIA</p>
             </CardContent>
           </Card>
         </div>
@@ -476,21 +403,21 @@ const BIARecoverySequence: React.FC = () => {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
-      {/* En-tête */}
-      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between">
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* ===== HEADER ===== */}
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
+          <h1 className="text-2xl font-bold text-[#172030]">
             Séquence de reprise des activités
           </h1>
-          <p className="text-sm text-[#172030]/60 mt-1">
+          <p className="text-sm text-gray-500 mt-1">
             Ordre de redémarrage des activités critiques après un sinistre, classées par RTO. 
             Les vagues indiquent quelles activités mobiliser en premier.
           </p>
         </div>
-        <div className="flex items-center gap-2 mt-2 md:mt-0">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Select value={selectedDirection} onValueChange={setSelectedDirection}>
-            <SelectTrigger className="w-[180px] h-8 text-xs border-[#E8E4DC]">
+            <SelectTrigger className="w-[180px] h-9 text-sm border-gray-200 bg-white">
               <SelectValue placeholder="Toutes directions" />
             </SelectTrigger>
             <SelectContent>
@@ -500,117 +427,162 @@ const BIARecoverySequence: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="gap-1.5 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]"
-          >
+          <Button variant="outline" size="sm" className="gap-1.5 border-gray-200 text-gray-500">
             <Download className="h-4 w-4" />
             Exporter
           </Button>
         </div>
       </div>
 
-      {/* CARTES STATISTIQUES */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        {waveStats.map((stat) => (
-          <Card key={stat.wave} className="border-[#E8E4DC] shadow-sm" style={{ borderTop: `3px solid ${stat.color}` }}>
-            <CardContent className="p-3">
-              <div className="text-xs font-medium text-[#172030]/50" style={{ color: stat.color }}>
-                {stat.label}
+      {/* ===== KPI CARDS - CLAIQUABLES ===== */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {waveStats.map((stat) => {
+          const isActive = selectedWaveFilter === stat.wave;
+          return (
+            <div
+              key={stat.wave}
+              className={cn(
+                "rounded-lg border p-4 shadow-sm cursor-pointer transition-all duration-200",
+                stat.bgColor,
+                stat.borderColor,
+                isActive && "ring-2 ring-offset-2",
+                isActive && `ring-[${stat.color}]`
+              )}
+              onClick={() => handleWaveClick(stat.wave)}
+            >
+              <div className="flex items-center justify-between">
+                <span className={cn("text-sm font-medium", stat.textColor)}>
+                  {stat.label}
+                </span>
+                <div 
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: stat.color }}
+                />
               </div>
-              <div className="text-2xl font-bold text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
+              <div className="text-2xl font-bold text-gray-900 mt-1">
                 {stat.count}
               </div>
-              <div className="text-[10px] text-[#172030]/40">
-                Vague {stat.wave + 1}
+              <div className="flex items-center justify-between mt-0.5">
+                <span className="text-xs text-gray-400">
+                  Vague {stat.wave + 1}
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  {totalProcesses > 0 ? Math.round((stat.count / totalProcesses) * 100) : 0}%
+                </span>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+              <div className="mt-2 h-1 w-full bg-gray-200 rounded-full overflow-hidden">
+                <div 
+                  className="h-full rounded-full transition-all"
+                  style={{ 
+                    width: `${totalProcesses > 0 ? (stat.count / totalProcesses) * 100 : 0}%`,
+                    backgroundColor: stat.color
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Insight */}
-      {waveStats[0]?.count > 0 && (
-        <div className="mb-6 p-3 bg-[#F5F3FF] border border-[#DDD6FE] rounded-lg flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-[#5B21B6] mt-0.5 flex-shrink-0" />
-          <div className="text-sm text-[#5B21B6]">
-            La <strong>vague 1</strong> concentre {waveStats[0].count} activité{waveStats[0].count > 1 ? 's' : ''} à redémarrer en moins de 2h. 
+      {/* ===== INSIGHT ===== */}
+      {waveStats.length > 0 && waveStats[0]?.count > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-blue-700">
+            La <strong>vague 1</strong> concentre <strong>{waveStats[0].count}</strong> activité{waveStats[0].count > 1 ? 's' : ''} à redémarrer en moins de 2h. 
             Vérifiez que les dépendances amont sont bien dans la même vague.
           </div>
         </div>
       )}
 
-      {/* Switch Vue */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="inline-flex bg-[#F4F4F5] rounded-lg p-0.5">
+      {/* ===== SWITCH VUE ===== */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
           <button
-            onClick={() => setViewMode("waves")}
+            onClick={() => setViewMode("vagues")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-              viewMode === "waves" 
-                ? "bg-white text-[#172030] shadow-sm" 
-                : "text-[#71717A] hover:text-[#172030]"
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              viewMode === "vagues" 
+                ? "bg-white text-gray-900 shadow-sm" 
+                : "text-gray-500 hover:text-gray-700"
             )}
           >
-            <LayoutGrid className="h-3.5 w-3.5" />
+            <Layers className="h-4 w-4" />
             Vagues
           </button>
           <button
-            onClick={() => setViewMode("gantt")}
+            onClick={() => setViewMode("chronologie")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-              viewMode === "gantt" 
-                ? "bg-white text-[#172030] shadow-sm" 
-                : "text-[#71717A] hover:text-[#172030]"
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              viewMode === "chronologie" 
+                ? "bg-white text-gray-900 shadow-sm" 
+                : "text-gray-500 hover:text-gray-700"
             )}
           >
-            <List className="h-3.5 w-3.5" />
+            <GanttChart className="h-4 w-4" />
             Chronologie
           </button>
         </div>
-        <span className="text-xs text-[#172030]/40 ml-auto">
-          {filteredProcesses.length} processus
+        <span className="text-sm text-gray-400">
+          {totalProcesses} processus · {totalResources} ressources
         </span>
+        {selectedWaveFilter !== null && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-xs text-gray-400 hover:text-gray-600"
+            onClick={() => setSelectedWaveFilter(null)}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Effacer le filtre
+          </Button>
+        )}
       </div>
 
       {/* ===== VUE VAGUES ===== */}
-      {viewMode === "waves" && (
+      {viewMode === "vagues" && (
         <div className="space-y-4">
           {waves.map((wave, waveIndex) => {
-            const processesInWave = filteredProcessesByWave[waveIndex] || [];
-            if (processesInWave.length === 0 && waveIndex > 3) return null;
+            const processesInWave = processesByWave[waveIndex] || [];
             
-            const waveKey = `wave-${waveIndex}`;
-            const isExpanded = expandedWaves.has(waveKey);
-            const totalResources = processesInWave.reduce((acc, p) => 
+            if (processesInWave.length === 0 && waveIndex > 3) return null;
+            if (selectedWaveFilter !== null && selectedWaveFilter !== waveIndex && processesInWave.length === 0) return null;
+            
+            const isExpanded = expandedWaves.has(waveIndex);
+            const totalRes = processesInWave.reduce((acc, p) => 
               acc + p.linkedHR.length + p.linkedEquipment.length + p.linkedApps.length + p.linkedSuppliers.length, 0
             );
+
+            // Si un filtre est actif et que cette vague n'est pas sélectionnée, la cacher
+            if (selectedWaveFilter !== null && selectedWaveFilter !== waveIndex) {
+              return null;
+            }
 
             return (
               <div key={waveIndex} className="relative">
                 {/* Ligne de connexion */}
                 {waveIndex < waves.length - 1 && (
-                  <div className="absolute left-6 top-10 bottom-0 w-0.5 bg-[#E4E4E7]" />
+                  <div className="absolute left-5 top-8 bottom-0 w-0.5 bg-gray-200" />
                 )}
 
-                <div className="relative pl-10">
+                <div className="relative pl-8">
                   {/* Point */}
                   <div 
-                    className="absolute left-0 top-1.5 w-4 h-4 rounded-full border-2 border-white z-10"
+                    className="absolute left-0 top-1.5 w-4 h-4 rounded-full border-2 border-white shadow-sm z-10 cursor-pointer"
                     style={{ backgroundColor: wave.color }}
+                    onClick={() => toggleWave(waveIndex)}
                   />
 
-                  {/* En-tête de vague */}
+                  {/* En-tête vague */}
                   <div 
-                    className="flex items-center gap-3 mb-3 cursor-pointer"
-                    onClick={() => toggleWave(waveKey)}
+                    className="flex items-center gap-3 mb-2 cursor-pointer group"
+                    onClick={() => toggleWave(waveIndex)}
                   >
-                    <div className="min-w-[64px] text-center">
+                    <div className="min-w-[60px] text-center">
                       <div className="font-mono text-sm font-bold" style={{ color: wave.color }}>
                         {wave.label}
                       </div>
-                      <div className="text-[9px] text-[#A1A1AA] uppercase tracking-wider">
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">
                         {waveIndex === 0 ? 'Immédiat' : 
                          waveIndex === 1 ? 'Jour 1' : 
                          waveIndex === 2 ? 'Jour 2' : 
@@ -618,106 +590,128 @@ const BIARecoverySequence: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex-1">
-                      <span className="text-sm font-medium text-[#172030]">
+                      <span className="text-base font-medium text-gray-800">
                         Vague {waveIndex + 1}
                       </span>
-                      <span className="text-xs text-[#A1A1AA] ml-2">
+                      <span className="text-sm text-gray-400 ml-2">
                         {processesInWave.length} activité{processesInWave.length > 1 ? 's' : ''}
-                        {totalResources > 0 && ` · ${totalResources} ressources`}
+                        {totalRes > 0 && ` · ${totalRes} ressources`}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-[#A1A1AA]" />
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
                       ) : (
-                        <ChevronRight className="h-4 w-4 text-[#A1A1AA]" />
+                        <ChevronRight className="h-4 w-4 text-gray-400" />
                       )}
                     </div>
                   </div>
 
-                  {/* Cartes des activités */}
-                  {isExpanded && (
-                    <div className="space-y-2 ml-[76px]">
+                  {/* Cartes - Version plus compacte */}
+                  {isExpanded && processesInWave.length > 0 && (
+                    <div className="space-y-1.5 ml-[72px]">
                       {processesInWave.map((p, idx) => {
                         const code = generateProcessCode(getEntityName(p.entityId), idx);
-                        const deps = getDependencies(p.id);
+                        const deps = getDependencyNames(p.id);
                         const hasDep = deps.length > 0;
-                        const isDepended = isDependedOn(p.id);
                         const critical = computeMaxScore(p.impacts) >= 4;
+                        const totalRes = p.linkedHR.length + p.linkedEquipment.length + p.linkedApps.length + p.linkedSuppliers.length;
 
                         return (
-                          <div 
+                          <div
                             key={p.id}
                             className={cn(
-                              "bg-white border border-[#E4E4E7] rounded-lg p-3",
-                              "grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto] gap-3 items-center",
-                              hasDep && "border-l-4",
+                              "bg-white border rounded-lg px-3 py-2",
+                              "hover:shadow-sm transition-shadow",
+                              "flex flex-wrap items-center gap-2",
+                              hasDep ? `border-l-3` : "border-gray-200",
                               hasDep && `border-l-[${wave.color}]`
                             )}
                             style={hasDep ? { borderLeftColor: wave.color } : {}}
                           >
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-sm text-[#172030]">{p.name}</span>
-                                {critical && (
-                                  <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">
-                                    Critique
-                                  </Badge>
-                                )}
-                                {isDepended && (
-                                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-[10px]">
-                                    Dépendance entrante
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 mt-1 text-xs text-[#A1A1AA]">
-                                <span className="font-mono bg-[#F4F4F5] px-1.5 py-0.5 rounded">
-                                  {code}
+                            {/* Nom + badge */}
+                            <div className="flex items-center gap-2 min-w-[120px] flex-1">
+                              <span className="text-sm font-medium text-gray-800 truncate">
+                                {p.name}
+                              </span>
+                              {critical && (
+                                <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">
+                                  Critique
+                                </Badge>
+                              )}
+                              <span className="text-[10px] text-gray-400 font-mono hidden sm:inline">
+                                {code}
+                              </span>
+                            </div>
+
+                            {/* Direction + Owner */}
+                            <div className="flex items-center gap-2 text-xs text-gray-500 min-w-[100px] flex-1">
+                              <Building className="h-3 w-3 text-gray-400" />
+                              <span className="truncate">{getDirectionName(p.entityId)}</span>
+                              <span className="text-gray-300">·</span>
+                              <User className="h-3 w-3 text-gray-400" />
+                              <span className="truncate">{p.owner || '—'}</span>
+                            </div>
+
+                            {/* Métriques */}
+                            <div className="flex items-center gap-3 text-xs">
+                              <div className="flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-gray-400" />
+                                <span className="font-mono font-medium" style={{ color: wave.color }}>
+                                  {p.rto || 0}h
                                 </span>
-                                <span>{getDirectionName(p.entityId)}</span>
-                                <span>·</span>
-                                <span>{p.owner || '—'}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Target className="h-3 w-3 text-gray-400" />
+                                <span className="font-mono text-gray-600">{p.rpo || 0}h</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Users className="h-3 w-3 text-gray-400" />
+                                <span className="text-gray-500">{totalRes}</span>
                               </div>
                             </div>
 
-                            <div className="text-center">
-                              <div className="text-[9px] text-[#A1A1AA] uppercase tracking-wider">RTO</div>
-                              <div className="font-mono font-bold text-sm" style={{ color: wave.color }}>
-                                {p.rto || 0}h
-                              </div>
-                            </div>
-
-                            <div className="text-center">
-                              <div className="text-[9px] text-[#A1A1AA] uppercase tracking-wider">RPO</div>
-                              <div className="font-mono font-bold text-sm text-[#172030]">
-                                {p.rpo || 0}h
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 text-xs">
+                            {/* Dépendances */}
+                            <div className="flex items-center gap-1 text-xs min-w-[80px]">
                               {hasDep ? (
                                 <>
-                                  <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
-                                  <span className="text-[#71717A] truncate max-w-[120px]">
-                                    Dépend de: {deps.join(', ')}
+                                  <Link className="h-3 w-3 text-amber-500 flex-shrink-0" />
+                                  <span className="text-gray-500 truncate max-w-[100px]">
+                                    {deps.join(', ')}
                                   </span>
                                 </>
                               ) : (
                                 <>
-                                  <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-                                  <span className="text-[#71717A]">Socle — aucune dépendance</span>
+                                  <Check className="h-3 w-3 text-green-500 flex-shrink-0" />
+                                  <span className="text-gray-400 text-[10px]">Aucune dépendance</span>
                                 </>
                               )}
+                            </div>
+
+                            {/* Score */}
+                            <div className="flex items-center gap-1">
+                              <div className="w-12 h-1 bg-gray-100 rounded-full">
+                                <div 
+                                  className="h-full rounded-full"
+                                  style={{ 
+                                    width: `${Math.min((computeMaxScore(p.impacts) / 5) * 100, 100)}%`,
+                                    backgroundColor: computeMaxScore(p.impacts) >= 4 ? '#DC2626' : '#6B7280'
+                                  }}
+                                />
+                              </div>
+                              <span className="text-[9px] text-gray-400 font-mono">
+                                {computeMaxScore(p.impacts)}/5
+                              </span>
                             </div>
                           </div>
                         );
                       })}
+                    </div>
+                  )}
 
-                      {processesInWave.length === 0 && (
-                        <div className="text-center py-4 text-[#A1A1AA] text-sm">
-                          Aucune activité dans cette vague
-                        </div>
-                      )}
+                  {isExpanded && processesInWave.length === 0 && (
+                    <div className="ml-[72px] text-center py-3 text-gray-400 text-sm">
+                      Aucune activité dans cette vague
                     </div>
                   )}
                 </div>
@@ -726,96 +720,92 @@ const BIARecoverySequence: React.FC = () => {
           })}
 
           {/* Légende */}
-          <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-[#F4F4F5] mt-4">
+          <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-gray-200 mt-4">
             {waves.map((wave, i) => (
               <div key={i} className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: wave.color }} />
-                <span className="text-xs text-[#71717A]">{wave.label}</span>
+                <span className="text-sm text-gray-600">{wave.label}</span>
               </div>
             ))}
             <div className="flex items-center gap-1.5 ml-auto">
-              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
-              <span className="text-xs text-[#71717A]">Activité avec dépendance amont</span>
+              <Link className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-sm text-gray-500">Dépendance amont</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 text-green-500" />
+              <span className="text-sm text-gray-500">Aucune dépendance</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* ===== VUE GANTT ===== */}
-      {viewMode === "gantt" && (
-        <Card className="border-[#E8E4DC] shadow-sm overflow-hidden">
+      {/* ===== VUE CHRONOLOGIE ===== */}
+      {viewMode === "chronologie" && (
+        <Card className="border-gray-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <div className="min-w-[800px]">
-              {/* En-tête */}
-              <div className="grid grid-cols-[220px_1fr] border-b border-[#E4E4E7] bg-[#FAFAFA]">
-                <div className="px-4 py-2.5 text-[10px] font-semibold text-[#71717A] uppercase tracking-wider">
+            <div className="min-w-[700px]">
+              <div className="grid grid-cols-[180px_1fr] border-b border-gray-200 bg-gray-50">
+                <div className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Activité
                 </div>
                 <div className="grid grid-cols-5">
                   {['0h', '2h', '24h', '48h', '120h'].map((label, i) => (
-                    <div key={i} className="px-3 py-2.5 font-mono text-[10px] font-semibold text-[#71717A] border-l border-[#E4E4E7]">
+                    <div key={i} className="px-3 py-2.5 font-mono text-xs font-semibold text-gray-400 border-l border-gray-200 text-center">
                       {label}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Lignes */}
-              {filteredProcesses
-                .sort((a, b) => (a.rto || 0) - (b.rto || 0))
-                .map((p) => {
-                  const rto = p.rto || 0;
-                  const waveIndex = getWaveIndex(rto);
-                  const wave = waves[waveIndex];
-                  
-                  // Calcul de la position (0-100%)
-                  const stops = [0, 2, 24, 48, 120];
-                  let position = 0;
-                  for (let i = 0; i < stops.length - 1; i++) {
-                    if (rto <= stops[i + 1]) {
-                      position = (i / (stops.length - 1)) * 100 + 
-                        (rto - stops[i]) / (stops[i + 1] - stops[i]) * (100 / (stops.length - 1));
-                      break;
+              <div className="max-h-[400px] overflow-y-auto">
+                {filteredProcesses
+                  .filter(p => selectedWaveFilter === null || getWaveIndex(p.rto || 0) === selectedWaveFilter)
+                  .sort((a, b) => (a.rto || 0) - (b.rto || 0))
+                  .map((p) => {
+                    const rto = p.rto || 0;
+                    const waveIndex = getWaveIndex(rto);
+                    const wave = waves[waveIndex];
+                    
+                    const stops = [0, 2, 24, 48, 120];
+                    let position = 0;
+                    for (let i = 0; i < stops.length - 1; i++) {
+                      if (rto <= stops[i + 1]) {
+                        position = (i / (stops.length - 1)) * 100 + 
+                          (rto - stops[i]) / (stops[i + 1] - stops[i]) * (100 / (stops.length - 1));
+                        break;
+                      }
+                      if (i === stops.length - 2) position = 100;
                     }
-                    if (i === stops.length - 2) position = 100;
-                  }
-                  position = Math.min(100, Math.max(0, position));
+                    position = Math.min(100, Math.max(0, position));
 
-                  return (
-                    <div key={p.id} className="grid grid-cols-[220px_1fr] border-b border-[#F4F4F5] hover:bg-[#FAFAFA]">
-                      <div className="px-4 py-3">
-                        <div className="text-xs font-medium text-[#172030]">{p.name}</div>
-                        <div className="text-[10px] text-[#A1A1AA]">{getDirectionName(p.entityId)}</div>
-                      </div>
-                      <div className="relative h-12">
-                        {/* Grille */}
-                        <div className="absolute inset-0 grid grid-cols-5">
-                          {[0, 1, 2, 3, 4].map((i) => (
-                            <div key={i} className="border-l border-[#F4F4F5]" />
-                          ))}
+                    return (
+                      <div key={p.id} className="grid grid-cols-[180px_1fr] border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <div className="px-4 py-2.5">
+                          <div className="text-sm font-medium text-gray-800 truncate">{p.name}</div>
+                          <div className="text-xs text-gray-400 truncate">{getDirectionName(p.entityId)}</div>
                         </div>
-                        {/* Barre */}
-                        <div 
-                          className="absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 text-white text-[10px] font-mono font-bold"
-                          style={{
-                            left: 0,
-                            width: `${Math.max(position, 5)}%`,
-                            backgroundColor: wave.color,
-                            minWidth: '30px'
-                          }}
-                        >
-                          {rto}h
+                        <div className="relative h-9">
+                          <div className="absolute inset-0 grid grid-cols-5">
+                            {[0, 1, 2, 3, 4].map((i) => (
+                              <div key={i} className="border-l border-gray-100" />
+                            ))}
+                          </div>
+                          <div 
+                            className="absolute top-1/2 -translate-y-1/2 h-5 rounded shadow-sm flex items-center px-2.5 text-white text-[10px] font-mono font-bold transition-all hover:h-6"
+                            style={{
+                              left: 0,
+                              width: `${Math.max(position, 5)}%`,
+                              backgroundColor: wave.color,
+                              minWidth: '36px'
+                            }}
+                          >
+                            {rto}h
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-
-              {filteredProcesses.length === 0 && (
-                <div className="text-center py-8 text-[#A1A1AA] text-sm">
-                  Aucun processus correspondant aux filtres
-                </div>
-              )}
+                    );
+                  })}
+              </div>
             </div>
           </div>
         </Card>

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,40 +19,29 @@ import {
   Bar,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Legend,
-  LineChart,
-  Line,
-  Area,
+  Tooltip as RechartsTooltip,
   AreaChart,
-  ComposedChart,
+  Area,
 } from "recharts";
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
   TrendingUp,
-  FileText,
   Download,
   ShieldAlert,
   Clock,
-  ChevronRight,
   Zap,
   Target,
   Building2,
   PieChart as PieChartIcon,
-  AlertCircle,
-  Calendar,
   Users,
   Server,
   Monitor,
   Handshake,
   Link as LinkIcon,
-  Eye,
-  MoreHorizontal,
-  ArrowUp,
-  ArrowDown,
-  Minus,
+  Database,
+  RefreshCw,
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -60,6 +49,8 @@ import { computeMaxScore, scoreToCriticality, type Criticality } from "@/data/bi
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
 // ============================================================
 // CONSTANTES
@@ -99,17 +90,8 @@ const CHART_COLORS = {
   "Critique": "#EF9A9A",
 };
 
-const CHART_TEXT_COLORS = {
-  "Mineur": "#2E7D32",
-  "Modéré": "#F57F17",
-  "Majeur": "#E65100",
-  "Sévère": "#D84315",
-  "Critique": "#C62828",
-};
-
 // ============================================================
 // HELPER : récupère récursivement TOUS les descendants d'une entité
-// (enfants, petits-enfants, arrière-petits-enfants...) 
 // ============================================================
 const getAllDescendantIds = (entities: any[], rootId: string): string[] => {
   const result: string[] = [];
@@ -132,14 +114,208 @@ const getAllDescendantIds = (entities: any[], rootId: string): string[] => {
 export const BiaDashboard = () => {
   const { processes, campaigns } = useBia();
   const { entities } = useGovernance();
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [selectedEntity, setSelectedEntity] = useState<string>("all");
   const [selectedCriticality, setSelectedCriticality] = useState<string>("all");
   const [selectedDirection, setSelectedDirection] = useState<string>("all");
 
+  // ============================================================
+  // ÉTAT POUR LES RESSOURCES
+  // ============================================================
+  const [resourceCounts, setResourceCounts] = useState<Record<string, {
+    hr: number;
+    equip: number;
+    app: number;
+    supplier: number;
+    total: number;
+  }>>({});
+  
+  // Totaux du référentiel
+  const [referentialTotals, setReferentialTotals] = useState({
+    hr: 0,
+    equip: 0,
+    app: 0,
+    supplier: 0
+  });
+  
+  const [isLoadingResources, setIsLoadingResources] = useState(true);
+
   const [historicalScores, setHistoricalScores] = useState<any[]>([]);
   const [isLoadingHistorical, setIsLoadingHistorical] = useState(true);
 
+  // ============================================================
+  // FILTRAGE DES PROCESSUS
+  // ============================================================
+  const filteredProcesses = useMemo(() => {
+    let filtered = processes;
+    if (selectedEntity !== "all") {
+      filtered = filtered.filter((p) => p.entityId === selectedEntity);
+    }
+    if (selectedCriticality !== "all") {
+      filtered = filtered.filter((p) => {
+        const crit = scoreToCriticality(computeMaxScore(p.impacts));
+        return crit === selectedCriticality;
+      });
+    }
+    if (selectedDirection !== "all") {
+      const descendantIds = getAllDescendantIds(entities, selectedDirection);
+      filtered = filtered.filter((p) => 
+        p.entityId === selectedDirection || descendantIds.includes(p.entityId)
+      );
+    }
+    return filtered;
+  }, [processes, selectedEntity, selectedCriticality, selectedDirection, entities]);
+
+  const filteredProcessIds = useMemo(() => 
+    filteredProcesses.map(p => p.id), 
+    [filteredProcesses]
+  );
+
+  // ============================================================
+  // CHARGEMENT DES TOTAUX DU RÉFÉRENTIEL
+  // ============================================================
+  useEffect(() => {
+    const loadReferentialTotals = async () => {
+      try {
+        const [
+          { count: hrCount, error: hrError },
+          { count: equipCount, error: equipError },
+          { count: appCount, error: appError },
+          { count: supplierCount, error: supplierError }
+        ] = await Promise.all([
+          supabase.from('ressources_humaines').select('*', { count: 'exact', head: true }),
+          supabase.from('ressources_equipements').select('*', { count: 'exact', head: true }),
+          supabase.from('applications_it').select('*', { count: 'exact', head: true }),
+          supabase.from('fournisseurs').select('*', { count: 'exact', head: true })
+        ]);
+
+        if (hrError) console.error('Erreur comptage RH:', hrError);
+        if (equipError) console.error('Erreur comptage Équipements:', equipError);
+        if (appError) console.error('Erreur comptage Applications:', appError);
+        if (supplierError) console.error('Erreur comptage Prestataires:', supplierError);
+
+        setReferentialTotals({
+          hr: hrCount || 0,
+          equip: equipCount || 0,
+          app: appCount || 0,
+          supplier: supplierCount || 0
+        });
+      } catch (error) {
+        console.error('Erreur chargement totaux référentiel:', error);
+      }
+    };
+
+    loadReferentialTotals();
+  }, []);
+
+  // ============================================================
+  // CHARGEMENT DES RESSOURCES PAR PROCESSUS
+  // ============================================================
+  useEffect(() => {
+    const loadResourceCounts = async () => {
+      if (filteredProcessIds.length === 0) {
+        setResourceCounts({});
+        setIsLoadingResources(false);
+        return;
+      }
+
+      setIsLoadingResources(true);
+      
+      try {
+        // 1. Charger les RH
+        const { data: hrData } = await supabase
+          .from('processus_ressources_humaines')
+          .select('processus_id, ressource_humaine_id')
+          .in('processus_id', filteredProcessIds);
+
+        // 2. Charger les équipements
+        const { data: equipData } = await supabase
+          .from('processus_equipements')
+          .select('processus_id, equipement_id')
+          .in('processus_id', filteredProcessIds);
+
+        // 3. Charger les applications
+        const { data: appData } = await supabase
+          .from('processus_applications')
+          .select('processus_id, application_id')
+          .in('processus_id', filteredProcessIds);
+
+        // 4. Charger les fournisseurs
+        const { data: suppData } = await supabase
+          .from('processus_fournisseurs')
+          .select('processus_id, fournisseur_id')
+          .in('processus_id', filteredProcessIds);
+
+        // Construire le mapping par processus
+        const counts: Record<string, { hr: number; equip: number; app: number; supplier: number; total: number }> = {};
+        
+        // Initialiser pour tous les processus
+        for (const pid of filteredProcessIds) {
+          counts[pid] = { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
+        }
+
+        // Compter les RH
+        if (hrData) {
+          for (const item of hrData) {
+            if (counts[item.processus_id]) {
+              counts[item.processus_id].hr++;
+              counts[item.processus_id].total++;
+            }
+          }
+        }
+
+        // Compter les équipements
+        if (equipData) {
+          for (const item of equipData) {
+            if (counts[item.processus_id]) {
+              counts[item.processus_id].equip++;
+              counts[item.processus_id].total++;
+            }
+          }
+        }
+
+        // Compter les applications
+        if (appData) {
+          for (const item of appData) {
+            if (counts[item.processus_id]) {
+              counts[item.processus_id].app++;
+              counts[item.processus_id].total++;
+            }
+          }
+        }
+
+        // Compter les fournisseurs
+        if (suppData) {
+          for (const item of suppData) {
+            if (counts[item.processus_id]) {
+              counts[item.processus_id].supplier++;
+              counts[item.processus_id].total++;
+            }
+          }
+        }
+
+        setResourceCounts(counts);
+        
+      } catch (error) {
+        console.error("Erreur chargement des ressources:", error);
+        toast({
+          title: "Erreur",
+          description: "Impossible de charger les ressources",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoadingResources(false);
+      }
+    };
+
+    loadResourceCounts();
+  }, [filteredProcessIds]);
+
+  // ============================================================
+  // CHARGEMENT DES DONNÉES HISTORIQUES
+  // ============================================================
   useEffect(() => {
     const loadHistoricalData = async () => {
       setIsLoadingHistorical(true);
@@ -163,28 +339,9 @@ export const BiaDashboard = () => {
     loadHistoricalData();
   }, []);
 
-  // Filtrage des processus (utilise aussi la version récursive pour le filtre "Direction")
-  const filteredProcesses = useMemo(() => {
-    let filtered = processes;
-    if (selectedEntity !== "all") {
-      filtered = filtered.filter((p) => p.entityId === selectedEntity);
-    }
-    if (selectedCriticality !== "all") {
-      filtered = filtered.filter((p) => {
-        const crit = scoreToCriticality(computeMaxScore(p.impacts));
-        return crit === selectedCriticality;
-      });
-    }
-    if (selectedDirection !== "all") {
-      const descendantIds = getAllDescendantIds(entities, selectedDirection);
-      filtered = filtered.filter((p) => 
-        p.entityId === selectedDirection || descendantIds.includes(p.entityId)
-      );
-    }
-    return filtered;
-  }, [processes, selectedEntity, selectedCriticality, selectedDirection, entities]);
-
-  // Calcul des statistiques
+  // ============================================================
+  // STATISTIQUES
+  // ============================================================
   const stats = useMemo(() => {
     const totals = LEVELS.reduce(
       (acc, l) => ({ ...acc, [l]: [] as typeof processes }),
@@ -195,31 +352,43 @@ export const BiaDashboard = () => {
     let noResources = 0;
     let totalResources = 0;
     let processesWithResources = 0;
+    let processesWithHR = 0;
+    let processesWithEquip = 0;
+    let processesWithApps = 0;
+    let processesWithSuppliers = 0;
     const now = Date.now();
 
     for (const p of filteredProcesses) {
-      const c = scoreToCriticality(computeMaxScore(p.impacts));
+      const score = computeMaxScore(p.impacts);
+      const c = scoreToCriticality(score);
       totals[c].push(p);
       
       const days = (now - new Date(p.lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
       if (days > 365) stale++;
       if (p.rto > p.mtpd) rtoIssues++;
       
-      const hasHR = p.resources?.some((r: any) => r.type === "HR") || false;
-      const hasEquip = p.resources?.some((r: any) => r.type === "Equipement") || false;
-      const hasApp = (p as any).appsCritiques?.length > 0 || false;
-      const hasSupplier = p.resources?.some((r: any) => r.type === "Fournisseur") || false;
+      const res = resourceCounts[p.id] || { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
       
-      const resourceCount = [hasHR, hasEquip, hasApp, hasSupplier].filter(Boolean).length;
-      totalResources += resourceCount;
-      if (resourceCount >= 2) processesWithResources++;
-      if (resourceCount === 0) noResources++;
+      const hasHR = res.hr > 0;
+      const hasEquip = res.equip > 0;
+      const hasApp = res.app > 0;
+      const hasSupplier = res.supplier > 0;
+      
+      if (hasHR) processesWithHR++;
+      if (hasEquip) processesWithEquip++;
+      if (hasApp) processesWithApps++;
+      if (hasSupplier) processesWithSuppliers++;
+      
+      const hasAnyResource = res.total > 0;
+      totalResources += res.total;
+      if (hasAnyResource) processesWithResources++;
+      if (!hasAnyResource) noResources++;
     }
     
     const criticalCount = totals.Critique.length + totals.Majeur.length;
     const total = filteredProcesses.length;
     const avgScore = total
-      ? (filteredProcesses.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / total).toFixed(1)
+      ? (filteredProcesses.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / total)
       : 0;
     
     const currentCampaign = campaigns.find((c) => c.status === "En cours");
@@ -238,10 +407,16 @@ export const BiaDashboard = () => {
       noResources,
       processesWithResources,
       totalResources,
+      processesWithHR,
+      processesWithEquip,
+      processesWithApps,
+      processesWithSuppliers,
     };
-  }, [filteredProcesses, campaigns]);
+  }, [filteredProcesses, resourceCounts, campaigns]);
 
-  // Top processus critiques
+  // ============================================================
+  // TOP PROCESSUS CRITIQUES
+  // ============================================================
   const topProcesses = useMemo(() => {
     return filteredProcesses
       .map((p) => {
@@ -262,12 +437,12 @@ export const BiaDashboard = () => {
       .slice(0, 5);
   }, [filteredProcesses, entities]);
 
-  // ✅ CORRIGÉ : Répartition par direction (récursif, plus de niveaux)
+  // ============================================================
+  // RÉPARTITION PAR DIRECTION
+  // ============================================================
   const directionData = useMemo(() => {
     const dirMap: Record<string, Record<string, number>> = {};
     
-    // Les racines (Filiales/Entreprises) — on garde le libellé "direction" pour la carte
-    // mais on descend maintenant récursivement à TOUS les niveaux d'enfants
     const roots = entities.filter(e => e.parentId === null);
     
     for (const root of roots) {
@@ -301,36 +476,84 @@ export const BiaDashboard = () => {
     })).filter(d => d.total > 0);
   }, [filteredProcesses, entities]);
 
-  // Alertes RTO
-  const rtoAlerts = useMemo(() => {
-    return filteredProcesses
-      .filter(p => p.rto > p.mtpd)
-      .map(p => ({
-        ...p,
-        entityName: entities.find(e => e.id === p.entityId)?.name || "Sans direction",
-      }))
-      .slice(0, 5);
-  }, [filteredProcesses, entities]);
-
-  // Points d'attention
+  // ============================================================
+  // POINTS D'ATTENTION
+  // ============================================================
   const attentionPoints = useMemo(() => {
     const points = [];
     const now = Date.now();
     
-    const pendingBia = filteredProcesses.filter(p => p.status !== "Validé");
-    if (pendingBia.length > 0) {
+    // 1. Processus sans collaborateur (RH)
+    const noHR = filteredProcesses.filter(p => {
+      const res = resourceCounts[p.id] || { hr: 0 };
+      return res.hr === 0;
+    });
+    if (noHR.length > 0) {
       points.push({
-        icon: AlertTriangle,
-        color: "text-amber-600",
-        bg: "bg-amber-50",
-        text: `${pendingBia.length} BIA non validé${pendingBia.length > 1 ? 's' : ''}`,
-        action: "Réviser",
-        link: `/bia/process/${pendingBia[0].id}`,
+        icon: Users,
+        color: "text-red-600",
+        bg: "bg-red-50",
+        text: `${noHR.length} processus sans collaborateur`,
+        action: "Voir",
+        link: `/bia/process/${noHR[0]?.id || ''}`,
         severity: "high"
       });
     }
 
+    // 2. Processus sans application IT
+    const noApp = filteredProcesses.filter(p => {
+      const res = resourceCounts[p.id] || { app: 0 };
+      return res.app === 0;
+    });
+    if (noApp.length > 0) {
+      points.push({
+        icon: Server,
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+        text: `${noApp.length} processus sans application IT`,
+        action: "Voir",
+        link: `/bia/process/${noApp[0]?.id || ''}`,
+        severity: "high"
+      });
+    }
+
+    // 3. Processus sans équipement
+    const noEquip = filteredProcesses.filter(p => {
+      const res = resourceCounts[p.id] || { equip: 0 };
+      return res.equip === 0;
+    });
+    if (noEquip.length > 0) {
+      points.push({
+        icon: Monitor,
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+        text: `${noEquip.length} processus sans équipement`,
+        action: "Voir",
+        link: `/bia/process/${noEquip[0]?.id || ''}`,
+        severity: "medium"
+      });
+    }
+
+    // 4. Processus sans prestataire
+    const noSupplier = filteredProcesses.filter(p => {
+      const res = resourceCounts[p.id] || { supplier: 0 };
+      return res.supplier === 0;
+    });
+    if (noSupplier.length > 0) {
+      points.push({
+        icon: Handshake,
+        color: "text-orange-600",
+        bg: "bg-orange-50",
+        text: `${noSupplier.length} processus sans prestataire`,
+        action: "Voir",
+        link: `/bia/process/${noSupplier[0]?.id || ''}`,
+        severity: "medium"
+      });
+    }
+
+    // 5. PRA expirés (plus de 365 jours)
     const expiredPra = filteredProcesses.filter(p => {
+      if (!p.lastUpdated) return false;
       const days = (now - new Date(p.lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
       return days > 365;
     });
@@ -341,11 +564,12 @@ export const BiaDashboard = () => {
         bg: "bg-rose-50",
         text: `${expiredPra.length} PRA expiré${expiredPra.length > 1 ? 's' : ''}`,
         action: "Voir",
-        link: `/bia/process/${expiredPra[0].id}`,
+        link: `/bia/process/${expiredPra[0]?.id || ''}`,
         severity: "critical"
       });
     }
 
+    // 6. Processus critiques sans PCA
     const noPca = filteredProcesses.filter(p => !p.hasPca && computeMaxScore(p.impacts) >= 3);
     if (noPca.length > 0) {
       points.push({
@@ -353,51 +577,145 @@ export const BiaDashboard = () => {
         color: "text-orange-600",
         bg: "bg-orange-50",
         text: `${noPca.length} processus critique${noPca.length > 1 ? 's' : ''} sans PCA`,
-        action: "Créer",
-        link: `/bia/process/${noPca[0].id}`,
+        action: "Voir",
+        link: `/bia/process/${noPca[0]?.id || ''}`,
         severity: "high"
       });
     }
 
-    if (stats.noResources > 0) {
-      points.push({
-        icon: AlertCircle,
-        color: "text-red-600",
-        bg: "bg-red-50",
-        text: `${stats.noResources} processus sans aucune ressource associée`,
-        action: "Lier",
-        link: `/bia/process/${filteredProcesses.find(p => p.resources?.length === 0)?.id}`,
-        severity: "critical"
-      });
-    }
+    // Limiter à 6 points maximum
+    return points.slice(0, 6);
+  }, [filteredProcesses, resourceCounts]);
 
-    return points.slice(0, 4);
-  }, [filteredProcesses, stats.noResources]);
-
+  // ============================================================
+  // DONNÉES POUR GRAPHIQUES
+  // ============================================================
   const pieData = LEVELS.map((level) => ({
     name: level,
-    value: stats.totals[level].length,
-    color: SEVERITY_COLORS[level as keyof typeof SEVERITY_COLORS],
-    textColor: SEVERITY_TEXT_COLORS[level as keyof typeof SEVERITY_TEXT_COLORS],
-    borderColor: SEVERITY_BORDER_COLORS[level as keyof typeof SEVERITY_BORDER_COLORS],
+    value: stats.totals[level]?.length || 0,
+    color: SEVERITY_COLORS[level as keyof typeof SEVERITY_COLORS] || "#E8E4DC",
+    textColor: SEVERITY_TEXT_COLORS[level as keyof typeof SEVERITY_TEXT_COLORS] || "#6B7280",
+    borderColor: SEVERITY_BORDER_COLORS[level as keyof typeof SEVERITY_BORDER_COLORS] || "#D1D5DB",
   })).filter((d) => d.value > 0);
 
   const scoreEvolutionData = useMemo(() => {
     const months = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+    const baseScore = stats.avgScore || 2.5;
+    
     return months.map((month, index) => {
-      const baseScore = 2.8 + Math.sin(index / 1.8) * 0.6 + (index / 25);
+      const variation = Math.sin(index / 1.8) * 0.4 + (index / 30);
+      const score = Math.min(5, Math.max(1, baseScore + variation));
       return {
         month,
-        score: Math.min(5, Math.max(1.5, baseScore)),
-        trend: index > 0 ? (Math.min(5, Math.max(1.5, baseScore)) - Math.min(5, Math.max(1.5, baseScore - 0.3))) : 0,
+        score: Math.round(score * 10) / 10,
       };
     });
-  }, []);
+  }, [stats.avgScore]);
 
-  const handleProcessClick = (processId: string) => {
-    window.dispatchEvent(new CustomEvent('openProcessDetail', { detail: { processId } }));
+  // ============================================================
+  // GESTIONNAIRES DE CLIC
+  // ============================================================
+  const openProcessDetail = (processId: string) => {
+    if (processId) {
+      window.dispatchEvent(new CustomEvent('openProcessDetail', { detail: { processId } }));
+    }
   };
 
+  // ============================================================
+  // EXPORT PDF
+  // ============================================================
+  const handleExportPDF = async () => {
+    if (!dashboardRef.current) return;
+    
+    setIsExporting(true);
+    
+    try {
+      const element = dashboardRef.current;
+      
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#F8F6F2',
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      pdf.setFillColor(23, 32, 48);
+      pdf.rect(0, 0, pdfWidth, 25, 'F');
+      
+      pdf.setTextColor(248, 246, 242);
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Resillia — Tableau de bord BIA', 15, 15);
+      
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      const dateStr = new Date().toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+      pdf.text(`Généré le ${dateStr}`, 15, 21);
+      
+      const imgWidth = pdfWidth - 20;
+      const imgHeight = (canvas.height / canvas.width) * imgWidth;
+      
+      let heightLeft = imgHeight;
+      let position = 30;
+      
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - position - 20);
+      
+      while (heightLeft > 0) {
+        pdf.addPage();
+        position = 10;
+        const yOffset = imgHeight - heightLeft - 10;
+        pdf.addImage(imgData, 'PNG', 10, position - yOffset, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - position - 20);
+      }
+      
+      const pageCount = pdf.internal.pages.length;
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(8);
+        pdf.setTextColor(150, 150, 150);
+        pdf.text(`Page ${i}/${pageCount}`, pdfWidth - 30, pdfHeight - 8);
+        pdf.text('Document confidentiel - Resillia', 15, pdfHeight - 8);
+      }
+      
+      pdf.save(`Tableau_de_bord_BIA_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+      toast({
+        title: "Export réussi",
+        description: "Le PDF a été généré et téléchargé",
+      });
+    } catch (error) {
+      console.error("Erreur lors de l'export PDF:", error);
+      toast({
+        title: "Erreur d'export",
+        description: "Impossible de générer le PDF. Veuillez réessayer.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // ============================================================
+  // LEVEL BADGE CLASS
+  // ============================================================
   const levelBadgeClass = (level: string) => {
     const classes = {
       "Critique": "bg-[#FFEBEE] text-[#C62828] border-[#EF9A9A]",
@@ -416,19 +734,122 @@ export const BiaDashboard = () => {
     return "text-[#2E7D32]";
   };
 
-  const getScoreBg = (score: number) => {
-    if (score >= 4) return "bg-[#FFEBEE]";
-    if (score >= 3) return "bg-[#FFF3E0]";
-    if (score >= 2) return "bg-[#FFF8E1]";
-    return "bg-[#E8F5E9]";
+  // ============================================================
+  // RENDU DE LA CARTE RESSOURCES (TOTAUX DU RÉFÉRENTIEL)
+  // ============================================================
+  const renderResourceCard = () => {
+    if (isLoadingResources) {
+      return (
+        <div className="flex flex-col items-center justify-center h-[200px] gap-3">
+          <RefreshCw className="h-6 w-6 animate-spin text-[#2A5141]" />
+          <p className="text-sm text-[#172030]/40">Chargement des ressources...</p>
+        </div>
+      );
+    }
+
+    const resourceTypes = [
+      { 
+        key: 'hr', 
+        label: 'Collaborateurs', 
+        icon: Users, 
+        count: referentialTotals.hr,
+        color: 'text-blue-600',
+        bg: 'bg-blue-50'
+      },
+      { 
+        key: 'equip', 
+        label: 'Équipements', 
+        icon: Monitor, 
+        count: referentialTotals.equip,
+        color: 'text-amber-600',
+        bg: 'bg-amber-50'
+      },
+      { 
+        key: 'app', 
+        label: 'Applications IT', 
+        icon: Server, 
+        count: referentialTotals.app,
+        color: 'text-purple-600',
+        bg: 'bg-purple-50'
+      },
+      { 
+        key: 'supplier', 
+        label: 'Prestataires', 
+        icon: Handshake, 
+        count: referentialTotals.supplier,
+        color: 'text-orange-600',
+        bg: 'bg-orange-50'
+      },
+    ];
+
+    const totalResources = referentialTotals.hr + referentialTotals.equip + referentialTotals.app + referentialTotals.supplier;
+
+    return (
+      <div className="space-y-4">
+        {/* 4 lignes avec les totaux du référentiel */}
+        <div className="space-y-3">
+          {resourceTypes.map((rt) => {
+            const Icon = rt.icon;
+            const hasResources = rt.count > 0;
+            
+            return (
+              <div key={rt.key} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
+                    rt.bg
+                  )}>
+                    <Icon className={cn("h-4 w-4", rt.color)} />
+                  </div>
+                  <span className="text-sm font-medium text-[#172030]">{rt.label}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+                    {rt.count}
+                  </span>
+                  {!hasResources && (
+                    <div className="w-2 h-2 rounded-full bg-[#E65100] flex-shrink-0" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Total des ressources */}
+        <div className="pt-3 border-t border-[#E8E4DC] flex items-center justify-between">
+          <span className="text-sm font-medium text-[#172030]">Total ressources</span>
+          <span className="text-xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>
+            {totalResources}
+          </span>
+        </div>
+      </div>
+    );
   };
 
-  const openProcessDetail = (processId: string) => {
-    window.dispatchEvent(new CustomEvent('openProcessDetail', { detail: { processId } }));
-  };
+  // ============================================================
+  // RENDU
+  // ============================================================
+  if (!processes || processes.length === 0) {
+    return (
+      <div className="bg-[#F8F6F2] min-h-screen p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-96">
+            <Card className="border-gray-200 shadow-sm max-w-md w-full">
+              <CardContent className="p-8 text-center">
+                <Database className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-700 font-medium">Aucune donnée BIA disponible</p>
+                <p className="text-sm text-gray-500 mt-1">Commencez par créer des processus dans le module BIA</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-[#F8F6F2] min-h-screen p-6">
+    <div ref={dashboardRef} className="bg-[#F8F6F2] min-h-screen p-6">
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* ===== HEADER ===== */}
@@ -470,99 +891,106 @@ export const BiaDashboard = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-8 gap-1.5 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]"
+              onClick={handleExportPDF}
+              disabled={isExporting}
+            >
               <Download className="h-3.5 w-3.5" />
-              Exporter
-            </Button>
-            <Button size="sm" className="h-8 gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm">
-              <FileText className="h-3.5 w-3.5" />
-              Nouveau BIA
+              {isExporting ? "Export en cours..." : "Exporter"}
             </Button>
           </div>
         </div>
 
         {/* ===== LIGNE 1: KPI ===== */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { 
-              label: "Processus analysés", 
-              value: stats.total, 
-              icon: Activity, 
-              color: "text-[#2A5141]", 
-              bg: "bg-[#E8F5E9]", 
-              sub: "Couverture BIA",
-              subValue: `${stats.coverage}%`,
-              trend: "+12%",
-              trendUp: true,
-            },
-            { 
-              label: "Processus critiques", 
-              value: stats.criticalCount, 
-              icon: AlertTriangle, 
-              color: "text-[#C62828]", 
-              bg: "bg-[#FFEBEE]", 
-              sub: "Niveau critique",
-              subValue: `${stats.criticalCount > 0 ? '⚠️ Attention' : '✅ OK'}`,
-              trend: stats.criticalCount > 0 ? `+${stats.criticalCount}` : "0",
-              trendUp: stats.criticalCount > 0,
-            },
-            { 
-              label: "Score moyen", 
-              value: `${stats.avgScore}/5`, 
-              icon: TrendingUp, 
-              color: "text-[#2E7D32]", 
-              bg: "bg-[#E8F5E9]", 
-              sub: "Tendance",
-              subValue: `${stats.avgScore > 3 ? '↑ En hausse' : '→ Stable'}`,
-              trend: `${stats.avgScore > 3 ? '+' : ''}${(Number(stats.avgScore) - 2.5).toFixed(1)}`,
-              trendUp: Number(stats.avgScore) > 2.5,
-            },
-            { 
-              label: "Couverture BIA", 
-              value: `${stats.coverage}%`, 
-              icon: CheckCircle2, 
-              color: "text-[#2A5141]", 
-              bg: "bg-[#E8F5E9]", 
-              sub: "Objectif",
-              subValue: "90%",
-              trend: `${stats.coverage >= 90 ? '✅' : '⏳'}`,
-              trendUp: stats.coverage >= 90,
-            },
-          ].map((kpi, index) => {
-            const Icon = kpi.icon;
-            return (
-              <Card key={index} className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">
-                        {kpi.label}
-                      </p>
-                      <p className="text-2xl font-bold text-[#172030] mt-0.5" style={{ fontFamily: "Playfair Display, serif" }}>
-                        {kpi.value}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] text-[#172030]/40">{kpi.sub}</span>
-                        <span className="text-[10px] font-medium text-[#2A5141]">{kpi.subValue}</span>
-                        {kpi.trend && (
-                          <span className={cn(
-                            "text-[10px] font-medium flex items-center gap-0.5",
-                            kpi.trendUp ? "text-[#2E7D32]" : "text-[#C62828]"
-                          )}>
-                            {kpi.trendUp ? <ArrowUp className="h-2.5 w-2.5" /> : <ArrowDown className="h-2.5 w-2.5" />}
-                            {kpi.trend}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className={`h-10 w-10 rounded-xl ${kpi.bg} flex items-center justify-center flex-shrink-0 ml-3`}>
-                      <Icon className={`h-4.5 w-4.5 ${kpi.color}`} />
-                    </div>
+          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Processus analysés</p>
+                  <p className="text-2xl font-bold text-[#172030] mt-0.5" style={{ fontFamily: "Playfair Display, serif" }}>
+                    {stats.total}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-[#172030]/40">Couverture BIA</span>
+                    <span className="text-[10px] font-medium text-[#2A5141]">{stats.coverage}%</span>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                </div>
+                <div className="h-10 w-10 rounded-xl bg-[#E8F5E9] flex items-center justify-center flex-shrink-0 ml-3">
+                  <Activity className="h-4.5 w-4.5 text-[#2A5141]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Processus critiques</p>
+                  <p className="text-2xl font-bold text-[#C62828] mt-0.5" style={{ fontFamily: "Playfair Display, serif" }}>
+                    {stats.criticalCount}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-[#172030]/40">Niveau critique</span>
+                    <span className="text-[10px] font-medium text-[#2A5141]">
+                      {stats.criticalCount > 0 ? '⚠️ Attention' : '✅ OK'}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-10 w-10 rounded-xl bg-[#FFEBEE] flex items-center justify-center flex-shrink-0 ml-3">
+                  <AlertTriangle className="h-4.5 w-4.5 text-[#C62828]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Score moyen</p>
+                  <p className="text-2xl font-bold text-[#172030] mt-0.5" style={{ fontFamily: "Playfair Display, serif" }}>
+                    {stats.avgScore.toFixed(1)}/5
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-[#172030]/40">Tendance</span>
+                    <span className="text-[10px] font-medium text-[#2A5141]">
+                      {stats.avgScore > 3 ? '↑ En hausse' : '→ Stable'}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-10 w-10 rounded-xl bg-[#E8F5E9] flex items-center justify-center flex-shrink-0 ml-3">
+                  <TrendingUp className="h-4.5 w-4.5 text-[#2E7D32]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Couverture BIA</p>
+                  <p className="text-2xl font-bold text-[#172030] mt-0.5" style={{ fontFamily: "Playfair Display, serif" }}>
+                    {stats.coverage}%
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-[#172030]/40">Objectif</span>
+                    <span className="text-[10px] font-medium text-[#2A5141]">
+                      {stats.coverage >= 80 ? '✅ Atteint' : '⏳ En cours'}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-10 w-10 rounded-xl bg-[#E8F5E9] flex items-center justify-center flex-shrink-0 ml-3">
+                  <CheckCircle2 className="h-4.5 w-4.5 text-[#2A5141]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* ===== LIGNE 2: Top processus + Donut + Évolution ===== */}
@@ -574,9 +1002,7 @@ export const BiaDashboard = () => {
                   <Target className="h-4 w-4 text-[#172030]/40" />
                   Top processus critiques
                 </CardTitle>
-                <Button variant="ghost" size="sm" className="h-7 text-xs text-[#172030]/40 hover:text-[#172030]">
-                  Voir tout <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
-                </Button>
+                <span className="text-xs text-[#172030]/40">5 processus les plus critiques</span>
               </div>
             </CardHeader>
             <CardContent className="flex-1 overflow-hidden p-0 px-4 pb-4">
@@ -589,39 +1015,40 @@ export const BiaDashboard = () => {
                   <span className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider text-center">Criticité</span>
                 </div>
                 <div className="flex-1 divide-y divide-[#E8E4DC]/50 overflow-y-auto">
-                  {topProcesses.map((p, index) => {
-                    const scorePercent = (p.score / 5) * 100;
-                    return (
-                      <div 
-                        key={index} 
-                        className="grid grid-cols-6 gap-2 py-2.5 items-center hover:bg-[#F8F6F2] rounded-lg transition-colors -mx-1 px-1 cursor-pointer"
-                        onClick={() => openProcessDetail(p.id)}
-                      >
-                        <span className="text-sm font-medium text-[#172030] truncate col-span-2">{p.name}</span>
-                        <span className="text-xs text-[#172030]/50 truncate flex items-center gap-1">
-                          <Building2 className="h-3 w-3" />
-                          {p.entityName}
-                        </span>
-                        <div className="flex items-center gap-1.5 justify-center">
-                          <span className={cn("text-sm font-bold", getScoreColor(p.score))}>{p.score.toFixed(1)}</span>
-                          <div className="w-10 h-1 bg-[#E8E4DC] rounded-full overflow-hidden">
-                            <div 
-                              className="h-full rounded-full transition-all"
-                              style={{ 
-                                width: `${scorePercent}%`,
-                                backgroundColor: p.score >= 4 ? "#C62828" : p.score >= 3 ? "#E65100" : p.score >= 2 ? "#F57F17" : "#2E7D32"
-                              }}
-                            />
+                  {topProcesses.length > 0 ? (
+                    topProcesses.map((p, index) => {
+                      const scorePercent = (p.score / 5) * 100;
+                      return (
+                        <div 
+                          key={p.id || index} 
+                          className="grid grid-cols-6 gap-2 py-2.5 items-center hover:bg-[#F8F6F2] rounded-lg transition-colors -mx-1 px-1 cursor-pointer"
+                          onClick={() => openProcessDetail(p.id)}
+                        >
+                          <span className="text-sm font-medium text-[#172030] truncate col-span-2">{p.name}</span>
+                          <span className="text-xs text-[#172030]/50 truncate flex items-center gap-1">
+                            <Building2 className="h-3 w-3" />
+                            {p.entityName}
+                          </span>
+                          <div className="flex items-center gap-1.5 justify-center">
+                            <span className={cn("text-sm font-bold", getScoreColor(p.score))}>{p.score.toFixed(1)}</span>
+                            <div className="w-10 h-1 bg-[#E8E4DC] rounded-full overflow-hidden">
+                              <div 
+                                className="h-full rounded-full transition-all"
+                                style={{ 
+                                  width: `${scorePercent}%`,
+                                  backgroundColor: p.score >= 4 ? "#C62828" : p.score >= 3 ? "#E65100" : p.score >= 2 ? "#F57F17" : "#2E7D32"
+                                }}
+                              />
+                            </div>
                           </div>
+                          <span className="text-xs text-[#172030]/60 text-center font-mono">{p.rto || 0}h</span>
+                          <Badge className={cn("text-[9px] px-2 py-0.5 h-5 border text-center justify-center", levelBadgeClass(p.criticality))}>
+                            {p.criticality}
+                          </Badge>
                         </div>
-                        <span className="text-xs text-[#172030]/60 text-center font-mono">{p.rto}h</span>
-                        <Badge className={cn("text-[9px] px-2 py-0.5 h-5 border text-center justify-center", levelBadgeClass(p.criticality))}>
-                          {p.criticality}
-                        </Badge>
-                      </div>
-                    );
-                  })}
-                  {topProcesses.length === 0 && (
+                      );
+                    })
+                  ) : (
                     <div className="flex items-center justify-center h-full text-sm text-[#172030]/30">
                       Aucun processus trouvé
                     </div>
@@ -644,7 +1071,7 @@ export const BiaDashboard = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={pieData}
+                        data={pieData.length > 0 ? pieData : [{ name: "Aucune donnée", value: 1, color: "#E8E4DC", borderColor: "#D1D5DB" }]}
                         dataKey="value"
                         nameKey="name"
                         innerRadius={35}
@@ -653,7 +1080,7 @@ export const BiaDashboard = () => {
                         stroke="white"
                         strokeWidth={2}
                       >
-                        {pieData.map((d) => (
+                        {(pieData.length > 0 ? pieData : [{ name: "Aucune donnée", value: 1, color: "#E8E4DC", borderColor: "#D1D5DB" }]).map((d) => (
                           <Cell key={d.name} fill={d.color} stroke={d.borderColor} strokeWidth={1} />
                         ))}
                       </Pie>
@@ -669,17 +1096,23 @@ export const BiaDashboard = () => {
                   </div>
                 </div>
                 <div className="w-full mt-2 space-y-1">
-                  {pieData.map((d) => (
-                    <div key={d.name} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color, border: `1px solid ${d.borderColor}` }} />
-                        <span className="text-[10px] text-[#172030]/70">{d.name}</span>
+                  {pieData.length > 0 ? (
+                    pieData.map((d) => (
+                      <div key={d.name} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color, border: `1px solid ${d.borderColor}` }} />
+                          <span className="text-[10px] text-[#172030]/70">{d.name}</span>
+                        </div>
+                        <span className="text-[10px] font-medium text-[#172030]">
+                          {d.value} ({stats.total > 0 ? ((d.value / stats.total) * 100).toFixed(0) : 0}%)
+                        </span>
                       </div>
-                      <span className="text-[10px] font-medium text-[#172030]">
-                        {d.value} ({((d.value / stats.total) * 100).toFixed(0)}%)
-                      </span>
+                    ))
+                  ) : (
+                    <div className="text-center text-[10px] text-[#172030]/40 py-2">
+                      Aucune donnée de criticité
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -730,14 +1163,14 @@ export const BiaDashboard = () => {
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-[#172030]/40 mt-1 pt-1 border-t border-[#E8E4DC]">
                   <span>Score moyen</span>
-                  <span className="font-medium text-[#2A5141]">{stats.avgScore}/5</span>
+                  <span className="font-medium text-[#2A5141]">{stats.avgScore.toFixed(1)}/5</span>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* ===== LIGNE 3: Répartition par direction + Alertes RTO ===== */}
+        {/* ===== LIGNE 3: Répartition par direction + RESSOURCES ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2 border-[#E8E4DC] shadow-sm bg-white">
             <CardHeader className="pb-2">
@@ -758,7 +1191,7 @@ export const BiaDashboard = () => {
                       >
                         <XAxis type="number" hide />
                         <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: "#172030/60" }} width={90} />
-                        <Tooltip 
+                        <RechartsTooltip 
                           contentStyle={{
                             backgroundColor: "white",
                             border: "1px solid #E8E4DC",
@@ -792,46 +1225,16 @@ export const BiaDashboard = () => {
             </CardContent>
           </Card>
 
+          {/* ===== CARTE : RESSOURCES (Totaux du référentiel) ===== */}
           <Card className="border-[#E8E4DC] shadow-sm bg-white">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
-                <Clock className="h-4 w-4 text-[#C62828]" />
-                Échéances & alertes
+                <LinkIcon className="h-4 w-4 text-[#172030]/40" />
+                Ressources
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-0">
-              {rtoAlerts.length > 0 ? (
-                <div className="space-y-2">
-                  {rtoAlerts.map((p, i) => (
-                    <div 
-                      key={i}
-                      className="flex items-center justify-between p-2 rounded-lg bg-[#FFEBEE] border border-[#EF9A9A] cursor-pointer hover:bg-[#FFCDD2] transition-colors"
-                      onClick={() => openProcessDetail(p.id)}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <AlertCircle className="h-3.5 w-3.5 text-[#C62828] flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-[#172030] truncate">{p.name}</p>
-                          <p className="text-[10px] text-[#C62828]">RTO {p.rto}h &gt; MTPD {p.mtpd}h</p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-6 text-xs text-[#C62828] hover:text-[#C62828] hover:bg-[#FFCDD2] px-2 flex-shrink-0">
-                        Voir
-                      </Button>
-                    </div>
-                  ))}
-                  {rtoAlerts.length > 3 && (
-                    <p className="text-center text-[10px] text-[#172030]/40">
-                      +{rtoAlerts.length - 3} autres alertes
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-[120px] text-sm text-[#172030]/30">
-                  <CheckCircle2 className="h-5 w-5 text-[#2E7D32] mr-2" />
-                  Aucune alerte RTO
-                </div>
-              )}
+              {renderResourceCard()}
             </CardContent>
           </Card>
         </div>
@@ -844,97 +1247,53 @@ export const BiaDashboard = () => {
                 <Zap className="h-4 w-4 text-[#E65100]" />
                 Points d'attention
               </CardTitle>
-              <Button variant="ghost" size="sm" className="h-7 text-xs text-[#172030]/40 hover:text-[#172030]">
-                Voir tout <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
-              </Button>
+              <span className="text-xs text-[#172030]/40">Alertes à surveiller</span>
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              {attentionPoints.map((point, index) => {
-                const Icon = point.icon;
-                const severityColors = {
-                  critical: { border: "border-red-200", bg: "bg-red-50", text: "text-red-700" },
-                  high: { border: "border-orange-200", bg: "bg-orange-50", text: "text-orange-700" },
-                  medium: { border: "border-yellow-200", bg: "bg-yellow-50", text: "text-yellow-700" },
-                  low: { border: "border-green-200", bg: "bg-green-50", text: "text-green-700" },
-                };
-                const sev = severityColors[point.severity as keyof typeof severityColors] || severityColors.medium;
-                
-                return (
-                  <div 
-                    key={index} 
-                    className={cn(
-                      "flex items-center justify-between gap-2 py-2.5 px-3 rounded-lg border transition-colors cursor-pointer hover:shadow-sm",
-                      sev.border,
-                      sev.bg,
-                    )}
-                    onClick={() => {
-                      if (point.link) {
-                        openProcessDetail(point.link.split('/').pop() || '');
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`h-7 w-7 rounded-lg ${sev.bg} flex items-center justify-center flex-shrink-0`}>
-                        <Icon className={`h-3.5 w-3.5 ${sev.text}`} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {attentionPoints.length > 0 ? (
+                attentionPoints.map((point, index) => {
+                  const Icon = point.icon;
+                  const severityColors = {
+                    critical: { border: "border-red-200", bg: "bg-red-50", text: "text-red-700" },
+                    high: { border: "border-orange-200", bg: "bg-orange-50", text: "text-orange-700" },
+                    medium: { border: "border-yellow-200", bg: "bg-yellow-50", text: "text-yellow-700" },
+                    low: { border: "border-green-200", bg: "bg-green-50", text: "text-green-700" },
+                  };
+                  const sev = severityColors[point.severity as keyof typeof severityColors] || severityColors.medium;
+                  
+                  return (
+                    <div 
+                      key={index} 
+                      className={cn(
+                        "flex items-center justify-between gap-2 py-2.5 px-3 rounded-lg border transition-colors cursor-pointer hover:shadow-sm",
+                        sev.border,
+                        sev.bg,
+                      )}
+                      onClick={() => {
+                        if (point.link) {
+                          const processId = point.link.split('/').pop();
+                          if (processId) openProcessDetail(processId);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <div className={`h-7 w-7 rounded-lg ${sev.bg} flex items-center justify-center flex-shrink-0`}>
+                          <Icon className={`h-3.5 w-3.5 ${sev.text}`} />
+                        </div>
+                        <p className="text-xs text-[#172030] break-words">{point.text}</p>
                       </div>
-                      <p className="text-xs text-[#172030] truncate">{point.text}</p>
+                      <span className="text-xs text-[#172030]/40 flex-shrink-0">{point.action}</span>
                     </div>
-                    <Button variant="ghost" size="sm" className={cn("h-6 text-xs px-2 flex-shrink-0", sev.text, "hover:bg-white/50")}>
-                      {point.action}
-                    </Button>
-                  </div>
-                );
-              })}
-              {attentionPoints.length === 0 && (
+                  );
+                })
+              ) : (
                 <div className="flex items-center justify-center col-span-full py-4 text-sm text-[#172030]/30">
                   <CheckCircle2 className="h-5 w-5 text-[#2E7D32] mr-2" />
                   Aucune alerte — Tout est sous contrôle
                 </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* ===== LIGNE 5: Couverture des ressources ===== */}
-        <Card className="border-[#E8E4DC] shadow-sm bg-white">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
-              <LinkIcon className="h-4 w-4 text-[#172030]/40" />
-              Couverture des ressources
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-[#F8F6F2] rounded-lg p-3 text-center">
-                <p className="text-[10px] text-[#172030]/40 uppercase tracking-wider">Taux de couverture</p>
-                <p className="text-2xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>
-                  {stats.total > 0 ? Math.round((stats.processesWithResources / stats.total) * 100) : 0}%
-                </p>
-                <p className="text-[10px] text-[#172030]/40">{stats.processesWithResources} / {stats.total} processus</p>
-              </div>
-              <div className="bg-[#F8F6F2] rounded-lg p-3 text-center">
-                <p className="text-[10px] text-[#172030]/40 uppercase tracking-wider">Moyenne par processus</p>
-                <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
-                  {stats.total > 0 ? (stats.totalResources / stats.total).toFixed(1) : 0}
-                </p>
-                <p className="text-[10px] text-[#172030]/40">ressources / processus</p>
-              </div>
-              <div className="bg-[#F8F6F2] rounded-lg p-3 text-center">
-                <p className="text-[10px] text-[#172030]/40 uppercase tracking-wider">Avec ressource RH</p>
-                <p className="text-2xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>
-                  {filteredProcesses.filter(p => p.resources?.some((r: any) => r.type === "HR")).length}
-                </p>
-                <p className="text-[10px] text-[#172030]/40">processus</p>
-              </div>
-              <div className="bg-[#F8F6F2] rounded-lg p-3 text-center">
-                <p className="text-[10px] text-[#172030]/40 uppercase tracking-wider">Sans ressource</p>
-                <p className="text-2xl font-bold text-[#C62828]" style={{ fontFamily: "Playfair Display, serif" }}>
-                  {stats.noResources}
-                </p>
-                <p className="text-[10px] text-[#172030]/40">à compléter</p>
-              </div>
             </div>
           </CardContent>
         </Card>

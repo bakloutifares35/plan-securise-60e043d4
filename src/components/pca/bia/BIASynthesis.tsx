@@ -5,7 +5,9 @@ import {
   Building2, Activity, Globe, Shield, Download, RefreshCw,
   Users, Monitor, Handshake, FileText, CheckCircle, XCircle,
   ChevronDown, ChevronRight, Package, Wifi, HardDrive, Cpu,
-  Printer, FileSpreadsheet
+  Printer, FileSpreadsheet, Layers, BarChart3, PieChart,
+  Target, Zap, Gauge, ShieldCheck, ArrowUpRight, ArrowDownRight,
+  CircleDot, Square, LayoutDashboard, ListChecks, Briefcase
 } from 'lucide-react';
 import { useBia } from '@/contexts/BiaContext';
 import { useGovernance } from '@/contexts/GovernanceContext';
@@ -14,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { scoreToCriticality, criticalityColor } from '@/data/bia';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { toast } from '@/hooks/use-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -54,6 +57,245 @@ interface DirectionDetail {
   processes: ProcessWithResources[];
 }
 
+// ============================================================
+// COMPOSANT - StatCard
+// ============================================================
+const StatCard = ({ 
+  label, 
+  value, 
+  sub, 
+  icon, 
+  trend, 
+  trendLabel,
+  color 
+}: { 
+  label: string; 
+  value: string | number; 
+  sub?: string; 
+  icon: React.ReactNode;
+  trend?: number;
+  trendLabel?: string;
+  color?: string;
+}) => {
+  return (
+    <Card className="border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 group">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1" style={{ fontFamily: 'Playfair Display, serif' }}>
+              {value}
+            </p>
+            {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+          </div>
+          <div className={cn(
+            "p-2 rounded-lg transition-colors",
+            color || "bg-[#2A5141]/10 text-[#2A5141]"
+          )}>
+            {icon}
+          </div>
+        </div>
+        {trend !== undefined && (
+          <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100">
+            {trend >= 0 ? (
+              <ArrowUpRight className="h-3.5 w-3.5 text-green-500" />
+            ) : (
+              <ArrowDownRight className="h-3.5 w-3.5 text-red-500" />
+            )}
+            <span className={cn(
+              "text-xs font-medium",
+              trend >= 0 ? "text-green-600" : "text-red-600"
+            )}>
+              {Math.abs(trend)}%
+            </span>
+            <span className="text-xs text-gray-400">{trendLabel || 'vs mois dernier'}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// ============================================================
+// COMPOSANT - DistributionBar
+// ============================================================
+const DistributionBar = ({ 
+  label, 
+  count, 
+  total, 
+  color,
+  maxCount 
+}: { 
+  label: string; 
+  count: number; 
+  total: number;
+  color: string;
+  maxCount: number;
+}) => {
+  const percentage = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+  const percentOfTotal = total > 0 ? Math.round((count / total) * 100) : 0;
+
+  return (
+    <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 hover:border-gray-300 transition-colors">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-sm font-medium text-gray-700">≤ {label}</span>
+        <span className="text-lg font-bold text-gray-900">{count}</span>
+      </div>
+      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div 
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${percentage}%`, backgroundColor: color }}
+        />
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-xs text-gray-400">{percentOfTotal}% du total</span>
+        <span className="text-xs font-medium" style={{ color }}>{count} processus</span>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT - ResourceTable
+// ============================================================
+const ResourceTable = ({ 
+  data, 
+  paliers 
+}: { 
+  data: any[]; 
+  paliers: any[];
+}) => {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-200">
+            <th className="text-left py-3 px-3 font-semibold text-gray-400 text-xs uppercase tracking-wider">
+              RESSOURCE
+            </th>
+            {paliers.map(p => (
+              <th key={p.label} className="text-center py-3 px-3 font-semibold text-gray-400 text-xs uppercase tracking-wider">
+                {p.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((rt, idx) => {
+            const Icon = rt.icon;
+            return (
+              <tr key={rt.key} className={cn(
+                "transition-colors",
+                idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+              )}>
+                <td className="py-2.5 px-3 font-medium text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-gray-400" />
+                    {rt.label}
+                  </div>
+                </td>
+                {rt.values.map((val: number, i: number) => (
+                  <td key={i} className="text-center py-2.5 px-3 font-mono font-bold text-gray-900">
+                    {val}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-gray-200 bg-gray-50">
+            <td className="py-2.5 px-3 font-semibold text-gray-700">TOTAL</td>
+            {paliers.map((p, i) => {
+              const total = data.reduce((sum, rt) => sum + rt.values[i], 0);
+              return (
+                <td key={i} className="text-center py-2.5 px-3 font-bold text-[#2A5141]">
+                  {total}
+                </td>
+              );
+            })}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT - TopItemCard
+// ============================================================
+const TopItemCard = ({ 
+  items, 
+  title, 
+  icon, 
+  color,
+  badgeColor,
+  subKey,
+  subLabel
+}: { 
+  items: any[]; 
+  title: string; 
+  icon: React.ReactNode;
+  color: string;
+  badgeColor: string;
+  subKey?: string;
+  subLabel?: string;
+}) => {
+  if (items.length === 0) {
+    return (
+      <Card className="border-gray-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <div className={cn("p-1.5 rounded", color)}>{icon}</div>
+            <CardTitle className="text-sm font-semibold text-gray-700">{title}</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-6 text-gray-400 text-sm">
+            Aucune donnée disponible
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <div className={cn("p-1.5 rounded", color)}>{icon}</div>
+          <CardTitle className="text-sm font-semibold text-gray-700">{title}</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <div key={item.name} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-gray-400">#{index + 1}</span>
+                  <p className="font-medium text-sm text-gray-800 truncate">{item.name}</p>
+                </div>
+                {subKey && (
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {subLabel || ''}: {item[subKey] || '—'}
+                  </p>
+                )}
+              </div>
+              <Badge className={cn("text-xs", badgeColor)}>
+                {item.count}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ============================================================
+// COMPOSANT PRINCIPAL - BIASynthesis
+// ============================================================
 const BIASynthesis: React.FC = () => {
   const { processes } = useBia();
   const { entities } = useGovernance();
@@ -69,7 +311,7 @@ const BIASynthesis: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
 
   // ============================================================
-  // 1. CHARGEMENT DES DONNÉES SUPABASE
+  // 1. CHARGEMENT DES DONNÉES
   // ============================================================
   const loadAllResources = useCallback(async () => {
     setIsLoading(true);
@@ -224,31 +466,12 @@ const BIASynthesis: React.FC = () => {
   }, [loadAllResources]);
 
   // ============================================================
-  // 2. RÉSOLUTION DES NOMS D'ENTITÉS
+  // 2. RÉSOLUTION DES NOMS
   // ============================================================
   const getEntityName = useCallback((entityId: string): string => {
     if (!entityId) return 'Non défini';
     const entity = entities.find(e => e.id === entityId);
     return entity?.name || 'Non défini';
-  }, [entities]);
-
-  const getFullEntityPath = useCallback((entityId: string): string => {
-    if (!entityId) return 'Non défini';
-    const entity = entities.find(e => e.id === entityId);
-    if (!entity) return 'Non défini';
-    
-    const path: string[] = [entity.name];
-    let parentId = entity.parentId;
-    while (parentId) {
-      const parent = entities.find(e => e.id === parentId);
-      if (parent) {
-        path.unshift(parent.name);
-        parentId = parent.parentId;
-      } else {
-        break;
-      }
-    }
-    return path.join(' / ');
   }, [entities]);
 
   const getDirectionName = useCallback((entityId: string): string => {
@@ -291,38 +514,8 @@ const BIASynthesis: React.FC = () => {
     return hasImpacts && hasResources;
   }, []);
 
-  const countSevereImpacts = useCallback((impacts: any): ImpactSeverity => {
-    const result: ImpactSeverity = {
-      financier: 0,
-      conformite: 0,
-      operationnel: 0,
-      reputationnel: 0
-    };
-    
-    if (!impacts) return result;
-    
-    const periodsToCheck = ['P0_4H', 'P4_8H', 'P1D', 'P2D', 'P1W'];
-    
-    for (const period of periodsToCheck) {
-      const periodData = impacts[period];
-      if (!periodData || typeof periodData !== 'object') continue;
-      
-      const financial = periodData.financial || 0;
-      const regulatory = periodData.regulatory || 0;
-      const operational = periodData.operational || 0;
-      const reputation = periodData.reputation || 0;
-      
-      if (financial >= 4) result.financier++;
-      if (regulatory >= 4) result.conformite++;
-      if (operational >= 4) result.operationnel++;
-      if (reputation >= 4) result.reputationnel++;
-    }
-    
-    return result;
-  }, []);
-
   // ============================================================
-  // 4. MÉMOÏSATION DES STATISTIQUES
+  // 4. STATISTIQUES
   // ============================================================
   const stats = useMemo(() => {
     const totalProcessus = enrichedProcesses.length;
@@ -379,7 +572,7 @@ const BIASynthesis: React.FC = () => {
   }, [enrichedProcesses, computeMaxScore, isProcessComplete]);
 
   // ============================================================
-  // 5. RESSOURCES PAR PALIER DE TEMPS (SIMPLIFIÉ)
+  // 5. RESSOURCES PAR PALIER
   // ============================================================
   const resourcesByTimeframe = useMemo(() => {
     const paliers = [
@@ -392,8 +585,8 @@ const BIASynthesis: React.FC = () => {
 
     const resourceTypes = [
       { key: 'hr', label: 'Personnel (FTE)', icon: Users },
-      { key: 'postes', label: 'Postes de bureau de secours', icon: Monitor },
-      { key: 'equipements', label: 'Équipements', icon: Package },
+      { key: 'postes', label: 'Postes de bureau', icon: Monitor },
+      { key: 'equipements', label: 'Équipements spécifiques', icon: Package },
     ];
 
     const result: Record<string, Record<string, number>> = {};
@@ -449,7 +642,7 @@ const BIASynthesis: React.FC = () => {
   }, [enrichedProcesses]);
 
   // ============================================================
-  // 6. TOP APPLICATIONS
+  // 6. TOP CLASSEMENTS
   // ============================================================
   const topApps = useMemo(() => {
     const appCount: Record<string, { count: number; rto: number; sla: boolean }> = {};
@@ -472,9 +665,6 @@ const BIASynthesis: React.FC = () => {
       .map(([name, data]) => ({ name, ...data }));
   }, [enrichedProcesses]);
 
-  // ============================================================
-  // 7. TOP PRESTATAIRES
-  // ============================================================
   const topPrestataires = useMemo(() => {
     const suppCount: Record<string, { count: number; rto: number }> = {};
     
@@ -493,9 +683,6 @@ const BIASynthesis: React.FC = () => {
       .map(([name, data]) => ({ name, ...data }));
   }, [enrichedProcesses]);
 
-  // ============================================================
-  // 8. TOP ÉQUIPEMENTS
-  // ============================================================
   const topEquipements = useMemo(() => {
     const equipCount: Record<string, { count: number; type: string; rto: number }> = {};
     
@@ -515,7 +702,7 @@ const BIASynthesis: React.FC = () => {
   }, [enrichedProcesses]);
 
   // ============================================================
-  // 9. DÉTAIL PAR DIRECTION
+  // 7. DÉTAIL PAR DIRECTION
   // ============================================================
   const directionsDetail = useMemo(() => {
     const result: Record<string, DirectionDetail> = {};
@@ -561,231 +748,203 @@ const BIASynthesis: React.FC = () => {
     return result;
   }, [enrichedProcesses, getDirectionName, computeMaxScore, isProcessComplete]);
 
- // ============================================================
-// 10. EXPORT PDF (SIMPLIFIÉ ET NET)
-// ============================================================
-const exportPDF = useCallback(async () => {
-  if (enrichedProcesses.length === 0) {
-    toast({
-      title: "Erreur",
-      description: "Aucune donnée à exporter",
-      variant: "destructive"
-    });
-    return;
-  }
+  // ============================================================
+  // 8. EXPORT PDF COMPLET
+  // ============================================================
+  const exportPDF = useCallback(async () => {
+    if (enrichedProcesses.length === 0) {
+      toast({
+        title: "Erreur",
+        description: "Aucune donnée à exporter",
+        variant: "destructive"
+      });
+      return;
+    }
 
-  setIsExporting(true);
-  
-  try {
-    const doc = new jsPDF({
-      orientation: 'landscape',
-      unit: 'mm',
-      format: 'a4'
-    });
-
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 10;
-    let y = margin;
-    let pageNumber = 1;
-
-    const addNewPage = () => {
-      doc.addPage();
-      y = margin;
-      pageNumber++;
-    };
-
-    // ===== EN-TÊTE =====
-    doc.setFillColor(42, 81, 65);
-    doc.rect(0, 0, pageWidth, 20, 'F');
+    setIsExporting(true);
     
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Synthèse BIA consolidée', margin, 14);
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(
-      `Généré le ${new Date().toLocaleDateString('fr-FR')}`,
-      pageWidth - margin - 45,
-      14
-    );
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
 
-    y = 30;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 10;
+      let y = margin;
+      let pageNumber = 1;
 
-    // ===== CARTES STATISTIQUES =====
-    const cardWidth = (pageWidth - margin * 2) / 4 - 3;
-    
-    const safeStats = {
-      totalProcessus: stats?.totalProcessus ?? 0,
-      servicesCount: stats?.servicesCount ?? 0,
-      processusCritiques: stats?.processusCritiques ?? 0,
-      pourcentageCritique: stats?.pourcentageCritique ?? 0,
-      rtoLePlusCourt: stats?.rtoLePlusCourt ?? 0,
-      processAvecRtoLePlusCourt: stats?.processAvecRtoLePlusCourt ?? 0,
-      totalApps: stats?.totalApps ?? 0,
-      appsSansSLA: stats?.appsSansSLA ?? 0,
-      completude: stats?.completude ?? 0,
-      fichesIncompletes: stats?.fichesIncompletes ?? 0,
-      totalAlerte: stats?.totalAlerte ?? 0,
-      rtoDistribution: stats?.rtoDistribution ?? [
-        { label: '2h', count: 0 },
-        { label: '24h', count: 0 },
-        { label: '48h', count: 0 },
-        { label: '120h', count: 0 }
-      ]
-    };
+      const addNewPage = () => {
+        doc.addPage();
+        y = margin;
+        pageNumber++;
+      };
 
-    const statCards = [
-      { label: 'Processus analysés', value: safeStats.totalProcessus, sub: `sur ${safeStats.servicesCount} services` },
-      { label: 'Processus critiques', value: safeStats.processusCritiques, sub: `${safeStats.pourcentageCritique}% du total`, color: [239, 68, 68] },
-      { label: 'RTO le plus court', value: `${safeStats.rtoLePlusCourt}h`, sub: `${safeStats.processAvecRtoLePlusCourt} processus` },
-      { label: 'Applications IT', value: safeStats.totalApps, sub: `dont ${safeStats.appsSansSLA} sans SLA` }
-    ];
-
-    for (let i = 0; i < statCards.length; i++) {
-      const card = statCards[i];
-      const x = margin + i * (cardWidth + 3);
-      
-      doc.setFillColor(245, 245, 245);
-      doc.rect(x, y, cardWidth, 22, 'F');
-      doc.setDrawColor(232, 228, 220);
-      doc.rect(x, y, cardWidth, 22, 'S');
-      
-      doc.setTextColor(23, 32, 48);
-      doc.setFontSize(8);
+      // ===== EN-TÊTE =====
+      doc.setFillColor(42, 81, 65);
+      doc.rect(0, 0, pageWidth, 20, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text(card.label, x + 3, y + 6);
-      
-      if (card.color) {
-        doc.setTextColor(card.color[0], card.color[1], card.color[2]);
-      } else {
-        doc.setTextColor(23, 32, 48);
-      }
-      doc.setFontSize(14);
-      doc.text(String(card.value), x + 3, y + 16);
-      
-      doc.setTextColor(23, 32, 48);
-      doc.setFontSize(6);
-      doc.setFont('helvetica', 'normal');
-      doc.text(card.sub, x + 3, y + 21);
-    }
-
-    y += 30;
-
-    // ===== COMPLÉTUDE =====
-    doc.setFillColor(248, 246, 242);
-    doc.rect(margin, y, pageWidth - margin * 2, 10, 'F');
-    doc.setDrawColor(232, 228, 220);
-    doc.rect(margin, y, pageWidth - margin * 2, 10, 'S');
-    
-    doc.setTextColor(23, 32, 48);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Complétude globale', margin + 5, y + 7);
-    
-    const barWidth = 80;
-    const barX = margin + 55;
-    const barY = y + 2.5;
-    
-    doc.setDrawColor(232, 228, 220);
-    doc.setFillColor(232, 228, 220);
-    doc.rect(barX, barY, barWidth, 5, 'F');
-    
-    const completionColor = safeStats.completude >= 80 ? [42, 81, 65] : 
-                            safeStats.completude >= 50 ? [234, 179, 8] : [239, 68, 68];
-    doc.setFillColor(completionColor[0], completionColor[1], completionColor[2]);
-    const fillWidth = (barWidth * safeStats.completude) / 100;
-    doc.rect(barX, barY, fillWidth, 5, 'F');
-    
-    doc.setTextColor(23, 32, 48);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${safeStats.completude}%`, barX + barWidth + 5, y + 7);
-
-    if (safeStats.fichesIncompletes > 0) {
-      doc.setTextColor(234, 179, 8);
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`${safeStats.fichesIncompletes} fiches incomplètes`, pageWidth - margin - 40, y + 7);
-    }
-
-    y += 18;
-
-    // ===== CONCENTRATION DU RISQUE =====
-    doc.setFillColor(248, 246, 242);
-    doc.rect(margin, y, pageWidth - margin * 2, 28, 'F');
-    doc.setDrawColor(232, 228, 220);
-    doc.rect(margin, y, pageWidth - margin * 2, 28, 'S');
-    
-    doc.setTextColor(23, 32, 48);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Concentration du risque', margin + 5, y + 6);
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Distribution des RTO - Nombre de processus devant redémarrer dans chaque fenêtre', margin + 5, y + 11);
-
-    const rtoColors = [
-      [239, 68, 68],
-      [249, 115, 22],
-      [234, 179, 8],
-      [59, 130, 246]
-    ];
-
-    const rtoWidth = (pageWidth - margin * 2 - 20) / 4;
-    let rtoX = margin + 5;
-    const rtoY = y + 15;
-
-    for (let i = 0; i < safeStats.rtoDistribution.length && i < 4; i++) {
-      const r = safeStats.rtoDistribution[i];
-      const maxCount = Math.max(1, ...safeStats.rtoDistribution.map(d => d.count));
-      const height = 6 + (r.count / maxCount) * 10;
-      
-      doc.setFillColor(rtoColors[i][0], rtoColors[i][1], rtoColors[i][2]);
-      doc.rect(rtoX, rtoY + 10 - height, rtoWidth - 3, height, 'F');
-      doc.setDrawColor(232, 228, 220);
-      doc.rect(rtoX, rtoY + 10 - height, rtoWidth - 3, height, 'S');
-      
-      doc.setTextColor(23, 32, 48);
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.text(`≤ ${r.label}`, rtoX + 2, rtoY + 4);
-      doc.setFontSize(11);
-      doc.text(`${r.count}`, rtoX + 2, rtoY + 14);
-      doc.setFontSize(5);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`${r.count} processus`, rtoX + 2, rtoY + 19);
-      
-      rtoX += rtoWidth;
-    }
-
-    if (safeStats.totalAlerte > 0) {
-      y += 32;
-      doc.setFillColor(254, 242, 242);
-      doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
-      doc.setDrawColor(254, 202, 202);
-      doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
-      
-      doc.setTextColor(220, 38, 38);
-      doc.setFontSize(7);
+      doc.text('Synthèse BIA consolidée', margin, 14);
+      doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.text(
-        `✅ ${safeStats.totalAlerte} processus sur ${safeStats.totalProcessus} exigent une reprise en moins de 24h. Le dispositif de secours doit prioriser cette fenêtre.`,
-        margin + 5,
-        y + 6
+        `Généré le ${new Date().toLocaleDateString('fr-FR')}`,
+        pageWidth - margin - 45,
+        14
       );
-      y += 12;
-    }
 
-    // ===== RESSOURCES PAR PALIER =====
-    if (resourcesByTimeframe && resourcesByTimeframe.data && resourcesByTimeframe.data.length > 0) {
-      y += 3;
+      y = 30;
+
+      // ===== STATS CARDS =====
+      const cardWidth = (pageWidth - margin * 2) / 4 - 3;
+      const statCards = [
+        { label: 'Processus analysés', value: stats.totalProcessus, sub: `sur ${stats.servicesCount} services` },
+        { label: 'Processus critiques', value: stats.processusCritiques, sub: `${stats.pourcentageCritique}% du total` },
+        { label: 'RTO le plus court', value: `${stats.rtoLePlusCourt}h`, sub: `${stats.processAvecRtoLePlusCourt} processus` },
+        { label: 'Applications IT', value: stats.totalApps, sub: `dont ${stats.appsSansSLA} sans SLA` }
+      ];
+
+      for (let i = 0; i < statCards.length; i++) {
+        const card = statCards[i];
+        const x = margin + i * (cardWidth + 3);
+        doc.setFillColor(245, 245, 245);
+        doc.rect(x, y, cardWidth, 22, 'F');
+        doc.setDrawColor(232, 228, 220);
+        doc.rect(x, y, cardWidth, 22, 'S');
+        doc.setTextColor(23, 32, 48);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text(card.label, x + 3, y + 6);
+        doc.setFontSize(14);
+        doc.text(String(card.value), x + 3, y + 16);
+        doc.setFontSize(6);
+        doc.setFont('helvetica', 'normal');
+        doc.text(card.sub, x + 3, y + 21);
+      }
+
+      y += 30;
+
+      // ===== COMPLÉTUDE =====
       doc.setFillColor(248, 246, 242);
-      doc.rect(margin, y, pageWidth - margin * 2, 18, 'F');
+      doc.rect(margin, y, pageWidth - margin * 2, 10, 'F');
       doc.setDrawColor(232, 228, 220);
-      doc.rect(margin, y, pageWidth - margin * 2, 18, 'S');
+      doc.rect(margin, y, pageWidth - margin * 2, 10, 'S');
+      doc.setTextColor(23, 32, 48);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Complétude globale', margin + 5, y + 7);
+      
+      const barWidth = 80;
+      const barX = margin + 55;
+      const barY = y + 2.5;
+      doc.setDrawColor(232, 228, 220);
+      doc.setFillColor(232, 228, 220);
+      doc.rect(barX, barY, barWidth, 5, 'F');
+      
+      const completionColor = stats.completude >= 80 ? [42, 81, 65] : 
+                              stats.completude >= 50 ? [234, 179, 8] : [239, 68, 68];
+      doc.setFillColor(completionColor[0], completionColor[1], completionColor[2]);
+      doc.rect(barX, barY, (barWidth * stats.completude) / 100, 5, 'F');
+      
+      doc.setTextColor(23, 32, 48);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${stats.completude}%`, barX + barWidth + 5, y + 7);
+
+      if (stats.fichesIncompletes > 0) {
+        doc.setTextColor(234, 179, 8);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${stats.fichesIncompletes} fiches incomplètes`, pageWidth - margin - 40, y + 7);
+      }
+
+      y += 18;
+
+      // ===== DISTRIBUTION RTO =====
+      if (y > pageHeight - 40) {
+        addNewPage();
+      }
+
+      doc.setFillColor(248, 246, 242);
+      doc.rect(margin, y, pageWidth - margin * 2, 28, 'F');
+      doc.setDrawColor(232, 228, 220);
+      doc.rect(margin, y, pageWidth - margin * 2, 28, 'S');
+      
+      doc.setTextColor(23, 32, 48);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Concentration du risque', margin + 5, y + 6);
+      doc.setFontSize(6);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Distribution des RTO - Nombre de processus devant redémarrer dans chaque fenêtre', margin + 5, y + 11);
+
+      const rtoColors = [
+        [239, 68, 68],
+        [249, 115, 22],
+        [234, 179, 8],
+        [59, 130, 246]
+      ];
+
+      const rtoWidth = (pageWidth - margin * 2 - 20) / 4;
+      let rtoX = margin + 5;
+      const rtoY = y + 15;
+
+      for (let i = 0; i < stats.rtoDistribution.length && i < 4; i++) {
+        const r = stats.rtoDistribution[i];
+        const maxCount = Math.max(1, ...stats.rtoDistribution.map(d => d.count));
+        const height = 6 + (r.count / maxCount) * 10;
+        
+        doc.setFillColor(rtoColors[i][0], rtoColors[i][1], rtoColors[i][2]);
+        doc.rect(rtoX, rtoY + 10 - height, rtoWidth - 3, height, 'F');
+        doc.setDrawColor(232, 228, 220);
+        doc.rect(rtoX, rtoY + 10 - height, rtoWidth - 3, height, 'S');
+        
+        doc.setTextColor(23, 32, 48);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`≤ ${r.label}`, rtoX + 2, rtoY + 4);
+        doc.setFontSize(11);
+        doc.text(`${r.count}`, rtoX + 2, rtoY + 14);
+        doc.setFontSize(5);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${r.count} processus`, rtoX + 2, rtoY + 19);
+        
+        rtoX += rtoWidth;
+      }
+
+      if (stats.totalAlerte > 0) {
+        y += 32;
+        doc.setFillColor(254, 242, 242);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
+        doc.setDrawColor(254, 202, 202);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
+        
+        doc.setTextColor(220, 38, 38);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(
+          `✅ ${stats.totalAlerte} processus sur ${stats.totalProcessus} exigent une reprise en moins de 24h. Le dispositif de secours doit prioriser cette fenêtre.`,
+          margin + 5,
+          y + 6
+        );
+        y += 12;
+      } else {
+        y += 32;
+      }
+
+      // ===== RESSOURCES PAR PALIER =====
+      if (y > pageHeight - 40) {
+        addNewPage();
+      }
+
+      doc.setFillColor(248, 246, 242);
+      doc.rect(margin, y, pageWidth - margin * 2, 10, 'F');
+      doc.setDrawColor(232, 228, 220);
+      doc.rect(margin, y, pageWidth - margin * 2, 10, 'S');
       
       doc.setTextColor(23, 32, 48);
       doc.setFontSize(9);
@@ -795,7 +954,8 @@ const exportPDF = useCallback(async () => {
       doc.setFont('helvetica', 'normal');
       doc.text('Somme des besoins de tous les processus critiques', margin + 5, y + 9);
 
-      // Utiliser autoTable pour un tableau propre
+      y += 12;
+
       const paliers = resourcesByTimeframe.paliers || [];
       const headers = ['RESSOURCE', ...paliers.map(p => p.label || '')];
       
@@ -807,7 +967,7 @@ const exportPDF = useCallback(async () => {
       autoTable(doc, {
         head: [headers],
         body: body,
-        startY: y + 12,
+        startY: y,
         margin: { left: margin + 2, right: margin + 2 },
         styles: { 
           fontSize: 6, 
@@ -825,162 +985,293 @@ const exportPDF = useCallback(async () => {
         columnStyles: {
           0: { cellWidth: 35, halign: 'left', fontStyle: 'bold' },
         },
-        didDrawPage: (data) => {
-          // Ajouter le pied de page sur chaque page
-        }
       });
 
       y = (doc as any).lastAutoTable?.finalY + 8 || y + 40;
-    }
 
-    // ===== DÉTAIL PAR DIRECTION =====
-    if (Object.keys(directionsDetail).length > 0) {
-      // Ajouter une nouvelle page si nécessaire
-      if (y > pageHeight - 30) {
-        doc.addPage();
-        y = margin;
-        pageNumber++;
-      }
-
-      doc.setFillColor(248, 246, 242);
-      doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
-      doc.setDrawColor(232, 228, 220);
-      doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
-      doc.setTextColor(23, 32, 48);
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Détail par direction & département', margin + 5, y + 6);
-      y += 10;
-
-      for (const [direction, data] of Object.entries(directionsDetail)) {
+      // ===== TOP APPLICATIONS IT =====
+      if (topApps.length > 0) {
         if (y > pageHeight - 30) {
-          doc.addPage();
-          y = margin;
-          pageNumber++;
+          addNewPage();
         }
 
-        const completionRate = data.count > 0 ? Math.round((data.complet / data.count) * 100) : 0;
-        
         doc.setFillColor(248, 246, 242);
         doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
         doc.setDrawColor(232, 228, 220);
         doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
-        
         doc.setTextColor(23, 32, 48);
-        doc.setFontSize(7);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
-        doc.text(direction, margin + 5, y + 6);
-        
-        const infoText = `${data.count} Processus · ${data.critiques} Critiques · ${data.apps.size} Applis IT · ${data.suppliers.size} Prestataires · ${completionRate}% Complétude`;
-        doc.setTextColor(23, 32, 48);
-        doc.setFontSize(5);
-        doc.setFont('helvetica', 'normal');
-        doc.text(infoText, margin + 55, y + 6);
-        
-        doc.setTextColor(23, 32, 48);
-        doc.setFontSize(5);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`RTO min: ${data.rtoMin}h`, pageWidth - margin - 25, y + 6);
-
+        doc.text('Applications IT les plus partagées', margin + 5, y + 6);
         y += 10;
 
-        // Tableau des départements
-        const deptMap: Record<string, ProcessWithResources[]> = {};
-        for (const p of data.processes) {
-          const deptName = getEntityName(p.entityId);
-          if (!deptMap[deptName]) deptMap[deptName] = [];
-          deptMap[deptName].push(p);
-        }
+        const appTableData = topApps.map((app, idx) => [
+          `#${idx + 1} ${app.name}`,
+          `${app.count}`,
+          `${app.rto}h`,
+          app.sla ? 'Avec SLA' : 'Sans SLA'
+        ]);
 
-        const deptTableData = Object.entries(deptMap).map(([deptName, procs]) => {
-          const deptProcesses = procs.length;
-          const deptCritiques = procs.filter(p => computeMaxScore(p.impacts) >= 4).length;
-          const deptRtoMin = Math.min(...procs.map(p => p.rto || 0));
-          const deptApps = new Set<string>();
-          const deptSuppliers = new Set<string>();
-          let deptComplet = 0;
-          
-          for (const p of procs) {
-            if (isProcessComplete(p)) deptComplet++;
-            for (const app of p.linkedApps) deptApps.add(app.name);
-            for (const sup of p.linkedSuppliers) deptSuppliers.add(sup.name);
-          }
-          
-          const deptCompletionRate = deptProcesses > 0 ? Math.round((deptComplet / deptProcesses) * 100) : 0;
-          
-          return [
-            deptName,
-            String(deptProcesses),
-            String(deptCritiques),
-            deptRtoMin === Infinity ? '-' : `${deptRtoMin}h`,
-            String(deptApps.size),
-            String(deptSuppliers.size),
-            `${deptCompletionRate}%`
-          ];
+        autoTable(doc, {
+          head: [['Application', 'Processus liés', 'RTO', 'SLA']],
+          body: appTableData,
+          startY: y,
+          margin: { left: margin + 2, right: margin + 2 },
+          styles: { fontSize: 6, cellPadding: 1.5 },
+          headStyles: { 
+            fillColor: [248, 246, 242], 
+            textColor: [23, 32, 48], 
+            fontSize: 6, 
+            fontStyle: 'bold'
+          },
+          alternateRowStyles: { fillColor: [250, 250, 249] },
+          columnStyles: {
+            0: { cellWidth: 50, halign: 'left' },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 15, halign: 'center' },
+            3: { cellWidth: 25, halign: 'center' },
+          },
         });
 
-        if (deptTableData.length > 0) {
-          autoTable(doc, {
-            head: [['DÉPARTEMENT', 'Processus', 'Critiques', 'RTO MIN', 'Applis IT', 'Prestataires', 'Complétude']],
-            body: deptTableData,
-            startY: y,
-            margin: { left: margin + 2, right: margin + 2 },
-            styles: { fontSize: 5, cellPadding: 1.5 },
-            headStyles: { 
-              fillColor: [250, 250, 249], 
-              textColor: [23, 32, 48], 
-              fontSize: 5, 
-              fontStyle: 'bold',
-              halign: 'center'
-            },
-            alternateRowStyles: { fillColor: [250, 250, 249] },
-            columnStyles: {
-              0: { cellWidth: 40, halign: 'left' },
-              1: { cellWidth: 15, halign: 'center' },
-              2: { cellWidth: 15, halign: 'center' },
-              3: { cellWidth: 18, halign: 'center' },
-              4: { cellWidth: 18, halign: 'center' },
-              5: { cellWidth: 18, halign: 'center' },
-              6: { cellWidth: 20, halign: 'center' },
-            },
+        y = (doc as any).lastAutoTable?.finalY + 6 || y + 30;
+      }
+
+      // ===== TOP PRESTATAIRES =====
+      if (topPrestataires.length > 0) {
+        if (y > pageHeight - 30) {
+          addNewPage();
+        }
+
+        doc.setFillColor(248, 246, 242);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
+        doc.setDrawColor(232, 228, 220);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
+        doc.setTextColor(23, 32, 48);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Prestataires les plus critiques', margin + 5, y + 6);
+        y += 10;
+
+        const prestaTableData = topPrestataires.map((presta, idx) => [
+          `#${idx + 1} ${presta.name}`,
+          `${presta.count}`,
+          `${presta.rto}h`
+        ]);
+
+        autoTable(doc, {
+          head: [['Prestataire', 'Processus liés', 'RTO']],
+          body: prestaTableData,
+          startY: y,
+          margin: { left: margin + 2, right: margin + 2 },
+          styles: { fontSize: 6, cellPadding: 1.5 },
+          headStyles: { 
+            fillColor: [248, 246, 242], 
+            textColor: [23, 32, 48], 
+            fontSize: 6, 
+            fontStyle: 'bold'
+          },
+          alternateRowStyles: { fillColor: [250, 250, 249] },
+          columnStyles: {
+            0: { cellWidth: 60, halign: 'left' },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 15, halign: 'center' },
+          },
+        });
+
+        y = (doc as any).lastAutoTable?.finalY + 6 || y + 30;
+      }
+
+      // ===== TOP ÉQUIPEMENTS =====
+      if (topEquipements.length > 0) {
+        if (y > pageHeight - 30) {
+          addNewPage();
+        }
+
+        doc.setFillColor(248, 246, 242);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
+        doc.setDrawColor(232, 228, 220);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
+        doc.setTextColor(23, 32, 48);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Équipements les plus partagés', margin + 5, y + 6);
+        y += 10;
+
+        const equipTableData = topEquipements.map((eq, idx) => [
+          `#${idx + 1} ${eq.name}`,
+          `${eq.type}`,
+          `${eq.count}`,
+          `${eq.rto}h`
+        ]);
+
+        autoTable(doc, {
+          head: [['Équipement', 'Type', 'Quantité totale', 'RTO']],
+          body: equipTableData,
+          startY: y,
+          margin: { left: margin + 2, right: margin + 2 },
+          styles: { fontSize: 6, cellPadding: 1.5 },
+          headStyles: { 
+            fillColor: [248, 246, 242], 
+            textColor: [23, 32, 48], 
+            fontSize: 6, 
+            fontStyle: 'bold'
+          },
+          alternateRowStyles: { fillColor: [250, 250, 249] },
+          columnStyles: {
+            0: { cellWidth: 45, halign: 'left' },
+            1: { cellWidth: 25, halign: 'center' },
+            2: { cellWidth: 20, halign: 'center' },
+            3: { cellWidth: 15, halign: 'center' },
+          },
+        });
+
+        y = (doc as any).lastAutoTable?.finalY + 6 || y + 30;
+      }
+
+      // ===== DÉTAIL PAR DIRECTION =====
+      if (Object.keys(directionsDetail).length > 0) {
+        if (y > pageHeight - 30) {
+          addNewPage();
+        }
+
+        doc.setFillColor(248, 246, 242);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
+        doc.setDrawColor(232, 228, 220);
+        doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
+        doc.setTextColor(23, 32, 48);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Détail par direction & département', margin + 5, y + 6);
+        y += 10;
+
+        for (const [direction, data] of Object.entries(directionsDetail)) {
+          if (y > pageHeight - 30) {
+            addNewPage();
+          }
+
+          const completionRate = data.count > 0 ? Math.round((data.complet / data.count) * 100) : 0;
+          
+          doc.setFillColor(248, 246, 242);
+          doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
+          doc.setDrawColor(232, 228, 220);
+          doc.rect(margin, y, pageWidth - margin * 2, 8, 'S');
+          
+          doc.setTextColor(23, 32, 48);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text(direction, margin + 5, y + 6);
+          
+          const infoText = `${data.count} Processus · ${data.critiques} Critiques · ${data.apps.size} Applis IT · ${data.suppliers.size} Prestataires · ${completionRate}% Complétude`;
+          doc.setTextColor(23, 32, 48);
+          doc.setFontSize(5);
+          doc.setFont('helvetica', 'normal');
+          doc.text(infoText, margin + 55, y + 6);
+          
+          doc.setTextColor(23, 32, 48);
+          doc.setFontSize(5);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`RTO min: ${data.rtoMin}h`, pageWidth - margin - 25, y + 6);
+
+          y += 10;
+
+          // Tableau des départements
+          const deptMap: Record<string, ProcessWithResources[]> = {};
+          for (const p of data.processes) {
+            const deptName = getEntityName(p.entityId);
+            if (!deptMap[deptName]) deptMap[deptName] = [];
+            deptMap[deptName].push(p);
+          }
+
+          const deptTableData = Object.entries(deptMap).map(([deptName, procs]) => {
+            const deptProcesses = procs.length;
+            const deptCritiques = procs.filter(p => computeMaxScore(p.impacts) >= 4).length;
+            const deptRtoMin = Math.min(...procs.map(p => p.rto || 0));
+            const deptApps = new Set<string>();
+            const deptSuppliers = new Set<string>();
+            let deptComplet = 0;
+            
+            for (const p of procs) {
+              if (isProcessComplete(p)) deptComplet++;
+              for (const app of p.linkedApps) deptApps.add(app.name);
+              for (const sup of p.linkedSuppliers) deptSuppliers.add(sup.name);
+            }
+            
+            const deptCompletionRate = deptProcesses > 0 ? Math.round((deptComplet / deptProcesses) * 100) : 0;
+            
+            return [
+              deptName,
+              String(deptProcesses),
+              String(deptCritiques),
+              deptRtoMin === Infinity ? '-' : `${deptRtoMin}h`,
+              String(deptApps.size),
+              String(deptSuppliers.size),
+              `${deptCompletionRate}%`
+            ];
           });
 
-          y = (doc as any).lastAutoTable?.finalY + 4 || y + 20;
+          if (deptTableData.length > 0) {
+            autoTable(doc, {
+              head: [['DÉPARTEMENT', 'Processus', 'Critiques', 'RTO MIN', 'Applis IT', 'Prestataires', 'Complétude']],
+              body: deptTableData,
+              startY: y,
+              margin: { left: margin + 2, right: margin + 2 },
+              styles: { fontSize: 5, cellPadding: 1.5 },
+              headStyles: { 
+                fillColor: [250, 250, 249], 
+                textColor: [23, 32, 48], 
+                fontSize: 5, 
+                fontStyle: 'bold',
+                halign: 'center'
+              },
+              alternateRowStyles: { fillColor: [250, 250, 249] },
+              columnStyles: {
+                0: { cellWidth: 40, halign: 'left' },
+                1: { cellWidth: 15, halign: 'center' },
+                2: { cellWidth: 15, halign: 'center' },
+                3: { cellWidth: 18, halign: 'center' },
+                4: { cellWidth: 18, halign: 'center' },
+                5: { cellWidth: 18, halign: 'center' },
+                6: { cellWidth: 20, halign: 'center' },
+              },
+            });
+
+            y = (doc as any).lastAutoTable?.finalY + 4 || y + 20;
+          }
         }
       }
+
+      // ===== PIED DE PAGE =====
+      doc.setFontSize(6);
+      doc.setTextColor(128, 128, 128);
+      doc.setFont('helvetica', 'italic');
+      doc.text(
+        `Document généré automatiquement depuis la plateforme BCM - Page ${pageNumber}`,
+        margin,
+        pageHeight - 5
+      );
+
+      // Sauvegarde du PDF
+      doc.save(`Synthèse_BIA_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+      toast({
+        title: "Succès",
+        description: "Le PDF a été généré avec succès"
+      });
+
+    } catch (error: any) {
+      console.error('Erreur export PDF:', error);
+      toast({
+        title: "Erreur",
+        description: error?.message || "Erreur lors de la génération du PDF",
+        variant: "destructive"
+      });
+    } finally {
+      setIsExporting(false);
     }
+  }, [enrichedProcesses, stats, resourcesByTimeframe, topApps, topPrestataires, topEquipements, directionsDetail]);
 
-    // ===== PIED DE PAGE =====
-    doc.setFontSize(6);
-    doc.setTextColor(128, 128, 128);
-    doc.setFont('helvetica', 'italic');
-    doc.text(
-      `Document généré automatiquement depuis la plateforme BCM - Page ${pageNumber}`,
-      margin,
-      pageHeight - 5
-    );
-
-    // Sauvegarde du PDF
-    doc.save(`Synthèse_BIA_${new Date().toISOString().split('T')[0]}.pdf`);
-    
-    toast({
-      title: "Succès",
-      description: "Le PDF a été généré avec succès"
-    });
-
-  } catch (error: any) {
-    console.error('Erreur export PDF:', error);
-    toast({
-      title: "Erreur",
-      description: error?.message || "Erreur lors de la génération du PDF",
-      variant: "destructive"
-    });
-  } finally {
-    setIsExporting(false);
-  }
-}, [enrichedProcesses, stats, resourcesByTimeframe, directionsDetail]);
   // ============================================================
-  // 11. TOGGLE EXPANSION
+  // 9. TOGGLE
   // ============================================================
   const toggleDirection = (direction: string) => {
     setExpandedDirections(prev => {
@@ -995,15 +1286,15 @@ const exportPDF = useCallback(async () => {
   };
 
   // ============================================================
-  // 12. RENDU
+  // 10. RENDU
   // ============================================================
   if (isLoading) {
     return (
-      <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <div className="p-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <RefreshCw className="h-8 w-8 animate-spin text-[#2A5141] mx-auto mb-4" />
-            <p className="text-sm text-[#172030]/60">Chargement des données BIA...</p>
+            <p className="text-sm text-gray-500">Chargement des données BIA...</p>
           </div>
         </div>
       </div>
@@ -1012,13 +1303,13 @@ const exportPDF = useCallback(async () => {
 
   if (!enrichedProcesses || enrichedProcesses.length === 0) {
     return (
-      <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <div className="p-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-center h-64">
-          <Card className="border-[#E8E4DC] shadow-sm">
+          <Card className="border-gray-200 shadow-sm">
             <CardContent className="p-8 text-center">
-              <Database className="h-12 w-12 text-[#172030]/30 mx-auto mb-4" />
-              <p className="text-[#172030] font-medium">Aucune donnée BIA disponible</p>
-              <p className="text-sm text-[#172030]/50">Veuillez créer des processus dans le module BIA</p>
+              <Database className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-700 font-medium">Aucune donnée BIA disponible</p>
+              <p className="text-sm text-gray-500">Veuillez créer des processus dans le module BIA</p>
             </CardContent>
           </Card>
         </div>
@@ -1027,25 +1318,31 @@ const exportPDF = useCallback(async () => {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto" ref={contentRef}>
-      {/* En-tête */}
-      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between">
+    <div className="p-6 max-w-7xl mx-auto" ref={contentRef}>
+      {/* ===== HEADER ===== */}
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-            Synthèse BIA consolidée
-          </h1>
-          <p className="text-sm text-[#172030]/60 mt-1">
+          <div className="flex items-center gap-2">
+            <LayoutDashboard className="h-5 w-5 text-[#2A5141]" />
+            <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Playfair Display, serif' }}>
+              Synthèse BIA consolidée
+            </h1>
+          </div>
+          <p className="text-sm text-gray-500 mt-1">
             Vue agrégée de toutes les analyses d'impact, par direction et par département.
           </p>
         </div>
-        <div className="flex items-center gap-2 mt-2 md:mt-0">
-          <span className="text-xs text-[#172030]/60 bg-[#F8F6F2] px-3 py-1 rounded-full border border-[#E8E4DC]">
-            {stats.completeCount} fiches · {new Date().toLocaleDateString('fr-FR')}
-          </span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Badge variant="outline" className="text-xs bg-gray-50 border-gray-200 text-gray-500">
+            {stats.completeCount} fiches
+          </Badge>
+          <Badge variant="outline" className="text-xs bg-gray-50 border-gray-200 text-gray-500">
+            {new Date().toLocaleDateString('fr-FR')}
+          </Badge>
           <Button 
             onClick={exportPDF} 
             disabled={isExporting}
-            className="gap-1.5 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
+            className="gap-2 bg-[#2A5141] hover:bg-[#1a3329] text-white"
             size="sm"
           >
             {isExporting ? (
@@ -1058,89 +1355,62 @@ const exportPDF = useCallback(async () => {
         </div>
       </div>
 
-      {/* ===== CARTES STATISTIQUES ===== */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-        <Card className="border-[#E8E4DC] shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus analysés</p>
-                <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                  {stats.totalProcessus}
-                </p>
-                <p className="text-xs text-[#172030]/40">sur {stats.servicesCount} services</p>
-              </div>
-              <Database className="h-8 w-8 text-[#2A5141] opacity-40" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-[#E8E4DC] shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus critiques</p>
-                <p className="text-2xl font-bold text-[#ef4444]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                  {stats.processusCritiques}
-                </p>
-                <p className="text-xs text-[#172030]/40">{stats.pourcentageCritique}% du total</p>
-              </div>
-              <AlertCircle className="h-8 w-8 text-[#ef4444] opacity-40" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-[#E8E4DC] shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">RTO le plus court</p>
-                <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                  {stats.rtoLePlusCourt}h
-                </p>
-                <p className="text-xs text-[#172030]/40">{stats.processAvecRtoLePlusCourt} processus</p>
-              </div>
-              <Clock className="h-8 w-8 text-[#f97316] opacity-40" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-[#E8E4DC] shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Applications IT</p>
-                <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                  {stats.totalApps}
-                </p>
-                <p className="text-xs text-[#172030]/40">dont {stats.appsSansSLA} sans SLA</p>
-              </div>
-              <Server className="h-8 w-8 text-[#7c3aed] opacity-40" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* ===== STATS CARDS ===== */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          label="Processus analysés"
+          value={stats.totalProcessus}
+          sub={`sur ${stats.servicesCount} services`}
+          icon={<Database className="h-4 w-4" />}
+          color="bg-[#2A5141]/10 text-[#2A5141]"
+        />
+        <StatCard
+          label="Processus critiques"
+          value={stats.processusCritiques}
+          sub={`${stats.pourcentageCritique}% du total`}
+          icon={<AlertCircle className="h-4 w-4" />}
+          color="bg-red-100 text-red-600"
+        />
+        <StatCard
+          label="RTO le plus court"
+          value={`${stats.rtoLePlusCourt}h`}
+          sub={`${stats.processAvecRtoLePlusCourt} processus`}
+          icon={<Clock className="h-4 w-4" />}
+          color="bg-orange-100 text-orange-600"
+        />
+        <StatCard
+          label="Applications IT"
+          value={stats.totalApps}
+          sub={`dont ${stats.appsSansSLA} sans SLA`}
+          icon={<Server className="h-4 w-4" />}
+          color="bg-purple-100 text-purple-600"
+        />
       </div>
 
-      {/* Complétude */}
-      <Card className="mb-6 border-[#E8E4DC] shadow-sm">
+      {/* ===== COMPLÉTUDE ===== */}
+      <Card className="mb-6 border-gray-200 shadow-sm">
         <CardContent className="p-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-medium text-[#172030]">Complétude globale</p>
-              <div className="w-48 h-2 bg-[#E8E4DC] rounded-full overflow-hidden">
-                <div 
-                  className={`h-full rounded-full transition-all ${
-                    stats.completude >= 80 ? 'bg-[#2A5141]' : 
-                    stats.completude >= 50 ? 'bg-[#eab308]' : 
-                    'bg-[#ef4444]'
-                  }`} 
-                  style={{ width: `${stats.completude}%` }} 
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-[#2A5141]" />
+                <span className="text-sm font-medium text-gray-700">Complétude globale</span>
+              </div>
+              <div className="w-48">
+                <Progress 
+                  value={stats.completude} 
+                  className="h-2"
+                  indicatorClassName={cn(
+                    stats.completude >= 80 ? 'bg-[#2A5141]' :
+                    stats.completude >= 50 ? 'bg-amber-500' :
+                    'bg-red-500'
+                  )}
                 />
               </div>
-              <span className="text-sm font-semibold text-[#172030]">{stats.completude}%</span>
+              <span className="text-sm font-bold text-gray-900">{stats.completude}%</span>
             </div>
             {stats.fichesIncompletes > 0 && (
-              <div className="flex items-center gap-2 text-sm text-[#eab308]">
+              <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
                 <AlertCircle className="h-4 w-4" />
                 <span>{stats.fichesIncompletes} fiches incomplètes</span>
               </div>
@@ -1149,16 +1419,16 @@ const exportPDF = useCallback(async () => {
         </CardContent>
       </Card>
 
-      {/* Concentration du risque */}
-      <Card className="mb-6 border-[#E8E4DC] shadow-sm">
-        <CardHeader className="pb-2">
+      {/* ===== DISTRIBUTION RTO ===== */}
+      <Card className="mb-6 border-gray-200 shadow-sm">
+        <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-[#2A5141]" />
-            <CardTitle className="text-base text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
+            <BarChart3 className="h-5 w-5 text-[#2A5141]" />
+            <CardTitle className="text-base font-semibold text-gray-800">
               Concentration du risque
             </CardTitle>
           </div>
-          <p className="text-xs text-[#172030]/50">
+          <p className="text-xs text-gray-400">
             Distribution des RTO - Combien de processus critiques doivent redémarrer dans chaque fenêtre de temps
           </p>
         </CardHeader>
@@ -1166,230 +1436,105 @@ const exportPDF = useCallback(async () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {stats.rtoDistribution.map(({ label, count }) => {
               const colors: Record<string, string> = {
-                '2h': 'bg-[#ef4444]',
-                '24h': 'bg-[#f97316]',
-                '48h': 'bg-[#eab308]',
-                '120h': 'bg-[#3b82f6]',
+                '2h': '#ef4444',
+                '24h': '#f97316',
+                '48h': '#eab308',
+                '120h': '#3b82f6',
               };
               const maxCount = Math.max(...stats.rtoDistribution.map(d => d.count), 1);
-              const percentage = Math.round((count / maxCount) * 100);
               
               return (
-                <div key={label} className="p-3 rounded-lg bg-[#F8F6F2] border border-[#E8E4DC]">
-                  <p className="text-sm font-medium text-[#172030]">≤ {label}</p>
-                  <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                    {count}
-                  </p>
-                  <div className="mt-1 h-1.5 bg-[#E8E4DC] rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${colors[label] || 'bg-[#94a3b8]'}`} style={{ width: `${percentage}%` }} />
-                  </div>
-                  <p className="text-xs text-[#172030]/40 mt-1">{count} processus</p>
-                </div>
+                <DistributionBar
+                  key={label}
+                  label={label}
+                  count={count}
+                  total={stats.totalProcessus}
+                  color={colors[label] || '#94a3b8'}
+                  maxCount={maxCount}
+                />
               );
             })}
           </div>
           {stats.totalAlerte > 0 && (
-            <div className="mt-3 p-3 bg-[#fef2f2] border border-[#fecaca] rounded-lg">
-              <p className="text-sm text-[#dc2626]">
-                ✅ <span className="font-bold">{stats.totalAlerte} processus sur {stats.totalProcessus}</span> exigent une reprise en moins de 24h. Le dispositif de secours doit prioriser cette fenêtre.
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-700">
+                <span className="font-bold">{stats.totalAlerte} processus sur {stats.totalProcessus}</span> exigent une reprise en moins de 24h. Le dispositif de secours doit prioriser cette fenêtre.
               </p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ===== RESSOURCES À MOBILISER PAR PALIER ===== */}
-      <Card className="mb-6 border-[#E8E4DC] shadow-sm">
-        <CardHeader className="pb-2">
+      {/* ===== RESSOURCES PAR PALIER ===== */}
+      <Card className="mb-6 border-gray-200 shadow-sm">
+        <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-[#2A5141]" />
-            <CardTitle className="text-base text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
+            <CardTitle className="text-base font-semibold text-gray-800">
               Ressources à mobiliser par palier de temps
             </CardTitle>
           </div>
-          <p className="text-xs text-[#172030]/50">
+          <p className="text-xs text-gray-400">
             Somme des besoins de tous les processus critiques. Le pic à ≤120h dimensionne le site de repli.
           </p>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#E8E4DC]">
-                  <th className="text-left py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
-                    RESSOURCE
-                  </th>
-                  {resourcesByTimeframe.paliers.map(p => (
-                    <th key={p.label} className="text-center py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
-                      {p.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {resourcesByTimeframe.data.map((rt, idx) => {
-                  const Icon = rt.icon;
-                  return (
-                    <tr key={rt.key} className={idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAF9]'}>
-                      <td className="py-2 px-3 font-medium text-[#172030] flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-[#2A5141]" />
-                        {rt.label}
-                      </td>
-                      {rt.values.map((val, i) => (
-                        <td key={i} className="text-center py-2 px-3 font-mono text-[#172030]">
-                          {val}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-[#E8E4DC] bg-[#F8F6F2]">
-                  <td className="py-2 px-3 font-semibold text-[#172030]">TOTAL</td>
-                  {resourcesByTimeframe.paliers.map((p, i) => {
-                    const total = resourcesByTimeframe.data.reduce((sum, rt) => sum + rt.values[i], 0);
-                    return (
-                      <td key={i} className="text-center py-2 px-3 font-bold text-[#172030]">
-                        {total}
-                      </td>
-                    );
-                  })}
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <ResourceTable 
+            data={resourcesByTimeframe.data} 
+            paliers={resourcesByTimeframe.paliers} 
+          />
         </CardContent>
       </Card>
 
-      {/* ===== APPLICATIONS IT, PRESTATAIRES ET ÉQUIPEMENTS ===== */}
+      {/* ===== TOP 3 CLASSEMENTS ===== */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {/* Applications IT */}
-        <Card className="border-[#E8E4DC] shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Server className="h-5 w-5 text-[#2A5141]" />
-              <CardTitle className="text-sm text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                Applications IT les plus partagées
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {topApps.length > 0 ? (
-              <div className="space-y-2">
-                {topApps.map((app, index) => (
-                  <div key={app.name} className="flex items-center justify-between p-2 bg-[#F8F6F2] rounded-lg border border-[#E8E4DC]">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-[#172030]/40">#{index + 1}</span>
-                        <p className="font-medium text-sm text-[#172030] truncate">{app.name}</p>
-                      </div>
-                      <p className="text-xs text-[#172030]/40">RTO {app.rto}h{!app.sla && ' · sans SLA'}</p>
-                    </div>
-                    <Badge className="bg-[#2A5141] text-white text-[10px]">
-                      {app.count}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4 text-[#172030]/40 text-sm">
-                Aucune application
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Prestataires */}
-        <Card className="border-[#E8E4DC] shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Handshake className="h-5 w-5 text-[#2A5141]" />
-              <CardTitle className="text-sm text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                Prestataires les plus critiques
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {topPrestataires.length > 0 ? (
-              <div className="space-y-2">
-                {topPrestataires.map((presta, index) => (
-                  <div key={presta.name} className="flex items-center justify-between p-2 bg-[#fef2f2] rounded-lg border border-[#fecaca]">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-[#172030]/40">#{index + 1}</span>
-                        <p className="font-medium text-sm text-[#dc2626] truncate">{presta.name}</p>
-                      </div>
-                      <p className="text-xs text-[#172030]/40">RTO {presta.rto}h</p>
-                    </div>
-                    <Badge className="bg-[#dc2626] text-white text-[10px]">
-                      {presta.count}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4 text-[#172030]/40 text-sm">
-                Aucun prestataire
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Équipements */}
-        <Card className="border-[#E8E4DC] shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Package className="h-5 w-5 text-[#2A5141]" />
-              <CardTitle className="text-sm text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                Équipements les plus partagés
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {topEquipements.length > 0 ? (
-              <div className="space-y-2">
-                {topEquipements.map((eq, index) => (
-                  <div key={eq.name} className="flex items-center justify-between p-2 bg-[#F8F6F2] rounded-lg border border-[#E8E4DC]">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-[#172030]/40">#{index + 1}</span>
-                        <p className="font-medium text-sm text-[#172030] truncate">{eq.name}</p>
-                      </div>
-                      <p className="text-xs text-[#172030]/40">{eq.type} · RTO {eq.rto}h</p>
-                    </div>
-                    <Badge className="bg-[#2A5141] text-white text-[10px]">
-                      {eq.count}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4 text-[#172030]/40 text-sm">
-                Aucun équipement
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <TopItemCard
+          title="Applications IT les plus partagées"
+          icon={<Server className="h-4 w-4 text-white" />}
+          color="bg-purple-600"
+          badgeColor="bg-purple-600 text-white"
+          items={topApps}
+          subKey="rto"
+          subLabel="RTO"
+        />
+        <TopItemCard
+          title="Prestataires les plus critiques"
+          icon={<Handshake className="h-4 w-4 text-white" />}
+          color="bg-red-600"
+          badgeColor="bg-red-600 text-white"
+          items={topPrestataires}
+          subKey="rto"
+          subLabel="RTO"
+        />
+        <TopItemCard
+          title="Équipements les plus partagés"
+          icon={<Package className="h-4 w-4 text-white" />}
+          color="bg-amber-600"
+          badgeColor="bg-amber-600 text-white"
+          items={topEquipements}
+          subKey="type"
+          subLabel="Type"
+        />
       </div>
 
-      {/* ===== DÉTAIL PAR DIRECTION & DÉPARTEMENT ===== */}
-      <Card className="border-[#E8E4DC] shadow-sm">
-        <CardHeader className="pb-2">
+      {/* ===== DÉTAIL PAR DIRECTION ===== */}
+      <Card className="border-gray-200 shadow-sm">
+        <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Building2 className="h-5 w-5 text-[#2A5141]" />
-            <CardTitle className="text-base text-[#172030]" style={{ fontFamily: 'Playfair Display, serif' }}>
+            <CardTitle className="text-base font-semibold text-gray-800">
               Détail par direction & département
             </CardTitle>
           </div>
         </CardHeader>
         <CardContent>
           {Object.entries(directionsDetail).length === 0 ? (
-            <div className="text-center py-6 text-[#172030]/40 text-sm">
+            <div className="text-center py-6 text-gray-400 text-sm">
               Aucune direction
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {Object.entries(directionsDetail).map(([direction, data]) => {
                 const completionRate = data.count > 0 ? Math.round((data.complet / data.count) * 100) : 0;
                 const isExpanded = expandedDirections.has(direction);
@@ -1402,45 +1547,45 @@ const exportPDF = useCallback(async () => {
                 }
 
                 return (
-                  <div key={direction} className="border border-[#E8E4DC] rounded-lg overflow-hidden">
+                  <div key={direction} className="border border-gray-200 rounded-lg overflow-hidden">
                     <div 
-                      className="flex items-center justify-between p-4 bg-[#F8F6F2] cursor-pointer hover:bg-[#F0EDE8] transition-colors"
+                      className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
                       onClick={() => toggleDirection(direction)}
                     >
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 flex-wrap">
                         {isExpanded ? (
-                          <ChevronDown className="h-4 w-4 text-[#172030]/40" />
+                          <ChevronDown className="h-4 w-4 text-gray-400" />
                         ) : (
-                          <ChevronRight className="h-4 w-4 text-[#172030]/40" />
+                          <ChevronRight className="h-4 w-4 text-gray-400" />
                         )}
-                        <h3 className="font-semibold text-[#172030]">{direction}</h3>
+                        <h3 className="font-semibold text-gray-800">{direction}</h3>
                         <div className="flex items-center gap-3 text-xs">
-                          <span className="text-[#172030]/60">
-                            <span className="font-medium text-[#172030]">{data.count}</span> Processus
-                          </span>
+                          <Badge variant="outline" className="text-xs border-gray-300">
+                            {data.count} Processus
+                          </Badge>
                           {data.critiques > 0 && (
-                            <span className="text-[#ef4444] font-medium">
+                            <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">
                               ⚠️ {data.critiques} Critiques
-                            </span>
+                            </Badge>
                           )}
-                          <span className="text-[#172030]/60">
-                            <span className="font-medium text-[#172030]">{data.apps.size}</span> Applis IT
-                          </span>
-                          <span className="text-[#172030]/60">
-                            <span className="font-medium text-[#172030]">{data.suppliers.size}</span> Prestataires
-                          </span>
+                          <Badge variant="outline" className="text-xs border-gray-300">
+                            {data.apps.size} Applis IT
+                          </Badge>
+                          <Badge variant="outline" className="text-xs border-gray-300">
+                            {data.suppliers.size} Prestataires
+                          </Badge>
                           <Badge className={cn(
                             completionRate >= 80 ? 'bg-[#2A5141] text-white' :
-                            completionRate >= 50 ? 'bg-[#eab308] text-white' :
-                            'bg-[#ef4444] text-white'
+                            completionRate >= 50 ? 'bg-amber-500 text-white' :
+                            'bg-red-500 text-white'
                           )}>
                             {completionRate}% Complétude
                           </Badge>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-[#172030]/40">
-                          RTO min: <span className="font-medium text-[#172030]">{data.rtoMin}h</span>
+                        <span className="text-xs text-gray-400">
+                          RTO min: <span className="font-medium text-gray-700">{data.rtoMin}h</span>
                         </span>
                       </div>
                     </div>
@@ -1450,26 +1595,26 @@ const exportPDF = useCallback(async () => {
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
-                              <tr className="border-b border-[#E8E4DC]">
-                                <th className="text-left py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
+                              <tr className="border-b border-gray-200">
+                                <th className="text-left py-2 px-3 font-semibold text-gray-400 text-[10px] uppercase tracking-wider">
                                   DÉPARTEMENT / SERVICE
                                 </th>
-                                <th className="text-center py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
+                                <th className="text-center py-2 px-3 font-semibold text-gray-400 text-[10px] uppercase tracking-wider">
                                   Processus
                                 </th>
-                                <th className="text-center py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
+                                <th className="text-center py-2 px-3 font-semibold text-gray-400 text-[10px] uppercase tracking-wider">
                                   Critiques
                                 </th>
-                                <th className="text-center py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
+                                <th className="text-center py-2 px-3 font-semibold text-gray-400 text-[10px] uppercase tracking-wider">
                                   RTO MIN
                                 </th>
-                                <th className="text-center py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
+                                <th className="text-center py-2 px-3 font-semibold text-gray-400 text-[10px] uppercase tracking-wider">
                                   Applis IT
                                 </th>
-                                <th className="text-center py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
+                                <th className="text-center py-2 px-3 font-semibold text-gray-400 text-[10px] uppercase tracking-wider">
                                   Prestataires
                                 </th>
-                                <th className="text-center py-2 px-3 font-medium text-[#172030]/50 text-[10px] uppercase tracking-wider">
+                                <th className="text-center py-2 px-3 font-semibold text-gray-400 text-[10px] uppercase tracking-wider">
                                   Complétude
                                 </th>
                               </tr>
@@ -1492,20 +1637,20 @@ const exportPDF = useCallback(async () => {
                                 const deptCompletionRate = deptProcesses > 0 ? Math.round((deptComplet / deptProcesses) * 100) : 0;
                                 
                                 return (
-                                  <tr key={deptName} className={idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAF9]'}>
-                                    <td className="py-2 px-3 font-medium text-[#172030]">{deptName}</td>
-                                    <td className="text-center py-2 px-3 text-[#172030]">{deptProcesses}</td>
-                                    <td className="text-center py-2 px-3 text-[#ef4444] font-medium">{deptCritiques}</td>
-                                    <td className="text-center py-2 px-3 font-mono text-[#172030]">
+                                  <tr key={deptName} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                                    <td className="py-2 px-3 font-medium text-gray-700">{deptName}</td>
+                                    <td className="text-center py-2 px-3 text-gray-700">{deptProcesses}</td>
+                                    <td className="text-center py-2 px-3 text-red-600 font-medium">{deptCritiques}</td>
+                                    <td className="text-center py-2 px-3 font-mono text-gray-700">
                                       {deptRtoMin === Infinity ? '-' : `${deptRtoMin}h`}
                                     </td>
-                                    <td className="text-center py-2 px-3 text-[#172030]">{deptApps.size}</td>
-                                    <td className="text-center py-2 px-3 text-[#172030]">{deptSuppliers.size}</td>
+                                    <td className="text-center py-2 px-3 text-gray-700">{deptApps.size}</td>
+                                    <td className="text-center py-2 px-3 text-gray-700">{deptSuppliers.size}</td>
                                     <td className="text-center py-2 px-3">
                                       <Badge className={cn(
                                         deptCompletionRate >= 80 ? 'bg-[#2A5141] text-white' :
-                                        deptCompletionRate >= 50 ? 'bg-[#eab308] text-white' :
-                                        'bg-[#ef4444] text-white'
+                                        deptCompletionRate >= 50 ? 'bg-amber-500 text-white' :
+                                        'bg-red-500 text-white'
                                       )}>
                                         {deptCompletionRate}%
                                       </Badge>

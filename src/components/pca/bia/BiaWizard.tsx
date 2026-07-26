@@ -298,7 +298,7 @@ const ImpactCell = ({
 };
 
 // ════════════════════════════════════════════════════════════════════
-// ✅ STEPS - SEULEMENT 3 ÉTAPES
+// ✅ STEPS - SEULEMENT 3 ÉTAPES (MTPD SUPPRIMÉ)
 // ════════════════════════════════════════════════════════════════════
 const STEPS = [
   { id: "general", label: "Général", icon: "📋" },
@@ -430,7 +430,7 @@ const newProcess = (): Process => ({
 });
 
 // ════════════════════════════════════════════════════════════════════
-// ✅ COMPOSANT PRINCIPAL - 3 ÉTAPES UNIQUEMENT
+// ✅ COMPOSANT PRINCIPAL - 3 ÉTAPES (MTPD SUPPRIMÉ)
 // ════════════════════════════════════════════════════════════════════
 export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: string; initialEntityId?: string; onDone: () => void }) => {
   const { processes, upsertProcess } = useBia();
@@ -485,7 +485,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
 
   const globalScore = computeMaxScore(data.impacts);
   const criticality = scoreToCriticality(globalScore);
-  const rtoExceedsMtpd = data.rto > data.mtpd;
   const requiresPca = globalScore >= 3;
   const scorePercentage = Math.round((globalScore / 5) * 100);
   const suggestedRTO = getSuggestedRTOFromImpacts(data.impacts);
@@ -493,7 +492,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
 
   const canNext = () => {
     if (step === 0) return data.name && data.entityId && data.owner;
-    if (step === 2) return !rtoExceedsMtpd;
     return true;
   };
 
@@ -533,7 +531,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
 
   const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168];
   const rpoOptions = [0.25, 0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72];
-  const mtpdOptions = [8, 12, 24, 48, 72, 96, 120, 168, 336, 720];
   
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -543,12 +540,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             {processId ? "Modifier l'analyse d'impact" : "Nouvelle analyse d'impact métier"}
           </h1>
           <p className="text-muted-foreground mt-2">Remplissez les étapes pour évaluer la criticité de votre processus</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onDone} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Retour à la fiche
-          </Button>
         </div>
       </div>
 
@@ -776,7 +767,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             </div>
           )}
 
-          {/* ÉTAPE 3 - DÉLAIS & RTO/RPO */}
+          {/* ÉTAPE 3 - DÉLAIS & RTO/RPO (MTPD SUPPRIMÉ) */}
           {step === 2 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
@@ -786,6 +777,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                 </div>
                 {data.name && <Badge variant="outline">⏱️ {data.name}</Badge>}
               </div>
+              
               <div className="bg-[#F8F6F2] rounded-lg p-4 border border-[#E8E4DC]">
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div>
@@ -807,6 +799,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                   </Button>
                 </div>
               </div>
+              
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <Label>RTO — Recovery Time Objective (heures)</Label>
@@ -846,32 +839,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">Perte de données maximale acceptée.</p>
                 </div>
-                <div className="md:col-span-2">
-                  <Label>MTPD — Maximum Tolerable Period of Disruption (heures)</Label>
-                  <Select 
-                    value={String(data.mtpd)} 
-                    onValueChange={(v) => update("mtpd", Number(v))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Sélectionner un MTPD" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mtpdOptions.map((val) => (
-                        <SelectItem key={val} value={String(val)}>
-                          {val}h
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1">Durée maximale d'indisponibilité acceptable avant de mettre en danger l'entreprise.</p>
-                </div>
               </div>
-              {rtoExceedsMtpd && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>Erreur : le RTO ({data.rto}h) ne peut pas être supérieur au MTPD ({data.mtpd}h).</span>
-                </div>
-              )}
             </div>
           )}
         </CardContent>

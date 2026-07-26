@@ -61,8 +61,7 @@ interface ServiceBIA {
   coordinator: string;
   processCount: number;
   criticalCount: number;
-  appsIT: number;
-  suppliers: number;
+  resources: number;
   completionRate: number;
   status: BIAStatus;
   lastReviewed?: string;
@@ -203,7 +202,7 @@ const edgeColor = (criticality: Criticality) => {
 };
 
 // ============================================================
-// COMPOSANT - Dialogue de sélection depuis le CMDB (AGGRANDI ET MULTI-SÉLECTION)
+// COMPOSANT - Dialogue de sélection depuis le référentiel
 // ============================================================
 const SelectFromCMDBDialog = ({
   open,
@@ -239,7 +238,6 @@ const SelectFromCMDBDialog = ({
     r.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Réinitialiser la sélection quand le dialogue s'ouvre
   useEffect(() => {
     if (open) {
       setSelectedIds([]);
@@ -263,16 +261,6 @@ const SelectFromCMDBDialog = ({
       case 'App': return 'application';
       case 'Fournisseur': return 'prestataire';
       default: return 'ressource';
-    }
-  };
-
-  const getResourcePlural = () => {
-    switch(resourceType) {
-      case 'HR': return 'collaborateurs';
-      case 'Equipement': return 'équipements';
-      case 'App': return 'applications';
-      case 'Fournisseur': return 'prestataires';
-      default: return 'ressources';
     }
   };
 
@@ -377,10 +365,10 @@ const SelectFromCMDBDialog = ({
                 {availableResources.length === 0 ? (
                   <>
                     <p className="text-sm text-[#172030]/60">
-                      Tous les {getResourceLabel()}s du CMDB sont déjà ajoutés à la fiche BIA
+                      Tous les {getResourceLabel()}s du référentiel sont déjà ajoutés à la fiche BIA
                     </p>
                     <p className="text-xs text-[#172030]/40">
-                      Vous pouvez en créer un(e) nouveau/nouvelle dans le CMDB
+                      Vous pouvez en créer un(e) nouveau(nouvelle) dans le référentiel
                     </p>
                   </>
                 ) : (
@@ -398,7 +386,7 @@ const SelectFromCMDBDialog = ({
                   }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Créer un(e) {getResourceLabel()} dans le CMDB
+                  Créer un(e) {getResourceLabel()} dans le référentiel
                 </Button>
               </div>
             ) : (
@@ -491,7 +479,7 @@ const SelectFromCMDBDialog = ({
                 }}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" />
-                Créer un(e) {getResourceLabel()} dans le CMDB
+                Créer un(e) {getResourceLabel()} dans le référentiel
               </Button>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-[#172030]/40">
@@ -518,7 +506,7 @@ const SelectFromCMDBDialog = ({
 };
 
 // ============================================================
-// COMPOSANT - Dialogue d'ajout au CMDB
+// COMPOSANT - Dialogue d'ajout au référentiel
 // ============================================================
 const AddToCMDBDialog = ({
   open,
@@ -624,7 +612,7 @@ const AddToCMDBDialog = ({
 
       toast({ 
         title: "Succès", 
-        description: `${getResourceLabel()} "${name}" ajouté(e) au référentiel CMDB` 
+        description: `${getResourceLabel()} "${name}" ajouté(e) au référentiel` 
       });
 
       onAdd({ ...inserted, _resourceType: resourceType });
@@ -652,10 +640,10 @@ const AddToCMDBDialog = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {getResourceIcon()}
-            Ajouter un(e) {getResourceLabel().toLowerCase()} au CMDB
+            Ajouter un(e) {getResourceLabel().toLowerCase()} au référentiel
           </DialogTitle>
           <DialogDescription>
-            La ressource sera ajoutée au référentiel CMDB puis vous pourrez l'ajouter à la fiche BIA
+            La ressource sera ajoutée au référentiel puis vous pourrez l'ajouter à la fiche BIA
           </DialogDescription>
         </DialogHeader>
 
@@ -781,7 +769,7 @@ const AddToCMDBDialog = ({
             disabled={isSubmitting || !name.trim()}
             className="bg-[#2A5141] hover:bg-[#1a3329] text-white"
           >
-            {isSubmitting ? "Ajout en cours..." : "Ajouter au CMDB"}
+            {isSubmitting ? "Ajout en cours..." : "Ajouter au référentiel"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -790,7 +778,7 @@ const AddToCMDBDialog = ({
 };
 
 // ============================================================
-// COMPOSANT - Dialogue de liaison de ressources (AVEC RTO/RPO)
+// COMPOSANT - Dialogue de liaison de ressources
 // ============================================================
 const LinkResourceDialog = ({
   open,
@@ -983,7 +971,7 @@ const LinkResourceDialog = ({
                       }}
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
-                      Gérer le référentiel CMDB
+                      Gérer le référentiel
                     </Button>
                   )}
                 </div>
@@ -1493,7 +1481,7 @@ const SupplierTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - ProcessDetailView
+// COMPOSANT - ProcessDetailView (SANS MTPD)
 // ============================================================
 const ProcessDetailView = ({ 
   process, 
@@ -1721,7 +1709,7 @@ const ProcessDetailView = ({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="bg-gray-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Code</p>
                 <p className="font-mono text-sm">{process.code || process.id?.slice(0, 8)}</p>
@@ -1733,10 +1721,6 @@ const ProcessDetailView = ({
               <div className="bg-gray-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">RTO</p>
                 <p className="font-medium text-sm">{process.rto || 0}h</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-400">RPO</p>
-                <p className="font-medium text-sm">{process.rpo || 0}h</p>
               </div>
             </div>
 
@@ -2208,10 +2192,9 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="bg-muted/20 rounded-lg p-2 text-center"><Clock className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">RTO</p><p className="text-lg font-bold">{selectedProcess.rto}h</p></div>
                 <div className="bg-muted/20 rounded-lg p-2 text-center"><Database className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">RPO</p><p className="text-lg font-bold">{selectedProcess.rpo}h</p></div>
-                <div className="bg-muted/20 rounded-lg p-2 text-center"><AlertTriangle className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">MTPD</p><p className="text-lg font-bold">{selectedProcess.mtpd}h</p></div>
               </div>
 
               <div className="space-y-2">
@@ -2281,7 +2264,7 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
 };
 
 // ============================================================
-// COMPOSANT - BIAServiceCard
+// COMPOSANT - BIAServiceCard (SANS COMPLÉTION)
 // ============================================================
 const BIAServiceCard = ({ 
   service,
@@ -2304,15 +2287,6 @@ const BIAServiceCard = ({
 
   const statusConfig = statusConfigs[service.status] || statusConfigs.a_completer;
 
-  const handleAddProcess = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (departmentId) {
-      window.dispatchEvent(new CustomEvent('openBiaWizard', { 
-        detail: { departmentId } 
-      }));
-    }
-  };
-
   return (
     <div 
       className="bg-white border border-[#E8E4DC] rounded-xl p-5 cursor-pointer hover:shadow-[0_8px_24px_rgba(23,32,48,0.08)] hover:border-[#2A5141]/30 transition-all duration-200"
@@ -2330,7 +2304,8 @@ const BIAServiceCard = ({
         </Badge>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 py-3 border-t border-b border-[#E8E4DC] mb-3">
+      {/* Grid 3 colonnes sans Complétion */}
+      <div className="grid grid-cols-3 gap-2 py-3 border-t border-b border-[#E8E4DC] mb-3">
         <div className="text-center">
           <div className={cn(
             "text-lg font-bold font-mono",
@@ -2354,59 +2329,17 @@ const BIAServiceCard = ({
             "text-lg font-bold font-mono",
             isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
           )}>
-            {service.appsIT}
+            {service.resources}
           </div>
-          <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Applis IT</div>
-        </div>
-        <div className="text-center">
-          <div className={cn(
-            "text-lg font-bold font-mono",
-            isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
-          )}>
-            {service.suppliers}
-          </div>
-          <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Prestataires</div>
+          <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Ressources</div>
         </div>
       </div>
 
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2 flex-1">
-          <div className="flex-1 max-w-28 h-1.5 bg-[#E8E4DC] rounded-full overflow-hidden">
-            <div 
-              className={cn(
-                "h-full rounded-full transition-all",
-                isNonDemarre ? "bg-[#E8E4DC]" : "bg-[#2A5141]"
-              )}
-              style={{ width: `${isNonDemarre ? 0 : service.completionRate}%` }}
-            />
-          </div>
-          <span className={cn(
-            "text-xs font-mono font-medium",
-            isNonDemarre ? "text-[#172030]/30" : "text-[#172030]/60"
-          )}>
-            {isNonDemarre ? "0" : service.completionRate}%
-          </span>
-        </div>
-        {isNonDemarre ? (
-          <Button 
-            size="sm" 
-            className="gap-1 text-xs bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
-            onClick={handleAddProcess}
-          >
-            <Plus className="h-3.5 w-3.5" /> Ajouter un processus
-          </Button>
-        ) : (
-          <span className="text-xs text-[#2A5141] font-medium flex items-center gap-1">
-            Ouvrir <ChevronRightIcon className="h-3.5 w-3.5" />
-          </span>
-        )}
+      <div className="flex items-center justify-end">
+        <span className="text-xs text-[#2A5141] font-medium flex items-center gap-1">
+          Ouvrir <ChevronRightIcon className="h-3.5 w-3.5" />
+        </span>
       </div>
-      
-      {isNonDemarre && (
-        <p className="text-xs text-[#172030]/40 mt-2 italic">
-          Aucun processus recensé pour ce service. Lancez l'analyse d'impact.
-        </p>
-      )}
     </div>
   );
 };
@@ -2452,20 +2385,18 @@ const DirectionSection = ({
 };
 
 // ============================================================
-// IMPACT MATRIX
+// IMPACT MATRIX (SANS MTPD)
 // ============================================================
 const ImpactMatrix = ({ 
   impacts, 
   isCritical,
   rto,
   rpo,
-  mtpd
 }: { 
   impacts: any;
   isCritical: boolean;
   rto?: number;
   rpo?: number;
-  mtpd?: number;
 }) => {
   const getSeverityPastelStyle = (value: number) => {
     if (value === 0) {
@@ -2518,7 +2449,7 @@ const ImpactMatrix = ({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div className="bg-white rounded-lg p-3 border border-[#E8E4DC] shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -2542,18 +2473,6 @@ const ImpactMatrix = ({
             </div>
           </div>
           <p className="text-[10px] text-[#172030]/40">Perte de données max</p>
-        </div>
-        <div className="bg-white rounded-lg p-3 border border-[#E8E4DC] shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">MTPD</p>
-              <p className="text-xl font-bold text-[#172030]">{mtpd || 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span></p>
-            </div>
-            <div className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center">
-              <AlertTriangle className="h-3.5 w-3.5 text-blue-500" />
-            </div>
-          </div>
-          <p className="text-[10px] text-[#172030]/40">Indisponibilité max</p>
         </div>
       </div>
 
@@ -2655,7 +2574,7 @@ const ImpactMatrix = ({
 };
 
 // ============================================================
-// PROCESS ACCORDION
+// PROCESS ACCORDION (SANS MTPD)
 // ============================================================
 const ProcessAccordion = ({ 
   process, 
@@ -2803,7 +2722,6 @@ const ProcessAccordion = ({
             isCritical={isCritical}
             rto={process.rto}
             rpo={process.rpo}
-            mtpd={process.mtpd}
           />
 
           <div className="mt-4 pt-4 border-t border-[#E8E4DC]">
@@ -2916,7 +2834,7 @@ const ProcessAccordion = ({
 };
 
 // ============================================================
-// COMPOSANT PRINCIPAL - BIAFicheDetail
+// COMPOSANT - BIAFicheDetail (SANS MTPD)
 // ============================================================
 const BIAFicheDetail = ({
   service,
@@ -3514,7 +3432,7 @@ const BIAFicheDetail = ({
         onSelect={(ids) => addMultipleResourcesToBIA('HR', ids)}
         onAddToCMDB={() => { setShowSelectHR(false); setShowAddHR(true); }}
         title="Ajouter des collaborateurs"
-        description="Sélectionnez un ou plusieurs collaborateurs depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+        description="Sélectionnez un ou plusieurs collaborateurs depuis le référentiel pour les ajouter à la fiche BIA"
       />
 
       <SelectFromCMDBDialog
@@ -3526,7 +3444,7 @@ const BIAFicheDetail = ({
         onSelect={(ids) => addMultipleResourcesToBIA('Equipement', ids)}
         onAddToCMDB={() => { setShowSelectEquipment(false); setShowAddEquipment(true); }}
         title="Ajouter des équipements"
-        description="Sélectionnez un ou plusieurs équipements depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+        description="Sélectionnez un ou plusieurs équipements depuis le référentiel pour les ajouter à la fiche BIA"
       />
 
       <SelectFromCMDBDialog
@@ -3538,7 +3456,7 @@ const BIAFicheDetail = ({
         onSelect={(ids) => addMultipleResourcesToBIA('App', ids)}
         onAddToCMDB={() => { setShowSelectApp(false); setShowAddApp(true); }}
         title="Ajouter des applications"
-        description="Sélectionnez une ou plusieurs applications depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+        description="Sélectionnez une ou plusieurs applications depuis le référentiel pour les ajouter à la fiche BIA"
       />
 
       <SelectFromCMDBDialog
@@ -3550,7 +3468,7 @@ const BIAFicheDetail = ({
         onSelect={(ids) => addMultipleResourcesToBIA('Fournisseur', ids)}
         onAddToCMDB={() => { setShowSelectSupplier(false); setShowAddSupplier(true); }}
         title="Ajouter des prestataires"
-        description="Sélectionnez un ou plusieurs prestataires depuis le référentiel CMDB pour les ajouter à la fiche BIA"
+        description="Sélectionnez un ou plusieurs prestataires depuis le référentiel pour les ajouter à la fiche BIA"
       />
 
       <AddToCMDBDialog
@@ -3629,9 +3547,6 @@ const BIAFicheDetail = ({
           <Button variant="outline" onClick={onBack} className="gap-1">
             <ArrowLeft className="h-4 w-4" /> Retour
           </Button>
-          <Button className="gap-2 bg-green-600 hover:bg-green-700">
-            <CheckCircle className="h-4 w-4" /> Soumettre pour validation
-          </Button>
         </div>
       </div>
 
@@ -3649,8 +3564,8 @@ const BIAFicheDetail = ({
           <p className="font-medium">{new Date().toLocaleDateString('fr-FR')}</p>
         </div>
         <div>
-          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Validé par</p>
-          <p className="font-medium">— En attente</p>
+          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Statut</p>
+          <p className="font-medium text-green-600">✅ En cours</p>
         </div>
       </div>
 
@@ -3780,7 +3695,7 @@ const BIAFicheDetail = ({
                 />
               ) : (
                 <div className="text-center py-6 text-[#172030]/40 text-sm">
-                  Aucun collaborateur ajouté. Cliquez sur "Ajouter un collaborateur" pour en sélectionner depuis le CMDB.
+                  Aucun collaborateur ajouté. Cliquez sur "Ajouter un collaborateur" pour en sélectionner depuis le référentiel.
                 </div>
               )}
             </div>
@@ -3801,7 +3716,7 @@ const BIAFicheDetail = ({
                 />
               ) : (
                 <div className="text-center py-6 text-[#172030]/40 text-sm">
-                  Aucun équipement ajouté. Cliquez sur "Ajouter un équipement" pour en sélectionner depuis le CMDB.
+                  Aucun équipement ajouté. Cliquez sur "Ajouter un équipement" pour en sélectionner depuis le référentiel.
                 </div>
               )}
             </div>
@@ -3954,7 +3869,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCriticality, setSelectedCriticality] = useState<string>("all");
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
 
   const [selectedService, setSelectedService] = useState<ServiceBIA | null>(null);
   const [showBIADetail, setShowBIADetail] = useState(false);
@@ -3963,11 +3877,90 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   const [wizardProcessId, setWizardProcessId] = useState<string | undefined>(undefined);
   const [wizardDepartmentId, setWizardDepartmentId] = useState<string | undefined>(undefined);
 
+  // ============================================================
+  // ÉTAT POUR LE COMPTAGE DES RESSOURCES PAR PROCESSUS
+  // ============================================================
+  const [resourceCountByProcess, setResourceCountByProcess] = useState<Record<string, number>>({});
+  const [isLoadingResources, setIsLoadingResources] = useState(true);
+
   const entityName = (id: string) => entities.find((e) => e.id === id)?.name ?? "—";
   const rootEntities = useMemo(() => entities.filter(e => e.parentId === null), [entities]);
   const getChildren = (parentId: string) => entities.filter(e => e.parentId === parentId);
 
   const getDepartmentCount = (entityId: string) => getChildren(entityId).length;
+
+  // ============================================================
+  // CHARGEMENT DU COMPTE DE RESSOURCES PAR PROCESSUS
+  // ============================================================
+  useEffect(() => {
+    const loadResourceCounts = async () => {
+      if (processes.length === 0) {
+        setResourceCountByProcess({});
+        setIsLoadingResources(false);
+        return;
+      }
+
+      setIsLoadingResources(true);
+      const processIds = processes.map(p => p.id);
+      
+      try {
+        const [
+          { data: hrData, error: hrError },
+          { data: equipData, error: equipError },
+          { data: appData, error: appError },
+          { data: suppData, error: suppError }
+        ] = await Promise.all([
+          supabase.from('processus_ressources_humaines').select('processus_id').in('processus_id', processIds),
+          supabase.from('processus_equipements').select('processus_id').in('processus_id', processIds),
+          supabase.from('processus_applications').select('processus_id').in('processus_id', processIds),
+          supabase.from('processus_fournisseurs').select('processus_id').in('processus_id', processIds)
+        ]);
+
+        if (hrError) console.error('Erreur chargement RH:', hrError);
+        if (equipError) console.error('Erreur chargement Équipements:', equipError);
+        if (appError) console.error('Erreur chargement Applications:', appError);
+        if (suppError) console.error('Erreur chargement Prestataires:', suppError);
+
+        const counts: Record<string, number> = {};
+        for (const pid of processIds) {
+          counts[pid] = 0;
+        }
+
+        if (hrData) {
+          for (const item of hrData) {
+            counts[item.processus_id] = (counts[item.processus_id] || 0) + 1;
+          }
+        }
+
+        if (equipData) {
+          for (const item of equipData) {
+            counts[item.processus_id] = (counts[item.processus_id] || 0) + 1;
+          }
+        }
+
+        if (appData) {
+          for (const item of appData) {
+            counts[item.processus_id] = (counts[item.processus_id] || 0) + 1;
+          }
+        }
+
+        if (suppData) {
+          for (const item of suppData) {
+            counts[item.processus_id] = (counts[item.processus_id] || 0) + 1;
+          }
+        }
+
+        setResourceCountByProcess(counts);
+
+      } catch (error) {
+        console.error('Erreur chargement ressources:', error);
+      } finally {
+        setIsLoadingResources(false);
+      }
+    };
+
+    loadResourceCounts();
+  }, [processes]);
 
   const navigateToCMDB = () => {
     if (typeof window !== 'undefined') {
@@ -4003,16 +3996,9 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
           return score >= 4;
         }).length;
         
-        const appsIT = new Set<string>();
-        const suppliers = new Set<string>();
-        
+        let totalResources = 0;
         for (const p of deptProcesses) {
-          const apps = (p as any).appsCritiques || [];
-          for (const app of apps) appsIT.add(app.name);
-          const resources = p.resources || [];
-          for (const r of resources) {
-            if (r.type === "Fournisseur") suppliers.add(r.name);
-          }
+          totalResources += resourceCountByProcess[p.id] || 0;
         }
 
         const rate = deptProcesses.length > 0 ? calculateCompletionRate(deptProcesses) : 0;
@@ -4025,8 +4011,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
           coordinator: "—",
           processCount: deptProcesses.length,
           criticalCount,
-          appsIT: appsIT.size,
-          suppliers: suppliers.size,
+          resources: totalResources,
           completionRate: rate,
           status: status as BIAStatus,
           lastReviewed: dept.lastUpdated,
@@ -4049,10 +4034,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       );
     }
 
-    if (selectedStatus !== "all") {
-      filtered = filtered.filter(s => s.status === selectedStatus);
-    }
-
     return filtered;
   };
 
@@ -4060,20 +4041,13 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     const totalServices = services.length;
     const totalProcesses = services.reduce((acc, s) => acc + s.processCount, 0);
     const totalCritical = services.reduce((acc, s) => acc + s.criticalCount, 0);
-    const completed = services.filter(s => s.completionRate === 100).length;
-    const toComplete = services.filter(s => s.status === "a_completer").length;
-    const toReview = services.filter(s => s.status === "a_reviser").length;
-    const nonDemarre = services.filter(s => s.status === "non_demarre").length;
+    const totalResources = services.reduce((acc, s) => acc + s.resources, 0);
 
     return {
       totalServices,
       totalProcesses,
       totalCritical,
-      completed,
-      toComplete,
-      toReview,
-      nonDemarre,
-      scoped: 9,
+      totalResources,
     };
   };
 
@@ -4091,7 +4065,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     setSelectedDepartment(null);
     setSearchQuery("");
     setSelectedCriticality("all");
-    setSelectedStatus("all");
     setShowBIADetail(false);
     setSelectedService(null);
   };
@@ -4175,7 +4148,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     
     for (const dir of directions) {
       const depts = getChildren(dir.id);
-      const dirServices = services.filter(s => depts.some(d => d.id === s.id));
+      const dirServices = filteredServices.filter(s => depts.some(d => d.id === s.id));
       if (dirServices.length > 0) {
         servicesByDirection[dir.name] = dirServices;
         for (const s of dirServices) {
@@ -4195,46 +4168,43 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               Sélectionnez un service pour ouvrir sa fiche d'analyse d'impact. Chaque fiche recense les processus critiques, leurs ressources et leurs objectifs de reprise.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={goToRoot} className="gap-1 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
-              <ArrowLeft className="h-4 w-4" /> Retour
-            </Button>
-            <Button 
-              className="gap-2 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
-              onClick={() => openWizard(undefined, selectedRoot)}
-            >
-              <Plus className="h-4 w-4" /> Nouvelle fiche BIA
-            </Button>
-          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches BIA</p>
-              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalServices}</p>
-              <p className="text-xs text-[#172030]/40">sur {stats.scoped} services scopés</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Services BIA</p>
+              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+                {stats.totalServices}
+              </p>
+              <p className="text-xs text-[#172030]/40">services analysés</p>
             </CardContent>
           </Card>
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
               <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus critiques</p>
-              <p className="text-3xl font-bold text-red-600" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalCritical}</p>
+              <p className="text-3xl font-bold text-red-600" style={{ fontFamily: "Playfair Display, serif" }}>
+                {stats.totalCritical}
+              </p>
               <p className="text-xs text-[#172030]/40">sur {stats.totalProcesses} processus</p>
             </CardContent>
           </Card>
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches complètes</p>
-              <p className="text-3xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.completed}</p>
-              <p className="text-xs text-[#172030]/40">{stats.toComplete} à compléter</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus totaux</p>
+              <p className="text-3xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>
+                {stats.totalProcesses}
+              </p>
+              <p className="text-xs text-[#172030]/40">processus identifiés</p>
             </CardContent>
           </Card>
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Non démarrés</p>
-              <p className="text-3xl font-bold text-[#172030]/50" style={{ fontFamily: "Playfair Display, serif" }}>{stats.nonDemarre}</p>
-              <p className="text-xs text-[#172030]/40">{stats.toReview} à réviser</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Ressources totales</p>
+              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+                {isLoadingResources ? "…" : stats.totalResources}
+              </p>
+              <p className="text-xs text-[#172030]/40">ressources liées</p>
             </CardContent>
           </Card>
         </div>
@@ -4248,48 +4218,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               onChange={e => setSearchQuery(e.target.value)} 
               className="pl-9 border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20" 
             />
-          </div>
-          <div className="flex gap-1.5 flex-wrap">
-            <Button 
-              variant={selectedStatus === "all" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedStatus("all")}
-              className={selectedStatus === "all" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
-            >
-              Tous
-            </Button>
-            <Button 
-              variant={selectedStatus === "critique" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedStatus("critique")}
-              className={selectedStatus === "critique" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
-            >
-              Critiques
-            </Button>
-            <Button 
-              variant={selectedStatus === "a_completer" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedStatus("a_completer")}
-              className={selectedStatus === "a_completer" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
-            >
-              À compléter
-            </Button>
-            <Button 
-              variant={selectedStatus === "a_reviser" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedStatus("a_reviser")}
-              className={selectedStatus === "a_reviser" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
-            >
-              À réviser
-            </Button>
-            <Button 
-              variant={selectedStatus === "non_demarre" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedStatus("non_demarre")}
-              className={selectedStatus === "non_demarre" ? "bg-[#2A5141] hover:bg-[#1a3329] text-white" : "border-[#E8E4DC] text-[#172030]/60"}
-            >
-              Non démarrés
-            </Button>
           </div>
         </div>
 
@@ -4333,88 +4261,62 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
               Sélectionnez un service pour ouvrir sa fiche d'analyse d'impact.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={goToRoot} className="gap-1 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
-              <ArrowLeft className="h-4 w-4" /> Retour
-            </Button>
-            <Button 
-              className="gap-2 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
-              onClick={() => openWizard(undefined, selectedRoot || undefined)}
-            >
-              <Plus className="h-4 w-4" /> Nouvelle fiche BIA
-            </Button>
-          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches BIA</p>
-              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalServices}</p>
-              <p className="text-xs text-[#172030]/40">sur {stats.scoped} services scopés</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Services BIA</p>
+              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+                {stats.totalServices}
+              </p>
+              <p className="text-xs text-[#172030]/40">services analysés</p>
             </CardContent>
           </Card>
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
               <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus critiques</p>
-              <p className="text-3xl font-bold text-red-600" style={{ fontFamily: "Playfair Display, serif" }}>{stats.totalCritical}</p>
+              <p className="text-3xl font-bold text-red-600" style={{ fontFamily: "Playfair Display, serif" }}>
+                {stats.totalCritical}
+              </p>
               <p className="text-xs text-[#172030]/40">sur {stats.totalProcesses} processus</p>
             </CardContent>
           </Card>
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Fiches complètes</p>
-              <p className="text-3xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>{stats.completed}</p>
-              <p className="text-xs text-[#172030]/40">{stats.toComplete} à compléter</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Processus totaux</p>
+              <p className="text-3xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>
+                {stats.totalProcesses}
+              </p>
+              <p className="text-xs text-[#172030]/40">processus identifiés</p>
             </CardContent>
           </Card>
           <Card className="bg-white border-[#E8E4DC] shadow-sm">
             <CardContent className="p-4">
-              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Non démarrés</p>
-              <p className="text-3xl font-bold text-[#172030]/50" style={{ fontFamily: "Playfair Display, serif" }}>{stats.nonDemarre}</p>
-              <p className="text-xs text-[#172030]/40">{stats.toReview} à réviser</p>
+              <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">Ressources totales</p>
+              <p className="text-3xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+                {isLoadingResources ? "…" : stats.totalResources}
+              </p>
+              <p className="text-xs text-[#172030]/40">ressources liées</p>
             </CardContent>
           </Card>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-[#172030]/40" />
-            <span className="text-xs font-medium text-[#172030]/60">Filtres</span>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#172030]/40" />
+            <Input 
+              placeholder="Rechercher un service, un responsable..." 
+              value={searchQuery} 
+              onChange={e => setSearchQuery(e.target.value)} 
+              className="pl-9 border-[#E8E4DC] focus:border-[#2A5141] focus:ring-[#2A5141]/20" 
+            />
           </div>
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="h-8 px-2.5 text-xs border border-[#E8E4DC] rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#2A5141] text-[#172030]"
-          >
-            <option value="all">Tous les statuts</option>
-            <option value="critique">Critique</option>
-            <option value="a_completer">À compléter</option>
-            <option value="a_reviser">À réviser</option>
-            <option value="non_demarre">Non démarré</option>
-          </select>
-          {(selectedStatus !== "all" || searchQuery) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-[#172030]/40 hover:text-[#172030]"
-              onClick={() => {
-                setSelectedStatus("all");
-                setSearchQuery("");
-              }}
-            >
-              <X className="h-3 w-3 mr-1" /> Réinitialiser
-            </Button>
-          )}
-          <span className="text-xs text-[#172030]/40 ml-auto">
-            {departments.filter(dept => {
-              const deptProcesses = processes.filter(p => p.department === dept.name || p.entityId === dept.id);
-              if (selectedStatus === "all") return true;
-              const status = getBIAStatus(deptProcesses, dept.lastUpdated);
-              return status === selectedStatus;
-            }).length} services
-          </span>
         </div>
+
+        <span className="text-xs text-[#172030]/40 block mb-2">
+          {departments.length} services
+        </span>
 
         {departments.length === 0 ? (
           <div className="text-center py-12 text-[#172030]/40">
@@ -4432,6 +4334,11 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
                 return score >= 4;
               }).length;
               
+              let totalResources = 0;
+              for (const p of deptProcesses) {
+                totalResources += resourceCountByProcess[p.id] || 0;
+              }
+
               const statusConfigs = {
                 critique: { label: "Critique", className: "bg-red-100 text-red-700 border-red-200" },
                 a_completer: { label: "À compléter", className: "bg-amber-100 text-amber-700 border-amber-200" },
@@ -4483,9 +4390,9 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
                         "text-lg font-bold font-mono",
                         isNonDemarre ? "text-[#172030]/30" : "text-[#172030]"
                       )}>
-                        {deptProcesses.length > 0 ? calculateCompletionRate(deptProcesses) : 0}%
+                        {isLoadingResources ? "…" : totalResources}
                       </div>
-                      <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Complétion</div>
+                      <div className="text-[10px] text-[#172030]/40 uppercase tracking-wide">Ressources</div>
                     </div>
                   </div>
 
@@ -4545,21 +4452,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
             {viewLevel === "directions" && "Sélectionnez une direction pour voir ses départements"}
             {viewLevel === "departments" && "Sélectionnez un département pour voir ses processus"}
           </p>
-        </div>
-        <div className="flex gap-2">
-          {viewLevel !== "enterprises" && (
-            <Button variant="outline" onClick={goToRoot} className="gap-1 border-[#E8E4DC] text-[#172030]/60 hover:text-[#172030]">
-              <ArrowLeft className="h-4 w-4" /> Retour
-            </Button>
-          )}
-          {can("write") && viewLevel === "processes" && (
-            <Button 
-              onClick={() => openWizard(undefined, selectedDepartment || undefined)} 
-              className="gap-2 bg-[#2A5141] hover:bg-[#1a3329] text-white shadow-sm"
-            >
-              <Plus className="h-4 w-4" /> Nouveau processus
-            </Button>
-          )}
         </div>
       </div>
 

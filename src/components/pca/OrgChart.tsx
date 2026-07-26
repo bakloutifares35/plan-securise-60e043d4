@@ -94,6 +94,9 @@ const maturityColor = (m: number) => {
   return "bg-success";
 };
 
+// ============================================================
+// NODE AMÉLIORÉ AVEC HIÉRARCHIE VISUELLE
+// ============================================================
 const Node = ({ node, depth, onDelete, onSelect }: { 
   node: Entity; depth: number; onDelete: (id: string) => void; onSelect: (id: string) => void;
 }) => {
@@ -102,40 +105,194 @@ const Node = ({ node, depth, onDelete, onSelect }: {
   const { can } = useRole();
   const m = node.maturity ?? defaultMaturity(node.pcaStatus);
   const isDept = isLowLevel(node.type);
+  const isDir = isDirection(node.type);
+  const isFil = isFiliale(node.type);
+
+  // Couleurs par type
+  const getTypeColors = (type?: string) => {
+    if (isFil) return {
+      iconBg: "bg-[#172030]",
+      iconColor: "text-white",
+      badgeBg: "bg-[#172030]",
+      badgeText: "text-white",
+      borderColor: "border-[#172030]",
+      textSize: "text-base font-bold"
+    };
+    if (isDir) return {
+      iconBg: "bg-[#2A5141]",
+      iconColor: "text-white",
+      badgeBg: "bg-[#2A5141]",
+      badgeText: "text-white",
+      borderColor: "border-[#2A5141]",
+      textSize: "text-sm font-semibold"
+    };
+    if (type?.toUpperCase() === "SERVICE") return {
+      iconBg: "bg-blue-100",
+      iconColor: "text-blue-700",
+      badgeBg: "bg-blue-100",
+      badgeText: "text-blue-700",
+      borderColor: "border-blue-200",
+      textSize: "text-sm font-medium"
+    };
+    if (type?.toUpperCase() === "DÉPARTEMENT") return {
+      iconBg: "bg-purple-100",
+      iconColor: "text-purple-700",
+      badgeBg: "bg-purple-100",
+      badgeText: "text-purple-700",
+      borderColor: "border-purple-200",
+      textSize: "text-sm font-medium"
+    };
+    return {
+      iconBg: "bg-gray-100",
+      iconColor: "text-gray-600",
+      badgeBg: "bg-gray-100",
+      badgeText: "text-gray-600",
+      borderColor: "border-gray-200",
+      textSize: "text-sm font-medium"
+    };
+  };
+
+  const colors = getTypeColors(node.type);
+  
+  // Taille de l'icône selon le niveau
+  const iconSize = isFil ? "h-5 w-5" : isDir ? "h-4.5 w-4.5" : "h-4 w-4";
+  const iconContainerSize = isFil ? "h-9 w-9" : isDir ? "h-8 w-8" : "h-7 w-7";
+
+  // Détection des doublons de nom au même niveau
+  const getDisplayName = () => {
+    // Trouver toutes les entités au même niveau (même parentId)
+    const siblingsWithSameName = node.parentId
+      ? (getChildren([], node.parentId) as any).filter((e: any) => e.name === node.name && e.id !== node.id)
+      : [];
+    
+    if (siblingsWithSameName.length > 0) {
+      return `${node.name} (${node.country || 'FR'})`;
+    }
+    return node.name;
+  };
+
+  // Fond alterné selon la profondeur
+  const bgColor = depth % 2 === 0 ? "bg-white" : "bg-[#F8F6F2]/30";
 
   return (
-    <div>
+    <div className={cn("relative", bgColor)}>
+      {/* Ligne de connexion verticale */}
+      {depth > 0 && (
+        <div 
+          className="absolute left-[18px] top-0 bottom-0 w-px bg-gray-200"
+          style={{ 
+            height: '100%',
+            left: `${depth * 24 + 18}px`
+          }}
+        />
+      )}
+      
       <div
-        className="py-2.5 px-3 rounded-md hover:bg-secondary/60 transition-colors group cursor-pointer"
-        style={{ paddingLeft: `${depth * 24 + 12}px` }}
+        className={cn(
+          "py-3 px-3 rounded-lg hover:bg-secondary/40 transition-all duration-200 group cursor-pointer relative",
+          isFil ? "py-4" : "py-2.5"
+        )}
+        style={{ paddingLeft: `${depth * 28 + 12}px` }}
         onClick={() => onSelect(node.id)}
       >
-        <div className="flex items-center gap-2">
-          <button onClick={(e) => { e.stopPropagation(); setOpen(!open); }} className="text-muted-foreground hover:text-foreground">
-            {hasChildren ? (open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : <span className="inline-block w-4" />}
+        <div className="flex items-center gap-3">
+          {/* Bouton d'expansion avec cercle au survol */}
+          <button 
+            onClick={(e) => { e.stopPropagation(); setOpen(!open); }} 
+            className={cn(
+              "flex items-center justify-center rounded-full transition-all duration-200",
+              hasChildren ? "hover:bg-gray-200/70 w-6 h-6" : "w-6 h-6 opacity-0"
+            )}
+          >
+            {hasChildren ? (
+              open ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />
+            ) : (
+              <span className="inline-block w-4" />
+            )}
           </button>
-          <Building2 className={`h-4 w-4 shrink-0 ${isDept ? "text-muted-foreground" : "text-primary"}`} />
+
+          {/* Icône avec couleur selon le type */}
+          <div className={cn(
+            "rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+            iconContainerSize,
+            colors.iconBg
+          )}>
+            <Building2 className={cn(iconSize, colors.iconColor)} />
+          </div>
+
+          {/* Colonnes alignées */}
           <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
-            <span className="font-medium text-sm truncate">{node.name}</span>
-            <span className="text-xs text-muted-foreground">{node.type || "—"}</span>
-            <span className="text-xs text-muted-foreground">{node.country}</span>
-            <span className="text-xs truncate">{node.referent}</span>
+            {/* Colonne Nom */}
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={cn(
+                "truncate",
+                colors.textSize,
+                isFil ? "text-[#172030]" : "text-gray-800"
+              )}>
+                {getDisplayName()}
+              </span>
+            </div>
+
+            {/* Colonne Type - Badge coloré */}
+            <div>
+              <Badge className={cn(
+                "font-medium px-2.5 py-0.5 rounded-full text-[10px]",
+                colors.badgeBg,
+                colors.badgeText,
+                colors.borderColor
+              )}>
+                {node.type || "—"}
+              </Badge>
+            </div>
+
+            {/* Colonne Pays */}
+            <span className="text-xs text-muted-foreground">{node.country || "FR"}</span>
+
+            {/* Colonne Référent */}
+            <span className="text-xs truncate text-muted-foreground">{node.referent || "—"}</span>
           </div>
+
+          {/* Bouton Supprimer */}
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-            {can("admin") && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(node.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+            {can("admin") && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-full" 
+                onClick={() => onDelete(node.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
-        </div>
-        <div className="mt-1.5 ml-10 flex items-center gap-2">
-          <div className="h-1.5 flex-1 rounded-full bg-secondary overflow-hidden max-w-xs">
-            <div className={cn("h-full transition-all", maturityColor(m))} style={{ width: `${m}%` }} />
-          </div>
-          <span className="text-[10px] font-medium text-muted-foreground tabular-nums">Maturité {m}%</span>
         </div>
       </div>
+
+      {/* Enfants */}
       {hasChildren && open && (
-        <div>
-          {node.children!.map((c) => (
-            <Node key={c.id} node={c} depth={depth + 1} onDelete={onDelete} onSelect={onSelect} />
+        <div className="relative">
+          {node.children!.map((c, index) => (
+            <div key={c.id} className="relative">
+              {/* Connecteur en L pour le dernier enfant */}
+              {index === node.children!.length - 1 && depth > 0 && (
+                <div 
+                  className="absolute w-px bg-gray-200"
+                  style={{
+                    left: `${depth * 28 + 18}px`,
+                    top: 0,
+                    bottom: '50%',
+                    height: '50%'
+                  }}
+                />
+              )}
+              <Node 
+                key={c.id} 
+                node={c} 
+                depth={depth + 1} 
+                onDelete={onDelete} 
+                onSelect={onSelect} 
+              />
+            </div>
           ))}
         </div>
       )}
@@ -387,9 +544,12 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     );
   };
 
-  // ✅ Télécharger le modèle Excel SIMPLIFIÉ
+  // ============================================================
+  // MODÈLE EXCEL AVEC MISE EN FORME PROFESSIONNELLE
+  // ============================================================
   const downloadTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
+    // Créer la première feuille avec les données
+    const data = [
       ['Nom', 'Type', 'Pays', 'Référent PCA', 'Coordonnées référent', 'Suppléant', 'Coordonnées suppléant', 'Entité Parente'],
       ['Filiale 1', 'FILIALE', 'France', 'Jean Dupont', 'jean@email.com', 'Marie Martin', 'marie@email.com', ''],
       ['Direction 1', 'DIRECTION', 'France', 'Sophie Leroy', 'sophie@email.com', 'Marc Dubois', 'marc@email.com', 'Filiale 1'],
@@ -399,230 +559,392 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       ['Direction 2', 'DIRECTION', 'Tunisie', 'Youssef KAAK', 'youssef@email.com', 'Sami Ben Ammar', 'sami@email.com', 'Filiale 2'],
       ['Service 2', 'SERVICE', 'Tunisie', 'Karim Ben Ali', 'karim@email.com', 'Nadia Gharbi', 'nadia@email.com', 'Direction 2'],
       ['Département 2', 'DÉPARTEMENT', 'Tunisie', 'Mehdi Chaker', 'mehdi@email.com', 'Fatma Ben Amor', 'fatma@email.com', 'Direction 2'],
-    ]);
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    
+    // Appliquer la mise en forme
+    ws['!cols'] = [
+      { wch: 20 },  // Nom
+      { wch: 15 },  // Type
+      { wch: 12 },  // Pays
+      { wch: 20 },  // Référent PCA
+      { wch: 25 },  // Coordonnées référent
+      { wch: 20 },  // Suppléant
+      { wch: 25 },  // Coordonnées suppléant
+      { wch: 25 },  // Entité Parente
+    ];
+
+    // Style pour l'en-tête (fond Navy, texte blanc, gras)
+    const headerStyle = {
+      font: { bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "172030" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "172030" } },
+        bottom: { style: "thin", color: { rgb: "172030" } },
+        left: { style: "thin", color: { rgb: "172030" } },
+        right: { style: "thin", color: { rgb: "172030" } }
+      }
+    };
+
+    // Appliquer le style à la première ligne
+    const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0];
+    if (headerRow) {
+      for (let col = 0; col < headerRow.length; col++) {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (ws[cellRef]) {
+          ws[cellRef].s = headerStyle;
+        }
+      }
+    }
+
+    // Style pour les cellules de données (bordures)
+    const dataStyle = {
+      border: {
+        top: { style: "thin", color: { rgb: "CCCCCC" } },
+        bottom: { style: "thin", color: { rgb: "CCCCCC" } },
+        left: { style: "thin", color: { rgb: "CCCCCC" } },
+        right: { style: "thin", color: { rgb: "CCCCCC" } }
+      },
+      alignment: { vertical: "center" }
+    };
+
+    // Appliquer le style aux cellules de données
+    for (let row = 1; row < data.length; row++) {
+      for (let col = 0; col < data[row].length; col++) {
+        const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+        if (ws[cellRef]) {
+          ws[cellRef].s = dataStyle;
+        }
+      }
+    }
+
+    // --- FEUILLE 2 : INSTRUCTIONS ---
+    const instructionsData = [
+      ['📋 INSTRUCTIONS POUR L\'IMPORT DE L\'ORGANIGRAMME'],
+      [''],
+      ['1. HIÉRARCHIE OBLIGATOIRE :'],
+      ['   • Niveau 1 : FILIALE (pas de parent)'],
+      ['   • Niveau 2 : DIRECTION (parent = Filiale)'],
+      ['   • Niveau 3 : SERVICE ou DÉPARTEMENT (parent = Direction)'],
+      [''],
+      ['2. TYPES D\'ENTITÉS AUTORISÉS :'],
+      ['   • FILIALE'],
+      ['   • DIRECTION'],
+      ['   • SERVICE'],
+      ['   • DÉPARTEMENT'],
+      [''],
+      ['3. COLONNE "ENTITÉ PARENTE" :'],
+      ['   • Doit correspondre EXACTEMENT au nom d\'une entité existante dans la colonne "Nom"'],
+      ['   • Respecte la hiérarchie ci-dessus'],
+      ['   • Laisse vide pour les FILIALE'],
+      [''],
+      ['4. EXEMPLE DE HIÉRARCHIE VALIDE :'],
+      ['   Filiale 1 (FILIALE, parent vide)'],
+      ['   └── Direction 1 (DIRECTION, parent = "Filiale 1")'],
+      ['       ├── Service 1 (SERVICE, parent = "Direction 1")'],
+      ['       └── Département 1 (DÉPARTEMENT, parent = "Direction 1")'],
+      [''],
+      ['5. REMARQUES :'],
+      ['   • Les accents sont supportés (é, è, ê, à, ù, etc.)'],
+      ['   • Toutes les colonnes sont optionnelles sauf "Nom" et "Type"'],
+      ['   • Les données vides seront remplies automatiquement avec des valeurs par défaut'],
+      ['   • La hiérarchie est validée automatiquement avant l\'import'],
+    ];
+
+    const wsInstructions = XLSX.utils.aoa_to_sheet(instructionsData.map(row => [row]));
+    
+    // Largeur des colonnes pour les instructions
+    wsInstructions['!cols'] = [{ wch: 90 }];
+
+    // Créer le classeur avec les deux feuilles
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Organigramme');
+    XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
+
+    // Télécharger
     XLSX.writeFile(wb, 'modele_organigramme.xlsx');
     toast.success("📊 Modèle Excel téléchargé avec succès !");
   };
 
-  // ✅ Télécharger le modèle PDF avec jsPDF - VERSION CORRIGÉE ET PROPRE
-const downloadPdfTemplate = () => {
-  try {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 20;
-    let y = 25;
-    const lineHeight = 7;
+  // ============================================================
+  // MODÈLE PDF AVEC MISE EN PAGE AMÉLIORÉE
+  // ============================================================
+  const downloadPdfTemplate = () => {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      let y = 20;
+      const lineHeight = 7;
 
-    // Titre principal
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(23, 32, 48);
-    doc.text("ORGANIGRAMME DU GROUPE - MODÈLE", pageWidth / 2, y, { align: "center" });
-    y += 10;
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 100, 100);
-    doc.text("Structure hiérarchique des entités", pageWidth / 2, y, { align: "center" });
-    y += 12;
-    
-    // Ligne de séparation
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 10;
+      // Bandeau Navy en en-tête
+      doc.setFillColor(23, 32, 48);
+      doc.rect(0, 0, pageWidth, 28, 'F');
+      
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(248, 246, 242);
+      doc.text("Resillia", margin, 18);
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(200, 200, 200);
+      doc.text("ORGANIGRAMME DU GROUPE - MODÈLE", pageWidth - margin, 18, { align: "right" });
 
-    // ===== EXEMPLE 1 =====
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(23, 32, 48);
-    doc.text("Exemple 1 : Filiale 1", margin, y);
-    y += lineHeight + 3;
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    doc.text("   • Direction Financière", margin + 5, y);
-    y += lineHeight;
-    doc.text("       • Service Comptabilité", margin + 10, y);
-    y += lineHeight;
-    doc.text("       • Département Audit", margin + 10, y);
-    y += lineHeight;
-    doc.text("   • Direction Commerciale", margin + 5, y);
-    y += lineHeight;
-    doc.text("       • Service Client", margin + 10, y);
-    y += lineHeight;
-    doc.text("       • Département Marketing", margin + 10, y);
-    y += lineHeight + 8;
+      y = 38;
 
-    // ===== EXEMPLE 2 =====
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(23, 32, 48);
-    doc.text("Exemple 2 : Filiale 2", margin, y);
-    y += lineHeight + 3;
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    doc.text("   • Direction IT", margin + 5, y);
-    y += lineHeight;
-    doc.text("       • Service Infrastructure", margin + 10, y);
-    y += lineHeight;
-    doc.text("       • Département Sécurité", margin + 10, y);
-    y += lineHeight;
-    doc.text("       • Service Développement", margin + 10, y);
-    y += lineHeight;
-    doc.text("   • Direction RH", margin + 5, y);
-    y += lineHeight;
-    doc.text("       • Service Recrutement", margin + 10, y);
-    y += lineHeight;
-    doc.text("       • Département Formation", margin + 10, y);
-    y += lineHeight + 10;
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+      doc.text("Structure hiérarchique des entités", pageWidth / 2, y, { align: "center" });
+      y += 10;
 
-    // ===== SÉPARATEUR =====
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 10;
+      doc.setDrawColor(42, 81, 65);
+      doc.setLineWidth(1.5);
+      doc.line(margin, y, pageWidth - margin, y);
+      doc.setLineWidth(0.2);
+      y += 12;
 
-    // ===== INSTRUCTIONS =====
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(23, 32, 48);
-    doc.text("INSTRUCTIONS POUR L'IMPORT :", margin, y);
-    y += lineHeight + 3;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    
-    const instructions = [
-      "1. Utilisez ce modèle pour structurer votre organigramme",
-      "2. Remplacez les noms par les vôtres (Filiale 1 → Votre Filiale, etc.)",
-      "3. Ajoutez ou supprimez des lignes selon vos besoins",
-      "",
-      "HIÉRARCHIE À RESPECTER :",
-      "   Filiale (niveau 1) → Direction (niveau 2) → Service / Département (niveau 3)",
-      "",
-      "TYPES D'ENTITÉS AUTORISÉS :",
-      "   • FILIALE      → Niveau 1, pas de parent",
-      "   • DIRECTION    → Niveau 2, parent = Filiale",
-      "   • SERVICE      → Niveau 3, parent = Direction",
-      "   • DÉPARTEMENT  → Niveau 3, parent = Direction",
-    ];
-    
-    for (const line of instructions) {
-      if (line.startsWith("HIÉRARCHIE") || line.startsWith("TYPES D'ENTITÉS") || line.startsWith("   •")) {
-        doc.setFont("helvetica", "bold");
-      } else {
-        doc.setFont("helvetica", "normal");
+      // Exemple 1
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(23, 32, 48);
+      doc.text("Exemple 1 : Filiale 1", margin, y);
+      y += lineHeight + 3;
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      doc.text("   • Direction Financière", margin + 5, y);
+      y += lineHeight;
+      doc.text("       • Service Comptabilité", margin + 10, y);
+      y += lineHeight;
+      doc.text("       • Département Audit", margin + 10, y);
+      y += lineHeight;
+      doc.text("   • Direction Commerciale", margin + 5, y);
+      y += lineHeight;
+      doc.text("       • Service Client", margin + 10, y);
+      y += lineHeight;
+      doc.text("       • Département Marketing", margin + 10, y);
+      y += lineHeight + 8;
+
+      // Exemple 2
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(23, 32, 48);
+      doc.text("Exemple 2 : Filiale 2", margin, y);
+      y += lineHeight + 3;
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      doc.text("   • Direction IT", margin + 5, y);
+      y += lineHeight;
+      doc.text("       • Service Infrastructure", margin + 10, y);
+      y += lineHeight;
+      doc.text("       • Département Sécurité", margin + 10, y);
+      y += lineHeight;
+      doc.text("       • Service Développement", margin + 10, y);
+      y += lineHeight;
+      doc.text("   • Direction RH", margin + 5, y);
+      y += lineHeight;
+      doc.text("       • Service Recrutement", margin + 10, y);
+      y += lineHeight;
+      doc.text("       • Département Formation", margin + 10, y);
+      y += lineHeight + 10;
+
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.5);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 10;
+
+      // Bloc INSTRUCTIONS (fond Crème)
+      const instructionsY = y;
+      const instructionsHeight = 60;
+      doc.setFillColor(248, 246, 242);
+      doc.rect(margin - 5, instructionsY - 5, pageWidth - margin * 2 + 10, instructionsHeight + 10, 'F');
+      
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(23, 32, 48);
+      doc.text("INSTRUCTIONS POUR L'IMPORT :", margin, y);
+      y += lineHeight + 3;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      
+      const instructions = [
+        "1. Utilisez ce modèle pour structurer votre organigramme",
+        "2. Remplacez les noms par les vôtres (Filiale 1 → Votre Filiale, etc.)",
+        "3. Ajoutez ou supprimez des lignes selon vos besoins",
+      ];
+      
+      for (const line of instructions) {
+        doc.text(line, margin + 2, y);
+        y += lineHeight;
       }
-      doc.text(line, margin, y);
-      y += lineHeight;
-    }
-    
-    y += 5;
+      y += 3;
 
-    // ===== STRUCTURE COMPLÈTE =====
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(23, 32, 48);
-    doc.text("STRUCTURE COMPLÈTE :", margin, y);
-    y += lineHeight + 3;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    
-    const structure = [
-      "",
-      "NIVEAU 1 - FILIALE",
-      "  └── Filiale 1",
-      "      NIVEAU 2 - DIRECTION",
-      "      ├── Direction Financière",
-      "      │   NIVEAU 3 - SERVICE / DÉPARTEMENT",
-      "      │   ├── Service Comptabilité",
-      "      │   └── Département Audit",
-      "      └── Direction Commerciale",
-      "          ├── Service Client",
-      "          └── Département Marketing",
-      "",
-      "NIVEAU 1 - FILIALE ",
-      "  └── Filiale 2",
-      "      NIVEAU 2 - DIRECTION",
-      "      ├── Direction IT",
-      "      │   ├── Service Infrastructure",
-      "      │   ├── Département Sécurité",
-      "      │   └── Service Développement",
-      "      └── Direction RH",
-      "          ├── Service Recrutement",
-      "          └── Département Formation",
-    ];
-    
-    for (const line of structure) {
-      if (line.startsWith("NIVEAU") || line.startsWith("  └──") || line.startsWith("      ├──") || line.startsWith("      └──") || line.startsWith("      │")) {
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(23, 32, 48);
-      } else {
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(60, 60, 60);
+      // Bloc AVERTISSEMENT (fond Crème)
+      const warningY = y;
+      const warningHeight = 30;
+      doc.setFillColor(248, 246, 242);
+      doc.rect(margin - 5, warningY - 5, pageWidth - margin * 2 + 10, warningHeight + 10, 'F');
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(200, 0, 0);
+      doc.text("⚠ IMPORTANT :", margin, y);
+      y += lineHeight;
+      
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      const warnings = [
+        "   • Les accents sont supportés (é, è, ê, à, ù, etc.)",
+        "   • L'IA analysera automatiquement votre document",
+        "   • Toutes les entités seront importées avec leur hiérarchie",
+      ];
+      
+      for (const line of warnings) {
+        doc.text(line, margin + 2, y);
+        y += lineHeight;
       }
-      doc.text(line, margin, y);
-      y += lineHeight;
-    }
-    
-    y += 5;
+      y += 8;
 
-    // ===== AVERTISSEMENT =====
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(200, 0, 0);
-    doc.text("⚠ IMPORTANT :", margin, y);
-    y += lineHeight;
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    const warnings = [
-      "   • Les accents sont supportés (é, è, ê, à, ù, etc.)",
-      "   • L'IA analysera automatiquement votre document",
-      "   • Toutes les entités seront importées avec leur hiérarchie",
-      "   • Respectez la hiérarchie Filiale → Direction → Service/Département",
-    ];
-    
-    for (const line of warnings) {
-      doc.text(line, margin, y);
-      y += lineHeight;
-    }
+      // Structure hiérarchique
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(23, 32, 48);
+      doc.text("STRUCTURE HIÉRARCHIQUE :", margin, y);
+      y += lineHeight + 3;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      
+      const structure = [
+        "",
+        "NIVEAU 1 - FILIALE",
+        "  └── Filiale 1",
+        "      NIVEAU 2 - DIRECTION",
+        "      ├── Direction Financière",
+        "      │   NIVEAU 3 - SERVICE / DÉPARTEMENT",
+        "      │   ├── Service Comptabilité",
+        "      │   └── Département Audit",
+        "      └── Direction Commerciale",
+        "          ├── Service Client",
+        "          └── Département Marketing",
+        "",
+        "NIVEAU 1 - FILIALE",
+        "  └── Filiale 2",
+        "      NIVEAU 2 - DIRECTION",
+        "      ├── Direction IT",
+        "      │   ├── Service Infrastructure",
+        "      │   ├── Département Sécurité",
+        "      │   └── Service Développement",
+        "      └── Direction RH",
+        "          ├── Service Recrutement",
+        "          └── Département Formation",
+      ];
 
-    // ===== PIED DE PAGE =====
-    y = pageHeight - 15;
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "italic");
-    doc.setTextColor(150, 150, 150);
-    doc.text(
-      `Document généré automatiquement - ${new Date().toLocaleDateString('fr-FR')}`,
-      pageWidth / 2,
-      y,
-      { align: "center" }
-    );
-    
-    // Sauvegarder
-    doc.save('modele_organigramme.pdf');
-    toast.success("📄 Modèle PDF téléchargé avec succès !");
-  } catch (error) {
-    console.error("Erreur lors de la génération du PDF:", error);
-    toast.error("Erreur lors de la génération du PDF. Vérifiez que la bibliothèque jsPDF est installée.");
-  }
-};
-  // ✅ Fonction d'import Excel avec validation hiérarchique
+      if (y + structure.length * lineHeight + 30 > pageHeight - 20) {
+        doc.addPage();
+        y = 25;
+      }
+      
+      for (const line of structure) {
+        if (line.startsWith("NIVEAU") || line.startsWith("  └──") || line.startsWith("      ├──") || line.startsWith("      └──") || line.startsWith("      │")) {
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(23, 32, 48);
+        } else {
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(60, 60, 60);
+        }
+        doc.text(line, margin, y);
+        y += lineHeight;
+      }
+      
+      y += 5;
+
+      // Types d'entités
+      if (y + 60 > pageHeight - 20) {
+        doc.addPage();
+        y = 25;
+      }
+      
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(23, 32, 48);
+      doc.text("TYPES D'ENTITÉS AUTORISÉS :", margin, y);
+      y += lineHeight + 3;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      const types = [
+        "   • FILIALE      → Niveau 1, pas de parent",
+        "   • DIRECTION    → Niveau 2, parent = Filiale",
+        "   • SERVICE      → Niveau 3, parent = Direction",
+        "   • DÉPARTEMENT  → Niveau 3, parent = Direction",
+      ];
+      
+      for (const line of types) {
+        doc.text(line, margin, y);
+        y += lineHeight;
+      }
+      y += 5;
+
+      // Rappel final
+      if (y + 30 > pageHeight - 20) {
+        doc.addPage();
+        y = 25;
+      }
+      
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(23, 32, 48);
+      doc.text("🔑 RAPPEL :", margin, y);
+      y += lineHeight;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      doc.text("   La colonne \"Entité Parente\" doit correspondre EXACTEMENT au nom d'une ligne précédente.", margin + 2, y);
+      y += lineHeight;
+      doc.text("   Respectez la hiérarchie : Filiale → Direction → Service/Département.", margin + 2, y);
+
+      // Pied de page
+      if (y + 20 > pageHeight - 15) {
+        doc.addPage();
+        y = 25;
+      }
+      
+      y = pageHeight - 15;
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(150, 150, 150);
+      doc.text(
+        `Document généré automatiquement - ${new Date().toLocaleDateString('fr-FR')}`,
+        pageWidth / 2,
+        y,
+        { align: "center" }
+      );
+      
+      doc.save('modele_organigramme.pdf');
+      toast.success("📄 Modèle PDF téléchargé avec succès !");
+    } catch (error) {
+      console.error("Erreur lors de la génération du PDF:", error);
+      toast.error("Erreur lors de la génération du PDF. Vérifiez que la bibliothèque jsPDF est installée.");
+    }
+  };
+
+  // Fonction d'import Excel avec validation hiérarchique
   const importExcel = async (rows: any[]) => {
     console.log("📊 Excel - Lignes:", rows.length);
     const insertedEntities: any[] = [];
     const errors: string[] = [];
     
-    // 1. Créer toutes les entités sans parent
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const name = row['Nom']?.trim();
@@ -634,7 +956,6 @@ const downloadPdfTemplate = () => {
         continue;
       }
       
-      // Vérifier que le type est valide
       const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
       if (!validTypes.includes(type)) {
         errors.push(`Ligne ${i+1}: Type "${type}" invalide. Types autorisés: ${validTypes.join(', ')}`);
@@ -666,8 +987,6 @@ const downloadPdfTemplate = () => {
       });
     }
     
-    // 2. Mettre à jour les parents avec la bonne validation
-    // Créer une liste complète des entités (existantes + nouvelles)
     const allEntitiesForValidation = [
       ...entities,
       ...insertedEntities.map(e => ({
@@ -680,7 +999,6 @@ const downloadPdfTemplate = () => {
     
     for (const entity of insertedEntities) {
       if (entity.originalParent) {
-        // Chercher le parent d'abord dans les nouvelles entités, puis dans les existantes
         let parent = insertedEntities.find(e => e.originalName === entity.originalParent);
         let parentId = parent?.id;
         
@@ -690,7 +1008,6 @@ const downloadPdfTemplate = () => {
         }
         
         if (parentId) {
-          // Valider la hiérarchie avec toutes les entités
           const validation = validateHierarchy(entity.originalType, parentId, allEntitiesForValidation);
           if (validation.valid) {
             await (supabase as any).from('organisations')
@@ -706,7 +1023,6 @@ const downloadPdfTemplate = () => {
       }
     }
     
-    // 3. Recharger les entités
     const { data: allEntities } = await (supabase as any).from('organisations').select('*');
     if (allEntities) {
       setEntities(allEntities.map((e: any) => ({
@@ -743,7 +1059,6 @@ const downloadPdfTemplate = () => {
       return;
     }
     
-    // Import Excel
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
@@ -758,7 +1073,9 @@ const downloadPdfTemplate = () => {
     e.target.value = '';
   };
 
-  // ✅ Traitement PDF avec extraction COMPLÈTE de TOUTES les entités
+  // ============================================================
+  // TRAITEMENT PDF AVEC OLLAMA EN LOCAL
+  // ============================================================
   const processFileWithAI = async (file: File) => {
     console.log("🔵 === DÉBUT TRAITEMENT PDF ===");
     console.log("🔵 Fichier:", file.name, "Taille:", file.size);
@@ -768,7 +1085,6 @@ const downloadPdfTemplate = () => {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       
-      // 🔥 EXTRAIRE LE TEXTE DE TOUTES LES PAGES
       let fullText = "";
       console.log(`🔵 Nombre de pages: ${pdf.numPages}`);
       
@@ -784,9 +1100,7 @@ const downloadPdfTemplate = () => {
       let extractedText = fullText;
       console.log(`🔵 Texte total extrait: ${extractedText.length} caractères`);
       console.log("🔵 Début du texte:", extractedText.substring(0, 500));
-      console.log("🔵 Fin du texte:", extractedText.substring(Math.max(0, extractedText.length - 500)));
       
-      // Si pas assez de texte, essayer l'OCR sur la première page
       if (!extractedText || extractedText.trim().length < 50) {
         console.log("🟡 Texte trop court → OCR sur la page 1...");
         const page = await pdf.getPage(1);
@@ -799,287 +1113,295 @@ const downloadPdfTemplate = () => {
         console.log(`🟡 OCR terminé, longueur: ${extractedText.length}`);
       }
       
-      // Nettoyer le texte mais garder la structure
       const cleanText = extractedText
         .replace(/\r/g, ' ')
         .replace(/\t/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       
-      console.log("🔵 Texte nettoyé (début):", cleanText.substring(0, 500));
+      console.log("🔵 Texte nettoyé:", cleanText.substring(0, 800));
       
-      // 🔥 PROMPT TRÈS PRÉCIS POUR EXTRAIRE TOUTES LES ENTITÉS
-      const prompt = `Analyse le texte suivant et extrait TOUTES les entités de l'organigramme.
+      const prompt = `Analyse le texte suivant qui décrit un organigramme.
 
-Texte: "${cleanText.substring(0, 8000)}"
+Texte: """${cleanText.substring(0, 10000)}"""
 
-IDENTIFIE CHAQUE ENTITÉ avec son type et son parent:
+Trouve TOUTES les entités mentionnées dans ce texte et détermine leur type et leur parent.
 
-1. FILIALE: Identifie les entités de niveau 1 (ex: "Filiale 1", "Filiale 2", "Filiale France")
+RÈGLES D'IDENTIFICATION :
+1. Les FILIALES sont les entités de plus haut niveau (ex: "Filiale 1", "Filiale 2", "Filiale France")
    - Parent = null
 
-2. DIRECTION: Identifie les entités sous une Filiale (ex: "Direction 1", "Direction Financière")
+2. Les DIRECTION sont les entités sous une Filiale (ex: "Direction Financière", "Direction Commerciale", "Direction IT")
    - Parent = nom de la Filiale
 
-3. SERVICE: Identifie les entités sous une Direction (ex: "Service 1", "Service Comptabilité")
+3. Les SERVICE sont les entités sous une Direction (ex: "Service Comptabilité", "Service Client", "Service Infrastructure")
    - Parent = nom de la Direction
 
-4. DÉPARTEMENT: Identifie les entités sous une Direction (ex: "Département 1", "Département Audit")
+4. Les DÉPARTEMENT sont les entités sous une Direction (ex: "Département Audit", "Département Marketing")
    - Parent = nom de la Direction
 
-RÈGLES STRICTES:
-- Extrais TOUTES les entités sans exception
-- Ne manque AUCUNE entité
-- Respecte EXACTEMENT les noms
-- Chaque entité doit avoir un nom, un type et un parent
+EXTRACTION SPÉCIFIQUE :
+- Regarde les titres comme "Exemple 1 : Filiale 1" → cela donne une FILIALE
+- Regarde les puces "• Direction Financière" → cela donne une DIRECTION
+- Regarde les puces "• Service Comptabilité" → cela donne un SERVICE
+- Regarde les puces "• Département Audit" → cela donne un DÉPARTEMENT
 
-Retourne UNIQUEMENT un JSON valide avec TOUTES les entités:
+IMPORTANT : Extrais TOUTES les entités, même celles dans les exemples.
+
+Retourne UNIQUEMENT un JSON valide avec toutes les entités trouvées:
 {"entities":[
   {"name":"Filiale 1","type":"FILIALE","parent":null},
-  {"name":"Direction 1","type":"DIRECTION","parent":"Filiale 1"},
-  {"name":"Service 1","type":"SERVICE","parent":"Direction 1"},
-  {"name":"Département 1","type":"DÉPARTEMENT","parent":"Direction 1"},
-  {"name":"Filiale 2","type":"FILIALE","parent":null},
-  {"name":"Direction 2","type":"DIRECTION","parent":"Filiale 2"},
-  {"name":"Service 2","type":"SERVICE","parent":"Direction 2"},
-  {"name":"Département 2","type":"DÉPARTEMENT","parent":"Direction 2"}
+  {"name":"Direction Financière","type":"DIRECTION","parent":"Filiale 1"},
+  {"name":"Service Comptabilité","type":"SERVICE","parent":"Direction Financière"},
+  ...
 ]}
 
 Ne retourne AUCUN autre texte, seulement le JSON.`;
+    
+    console.log("🔵 Envoi à Ollama (http://localhost:11434)...");
+    
+    // ✅ Appel à Ollama en local
+    const response = await fetch("http://localhost:11434/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "mistral",
+        prompt: prompt,
+        options: {
+          temperature: 0.1,
+          num_predict: 3000
+        },
+        stream: false
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("🔴 Erreur HTTP:", errorText);
+      toast.error("Erreur Ollama: " + response.status + ". Vérifiez qu'Ollama tourne bien en local (ollama serve).");
+      return;
+    }
+    
+    const result = await response.json();
+    console.log("🔵 Réponse brute (début):", result.response?.substring(0, 500));
+    
+    let cleanResponse = result.response || '';
+    
+    cleanResponse = cleanResponse.replace(/```json\s*/g, '');
+    cleanResponse = cleanResponse.replace(/```\s*/g, '');
+    
+    const jsonMatches = cleanResponse.match(/\{[\s\S]*\}/g);
+    if (!jsonMatches) {
+      console.error("🔴 Aucun JSON trouvé");
+      toast.error("Format de réponse invalide - Aucun JSON trouvé");
+      return;
+    }
+    
+    let jsonStr = jsonMatches.reduce((a, b) => a.length > b.length ? a : b, '');
+    console.log("🔵 JSON extrait (brut):", jsonStr.substring(0, 500));
+    
+    jsonStr = jsonStr
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+      .replace(/,(\s*[}\]])/g, '$1')
+      .replace(/([{,])(\s*)(\w+)(\s*):/g, '$1"$3":')
+      .replace(/'/g, '"')
+      .replace(/\\"/g, '"')
+      .replace(/\\'/g, "'");
+    
+    console.log("🔵 JSON nettoyé:", jsonStr.substring(0, 500));
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (parseError) {
+      console.error("🔴 Erreur parsing JSON:", parseError);
+      console.log("🔵 Tentative d'extraction manuelle...");
       
-      console.log("🔵 Envoi à Ollama...");
+      const entities = [];
+      const lines = cleanText.split(/[•\n]/g).map(l => l.trim()).filter(l => l.length > 0);
       
-      const response = await fetch("http://localhost:11434/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "mistral",
-          prompt: prompt,
-          options: { 
-            temperature: 0.1,
-            num_predict: 3000
-          },
-          stream: false
-        })
-      });
+      let currentFiliale = null;
+      let currentDirection = null;
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("🔴 Erreur HTTP:", errorText);
-        toast.error("Erreur Ollama: " + response.status);
+      for (const line of lines) {
+        if (line.match(/Filiale\s*\d+/i) || line.match(/Filiale\s+[A-Z]/i)) {
+          const name = line.replace(/Exemple\s*\d+\s*:\s*/i, '').trim();
+          if (name && !entities.find(e => e.name === name && e.type === 'FILIALE')) {
+            entities.push({ name, type: 'FILIALE', parent: null });
+            currentFiliale = name;
+            currentDirection = null;
+          }
+        }
+        else if (line.match(/Direction/i) && !line.match(/Service|Département|DEPT/i)) {
+          const name = line.replace(/[•\-*]\s*/g, '').trim();
+          if (name && currentFiliale && !entities.find(e => e.name === name && e.type === 'DIRECTION')) {
+            entities.push({ name, type: 'DIRECTION', parent: currentFiliale });
+            currentDirection = name;
+          }
+        }
+        else if (line.match(/Service/i) && !line.match(/Direction/i)) {
+          const name = line.replace(/[•\-*]\s*/g, '').trim();
+          if (name && currentDirection && !entities.find(e => e.name === name && e.type === 'SERVICE')) {
+            entities.push({ name, type: 'SERVICE', parent: currentDirection });
+          } else if (name && currentFiliale && !entities.find(e => e.name === name && e.type === 'SERVICE')) {
+            entities.push({ name, type: 'SERVICE', parent: currentFiliale });
+          }
+        }
+        else if (line.match(/Département|DEPT/i)) {
+          const name = line.replace(/[•\-*]\s*/g, '').trim();
+          if (name && currentDirection && !entities.find(e => e.name === name && e.type === 'DÉPARTEMENT')) {
+            entities.push({ name, type: 'DÉPARTEMENT', parent: currentDirection });
+          } else if (name && currentFiliale && !entities.find(e => e.name === name && e.type === 'DÉPARTEMENT')) {
+            entities.push({ name, type: 'DÉPARTEMENT', parent: currentFiliale });
+          }
+        }
+      }
+      
+      if (entities.length > 0) {
+        parsed = { entities };
+        console.log("🔵 Entités extraites manuellement:", parsed);
+      } else {
+        toast.error("Impossible d'extraire les entités du texte");
+        return;
+      }
+    }
+    
+    if (parsed && parsed.entities && parsed.entities.length > 0) {
+      const validEntities = [];
+      const errors = [];
+      const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
+      
+      for (const entity of parsed.entities) {
+        const normalizedType = (entity.type || "DIRECTION").toUpperCase();
+        if (!validTypes.includes(normalizedType)) {
+          errors.push(`Type "${entity.type}" invalide pour "${entity.name}"`);
+          continue;
+        }
+        if (!entity.name || entity.name.trim() === '') {
+          errors.push(`Entité sans nom trouvée`);
+          continue;
+        }
+        validEntities.push({
+          name: entity.name.trim(),
+          type: normalizedType,
+          parent: entity.parent || null
+        });
+      }
+      
+      if (validEntities.length === 0) {
+        toast.error("Aucune entité valide trouvée");
         return;
       }
       
-      const result = await response.json();
-      console.log("🔵 Réponse brute (début):", result.response?.substring(0, 300));
+      console.log(`🔵 ${validEntities.length} entités valides trouvées`);
+      console.log("🔵 Entités:", validEntities.map(e => `${e.name} (${e.type}) -> ${e.parent || 'Racine'}`).join(', '));
       
-      // 🔧 NETTOYAGE DU JSON
-      let cleanResponse = result.response || '';
-      
-      // 1. Enlever les markdown code blocks
-      cleanResponse = cleanResponse.replace(/```json\s*/g, '');
-      cleanResponse = cleanResponse.replace(/```\s*/g, '');
-      
-      // 2. Trouver tout ce qui ressemble à un JSON
-      const jsonMatches = cleanResponse.match(/\{[\s\S]*\}/g);
-      if (!jsonMatches) {
-        console.error("🔴 Aucun JSON trouvé");
-        toast.error("Format de réponse invalide - Aucun JSON trouvé");
-        return;
-      }
-      
-      // 3. Prendre le plus grand match JSON
-      let jsonStr = jsonMatches.reduce((a, b) => a.length > b.length ? a : b, '');
-      console.log("🔵 JSON extrait (brut):", jsonStr.substring(0, 300));
-      
-      // 4. Nettoyer le JSON
-      jsonStr = jsonStr
-        .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-        .replace(/,(\s*[}\]])/g, '$1')
-        .replace(/([{,])(\s*)(\w+)(\s*):/g, '$1"$3":')
-        .replace(/'/g, '"')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'");
-      
-      console.log("🔵 JSON nettoyé:", jsonStr.substring(0, 300));
-      
-      // 5. Parser le JSON
-      let parsed;
-      try {
-        parsed = JSON.parse(jsonStr);
-      } catch (parseError) {
-        console.error("🔴 Erreur parsing JSON:", parseError);
-        console.log("🔵 Tentative de réparation manuelle...");
+      const insertedIds = new Map();
+      for (const entity of validEntities) {
+        const { data, error } = await (supabase as any).from('organisations').insert({
+          name: entity.name,
+          type: entity.type,
+          country_code: 'FR',
+          parent_id: null,
+          pca_referent: 'À définir',
+          referent_contact: null,
+          referent_backup: '—',
+          referent_backup_contact: null,
+          pca_status: 'Non démarré',
+          maturity: 20,
+          sector: 'Général',
+          status: 'ACTIVE',
+        }).select().single();
         
-        // Extraction manuelle des entités
-        const entityMatches = jsonStr.match(/"name"\s*:\s*"([^"]+)"\s*,\s*"type"\s*:\s*"([^"]+)"\s*,\s*"parent"\s*:\s*([^,}]+)/g);
-        if (entityMatches && entityMatches.length > 0) {
-          const entities = entityMatches.map(match => {
-            const nameMatch = match.match(/"name"\s*:\s*"([^"]+)"/);
-            const typeMatch = match.match(/"type"\s*:\s*"([^"]+)"/);
-            const parentMatch = match.match(/"parent"\s*:\s*([^,}]+)/);
-            return {
-              name: nameMatch ? nameMatch[1].trim() : '',
-              type: typeMatch ? typeMatch[1].trim().toUpperCase() : 'DIRECTION',
-              parent: parentMatch ? (parentMatch[1].trim() === 'null' ? null : parentMatch[1].replace(/"/g, '').trim()) : null
-            };
-          }).filter(e => e.name);
-          
-          if (entities.length > 0) {
-            parsed = { entities };
-            console.log("🔵 Entités extraites manuellement:", parsed);
+        if (error) {
+          errors.push(`Erreur insertion ${entity.name}: ${error.message}`);
+          console.error(`❌ Erreur insertion ${entity.name}:`, error);
+          continue;
+        }
+        insertedIds.set(entity.name, data.id);
+        console.log(`✅ Insertion OK: ${entity.name} → ${data.id}`);
+      }
+      
+      const allEntitiesForValidation = [
+        ...entities,
+        ...validEntities.map(e => ({
+          id: insertedIds.get(e.name),
+          name: e.name,
+          type: e.type,
+          parentId: null,
+        } as Entity))
+      ];
+      
+      for (const entity of validEntities) {
+        if (entity.parent && insertedIds.has(entity.parent) && insertedIds.has(entity.name)) {
+          console.log(`🔗 Liaison: ${entity.name} → ${entity.parent}`);
+          const validation = validateHierarchy(
+            entity.type, 
+            insertedIds.get(entity.parent), 
+            allEntitiesForValidation
+          );
+          if (validation.valid) {
+            await (supabase as any).from('organisations')
+              .update({ parent_id: insertedIds.get(entity.parent) })
+              .eq('id', insertedIds.get(entity.name));
+            console.log(`✅ Liaison OK: ${entity.name} → ${entity.parent}`);
           } else {
-            toast.error("Impossible d'extraire les entités du JSON");
-            return;
+            errors.push(`Erreur hiérarchie pour "${entity.name}": ${validation.error}`);
+            console.error(`❌ Erreur hiérarchie: ${entity.name} → ${entity.parent}: ${validation.error}`);
           }
-        } else {
-          toast.error("Impossible de parser le JSON: " + parseError.message);
-          return;
-        }
-      }
-      
-      if (parsed && parsed.entities && parsed.entities.length > 0) {
-        // Valider les entités extraites
-        const validEntities = [];
-        const errors = [];
-        const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
-        
-        for (const entity of parsed.entities) {
-          const normalizedType = (entity.type || "DIRECTION").toUpperCase();
-          if (!validTypes.includes(normalizedType)) {
-            errors.push(`Type "${entity.type}" invalide pour "${entity.name}"`);
-            continue;
-          }
-          if (!entity.name || entity.name.trim() === '') {
-            errors.push(`Entité sans nom trouvée`);
-            continue;
-          }
-          validEntities.push({
-            name: entity.name.trim(),
-            type: normalizedType,
-            parent: entity.parent || null
-          });
-        }
-        
-        if (validEntities.length === 0) {
-          toast.error("Aucune entité valide trouvée");
-          return;
-        }
-        
-        console.log(`🔵 ${validEntities.length} entités valides trouvées`);
-        console.log("🔵 Entités:", validEntities.map(e => `${e.name} (${e.type}) -> ${e.parent || 'Racine'}`).join(', '));
-        
-        // Insérer les entités
-        const insertedIds = new Map();
-        for (const entity of validEntities) {
-          const { data, error } = await (supabase as any).from('organisations').insert({
-            name: entity.name,
-            type: entity.type,
-            country_code: 'FR',
-            parent_id: null,
-            pca_referent: 'À définir',
-            referent_contact: null,
-            referent_backup: '—',
-            referent_backup_contact: null,
-            pca_status: 'Non démarré',
-            maturity: 20,
-            sector: 'Général',
-            status: 'ACTIVE',
-          }).select().single();
-          
-          if (error) {
-            errors.push(`Erreur insertion ${entity.name}: ${error.message}`);
-            console.error(`❌ Erreur insertion ${entity.name}:`, error);
-            continue;
-          }
-          insertedIds.set(entity.name, data.id);
-          console.log(`✅ Insertion OK: ${entity.name} → ${data.id}`);
-        }
-        
-        // Créer une liste complète des entités pour la validation
-        const allEntitiesForValidation = [
-          ...entities,
-          ...validEntities.map(e => ({
-            id: insertedIds.get(e.name),
-            name: e.name,
-            type: e.type,
-            parentId: null,
-          } as Entity))
-        ];
-        
-        // Mettre à jour les parents avec validation
-        for (const entity of validEntities) {
-          if (entity.parent && insertedIds.has(entity.parent) && insertedIds.has(entity.name)) {
-            console.log(`🔗 Liaison: ${entity.name} → ${entity.parent}`);
+        } else if (entity.parent && !insertedIds.has(entity.parent)) {
+          const existingParent = entities.find(e => e.name === entity.parent);
+          if (existingParent) {
+            console.log(`🔗 Liaison avec parent existant: ${entity.name} → ${entity.parent}`);
             const validation = validateHierarchy(
               entity.type, 
-              insertedIds.get(entity.parent), 
+              existingParent.id, 
               allEntitiesForValidation
             );
             if (validation.valid) {
               await (supabase as any).from('organisations')
-                .update({ parent_id: insertedIds.get(entity.parent) })
+                .update({ parent_id: existingParent.id })
                 .eq('id', insertedIds.get(entity.name));
-              console.log(`✅ Liaison OK: ${entity.name} → ${entity.parent}`);
+              console.log(`✅ Liaison OK avec parent existant: ${entity.name} → ${entity.parent}`);
             } else {
-              errors.push(`Erreur hiérarchie pour "${entity.name}": ${validation.error}`);
-              console.error(`❌ Erreur hiérarchie: ${entity.name} → ${entity.parent}: ${validation.error}`);
-            }
-          } else if (entity.parent && !insertedIds.has(entity.parent)) {
-            // Vérifier si le parent existe déjà dans la base
-            const existingParent = entities.find(e => e.name === entity.parent);
-            if (existingParent) {
-              console.log(`🔗 Liaison avec parent existant: ${entity.name} → ${entity.parent}`);
-              const validation = validateHierarchy(
-                entity.type, 
-                existingParent.id, 
-                allEntitiesForValidation
-              );
-              if (validation.valid) {
-                await (supabase as any).from('organisations')
-                  .update({ parent_id: existingParent.id })
-                  .eq('id', insertedIds.get(entity.name));
-                console.log(`✅ Liaison OK avec parent existant: ${entity.name} → ${entity.parent}`);
-              } else {
-                errors.push(`Erreur hiérarchie pour "${entity.name}" avec parent existant: ${validation.error}`);
-              }
+              errors.push(`Erreur hiérarchie pour "${entity.name}" avec parent existant: ${validation.error}`);
             }
           }
         }
-        
-        // Recharger les entités
-        const { data: allEntities } = await (supabase as any).from('organisations').select('*');
-        if (allEntities) {
-          setEntities(allEntities.map((e: any) => ({
-            id: e.id,
-            name: e.name,
-            type: e.type,
-            country: e.country_code,
-            parentId: e.parent_id,
-            referent: e.pca_referent || '—',
-            referentContact: e.referent_contact,
-            referentBackup: e.referent_backup || '—',
-            suppleantContact: e.referent_backup_contact,
-            status: 'Actif',
-            pcaStatus: e.pca_status || 'Non démarré',
-            maturity: e.maturity || 20,
-          })));
-        }
-        
-        if (errors.length > 0) {
-          toast.warning(`${validEntities.length} entités importées avec ${errors.length} erreurs: ${errors.join(', ')}`);
-        } else {
-          toast.success(`✅ ${validEntities.length} entités importées en ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-        }
-      } else {
-        toast.error("Aucune entité trouvée dans le PDF");
       }
-    } catch (err: any) {
-      console.error("🔴 ERREUR COMPLÈTE:", err);
-      toast.error(`❌ Erreur: ${err.message}`);
+      
+      const { data: allEntities } = await (supabase as any).from('organisations').select('*');
+      if (allEntities) {
+        setEntities(allEntities.map((e: any) => ({
+          id: e.id,
+          name: e.name,
+          type: e.type,
+          country: e.country_code,
+          parentId: e.parent_id,
+          referent: e.pca_referent || '—',
+          referentContact: e.referent_contact,
+          referentBackup: e.referent_backup || '—',
+          suppleantContact: e.referent_backup_contact,
+          status: 'Actif',
+          pcaStatus: e.pca_status || 'Non démarré',
+          maturity: e.maturity || 20,
+        })));
+      }
+      
+      if (errors.length > 0) {
+        toast.warning(`${validEntities.length} entités importées avec ${errors.length} erreurs: ${errors.join(', ')}`);
+      } else {
+        toast.success(`✅ ${validEntities.length} entités importées en ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+      }
+    } else {
+      toast.error("Aucune entité trouvée dans le PDF");
     }
-    console.log("🔵 === FIN TRAITEMENT PDF ===");
-  };
+  } catch (err: any) {
+    console.error("🔴 ERREUR COMPLÈTE:", err);
+    toast.error(`❌ Erreur: ${err.message}`);
+  }
+  console.log("🔵 === FIN TRAITEMENT PDF ===");
+};
 
   const navigateToInventory = () => {
     if (panelEntity && isLowLevel(panelEntity.type)) {
@@ -1088,7 +1410,7 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
     }
   };
 
-  // ✅ Rendu des enfants dans le panneau de droite - VERSION AMÉLIORÉE
+  // Rendu des enfants dans le panneau de droite
   const renderChildren = (children: Entity[], parentType?: string) => {
     if (children.length === 0) return null;
     
@@ -1096,7 +1418,6 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
     const departments = children.filter(c => c.type?.toUpperCase() === "DÉPARTEMENT");
     const directions = children.filter(c => c.type?.toUpperCase() === "DIRECTION");
     
-    // Si on est dans une Filiale, on affiche les Directions
     if (parentType && isFiliale(parentType)) {
       return (
         <div className="space-y-2">
@@ -1124,7 +1445,6 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
       );
     }
     
-    // Si on est dans une Direction, on affiche Services et Départements
     if (parentType && isDirection(parentType)) {
       return (
         <div className="space-y-3">
@@ -1193,7 +1513,6 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
       );
     }
     
-    // Fallback : affichage générique
     return (
       <div className="space-y-2">
         {children.map(c => (
@@ -1322,6 +1641,7 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
                         <div><span className="text-muted-foreground">Coordonnées suppléant :</span> <span className="font-medium">{(panelEntity as any).suppleantContact || "—"}</span></div>
                       </div>
                     </div>
+                    
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4>
@@ -1333,7 +1653,6 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
                       <p className="text-xs text-muted-foreground">{m < 50 ? "Niveau faible — actions urgentes requises" : m < 75 ? "Niveau intermédiaire — améliorations recommandées" : "Niveau élevé — bonne maturité"}</p>
                     </div>
 
-                    {/* Affichage des enfants selon le type - VERSION AMÉLIORÉE */}
                     {isFil && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -1374,7 +1693,6 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
                           </div>
                         )}
                         
-                        {/* Processus directement attachés à la Direction */}
                         {panelProcesses.length > 0 && (
                           <div className="mt-4 space-y-2">
                             <div className="flex items-center justify-between">
