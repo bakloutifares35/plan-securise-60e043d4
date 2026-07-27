@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Building2, Trash2, Pencil, Save, X, ExternalLink, FileText } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Building2, Trash2, Pencil, Save, X, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -327,6 +327,13 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [form, setForm] = useState<FormState>(emptyForm);
+  
+  // ============================================================
+  // ÉTAT POUR LE TRAITEMENT PDF
+  // ============================================================
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
+  const [processingStep, setProcessingStep] = useState<string>("");
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const tree = buildTree(entities);
   const panelEntity = entities.find((e) => e.id === panelId) || null;
@@ -394,18 +401,86 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     toast.success("Entité créée et sauvegardée");
   };
 
+  // ============================================================
+  // handleDelete CORRIGÉ AVEC DONNÉES FRAÎCHES
+  // ============================================================
   const handleDelete = async (id: string) => {
-    if (!can("admin")) { toast.error("Action réservée à l'administrateur"); return; }
+    if (!can("admin")) { 
+      toast.error("Action réservée à l'administrateur"); 
+      return; 
+    }
+
+    // Demander confirmation à l'utilisateur
+    const entityName = entities.find(e => e.id === id)?.name || id;
+    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${entityName}" et toutes ses entités filles ?`)) {
+      return;
+    }
+
+    // 1. Récupérer les entités FRAÎCHES depuis la base pour un calcul de cascade fiable
+    const { data: freshEntities, error: fetchError } = await (supabase as any)
+      .from('organisations')
+      .select('id, parent_id');
+    
+    if (fetchError) {
+      toast.error("Erreur lors de la vérification des entités liées : " + fetchError.message);
+      return;
+    }
+    
+    // 2. Calculer la cascade avec les données fraîches
     const toRemove = new Set<string>([id]);
     let changed = true;
     while (changed) {
       changed = false;
-      for (const e of entities) if (e.parentId && toRemove.has(e.parentId) && !toRemove.has(e.id)) { toRemove.add(e.id); changed = true; }
+      for (const e of freshEntities) {
+        if (e.parent_id && toRemove.has(e.parent_id) && !toRemove.has(e.id)) {
+          toRemove.add(e.id);
+          changed = true;
+        }
+      }
     }
-    await (supabase as any).from('organisations').delete().in('id', Array.from(toRemove));
-    setEntities(entities.filter((e) => !toRemove.has(e.id)));
-    if (panelId && toRemove.has(panelId)) { setPanelId(null); setEditing(false); }
-    toast.success("Entité supprimée");
+    
+    console.log(`🗑️ Suppression en cascade de ${toRemove.size} entité(s):`, Array.from(toRemove));
+    
+    // 3. Supprimer toutes les entités en cascade
+    const { error: deleteError } = await (supabase as any)
+      .from('organisations')
+      .delete()
+      .in('id', Array.from(toRemove));
+    
+    if (deleteError) {
+      toast.error("Erreur lors de la suppression : " + deleteError.message);
+      return;
+    }
+    
+    // 4. Recharger l'état local depuis la base après suppression
+    const { data: remainingEntities } = await (supabase as any)
+      .from('organisations')
+      .select('*');
+    
+    if (remainingEntities) {
+      setEntities(remainingEntities.map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        country: e.country_code,
+        parentId: e.parent_id,
+        referent: e.pca_referent || '—',
+        referentContact: e.referent_contact,
+        referentBackup: e.referent_backup || '—',
+        suppleantContact: e.referent_backup_contact,
+        status: 'Actif',
+        pcaStatus: e.pca_status || 'Non démarré',
+        maturity: e.maturity || 20,
+      })));
+    }
+    
+    // 5. Fermer le panneau si l'entité supprimée était affichée
+    if (panelId && toRemove.has(panelId)) { 
+      setPanelId(null); 
+      setEditing(false); 
+    }
+    
+    toast.success(`${toRemove.size} entité(s) supprimée(s) avec succès`);
   };
 
   const openPanel = (id: string) => {
@@ -939,11 +1014,15 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     }
   };
 
-  // Fonction d'import Excel avec validation hiérarchique
+  // ============================================================
+  // IMPORT EXCEL TRANSACTIONNEL
+  // ============================================================
   const importExcel = async (rows: any[]) => {
     console.log("📊 Excel - Lignes:", rows.length);
-    const insertedEntities: any[] = [];
-    const errors: string[] = [];
+    
+    // 1. VALIDATION DE TOUTES LES LIGNES
+    const validationErrors: string[] = [];
+    const validRows: any[] = [];
     
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -952,41 +1031,90 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       const parentName = row['Entité Parente']?.trim() || null;
       
       if (!name) {
-        errors.push(`Ligne ${i+1}: Nom manquant`);
+        validationErrors.push(`Ligne ${i+1}: Nom manquant`);
         continue;
       }
       
       const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
       if (!validTypes.includes(type)) {
-        errors.push(`Ligne ${i+1}: Type "${type}" invalide. Types autorisés: ${validTypes.join(', ')}`);
+        validationErrors.push(`Ligne ${i+1}: Type "${type}" invalide. Types autorisés: ${validTypes.join(', ')}`);
         continue;
       }
       
+      // Vérifier que le parent existe (si spécifié)
+      if (parentName) {
+        // On vérifiera après avoir les noms de toutes les lignes
+        // On stocke juste pour validation ultérieure
+      }
+      
+      validRows.push({
+        index: i,
+        name,
+        type,
+        parentName,
+        country: row['Pays']?.trim() || 'FR',
+        referent: row['Référent PCA']?.trim() || '—',
+        referentContact: row['Coordonnées référent']?.trim() || null,
+        suppleant: row['Suppléant']?.trim() || '—',
+        suppleantContact: row['Coordonnées suppléant']?.trim() || null,
+      });
+    }
+    
+    // 2. VÉRIFIER QUE TOUS LES PARENTS EXISTENT
+    const allNames = new Set(validRows.map(r => r.name));
+    for (const row of validRows) {
+      if (row.parentName && !allNames.has(row.parentName)) {
+        const existingParent = entities.find(e => e.name === row.parentName);
+        if (!existingParent) {
+          validationErrors.push(`Ligne ${row.index+1}: Entité parente "${row.parentName}" non trouvée (doit être une ligne existante dans le fichier ou déjà en base)`);
+        }
+      }
+    }
+    
+    // 3. SI ERREURS → AFFICHER TOUT ET S'ARRÊTER
+    if (validationErrors.length > 0) {
+      const errorMessage = validationErrors.join('\n');
+      toast.error(`❌ ${validationErrors.length} erreur(s) de validation:\n${errorMessage}`, {
+        duration: 8000,
+        style: { whiteSpace: 'pre-wrap' }
+      });
+      return;
+    }
+    
+    // 4. TOUT EST VALIDE → INSERTION
+    const insertedEntities: any[] = [];
+    const errors: string[] = [];
+    
+    for (const row of validRows) {
       const { data: inserted, error } = await (supabase as any).from('organisations').insert({
-        name: name,
-        type: type,
-        country_code: row['Pays']?.trim() || 'FR',
+        name: row.name,
+        type: row.type,
+        country_code: row.country,
         parent_id: null,
-        pca_referent: row['Référent PCA']?.trim() || '—',
-        referent_contact: row['Coordonnées référent']?.trim() || null,
-        referent_backup: row['Suppléant']?.trim() || '—',
-        referent_backup_contact: row['Coordonnées suppléant']?.trim() || null,
-        pca_status: 'Non démarré', maturity: 20, sector: 'Général', status: 'ACTIVE',
+        pca_referent: row.referent,
+        referent_contact: row.referentContact,
+        referent_backup: row.suppleant,
+        referent_backup_contact: row.suppleantContact,
+        pca_status: 'Non démarré',
+        maturity: 20,
+        sector: 'Général',
+        status: 'ACTIVE',
       }).select().single();
       
       if (error) {
-        errors.push(`Ligne ${i+1}: ${error.message}`);
+        errors.push(`Ligne ${row.index+1}: ${error.message}`);
         continue;
       }
       
       insertedEntities.push({
         ...inserted,
-        originalName: name,
-        originalType: type,
-        originalParent: parentName,
+        originalName: row.name,
+        originalType: row.type,
+        originalParent: row.parentName,
       });
     }
     
+    // 5. METTRE À JOUR LES PARENTS
     const allEntitiesForValidation = [
       ...entities,
       ...insertedEntities.map(e => ({
@@ -1017,12 +1145,11 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
           } else {
             errors.push(`Ligne pour "${entity.originalName}": ${validation.error}`);
           }
-        } else {
-          errors.push(`Ligne pour "${entity.originalName}": Entité parente "${entity.originalParent}" non trouvée`);
         }
       }
     }
     
+    // 6. RECHARGER LES ENTITÉS
     const { data: allEntities } = await (supabase as any).from('organisations').select('*');
     if (allEntities) {
       setEntities(allEntities.map((e: any) => ({
@@ -1044,6 +1171,9 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    // Stocker le fichier pour réessayer
+    setPendingFile(file);
     console.log("📁 Import du fichier:", file.name, "Type:", file.type);
     
     if (file.type === "application/pdf") {
@@ -1074,14 +1204,17 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   };
 
   // ============================================================
-  // TRAITEMENT PDF AVEC OLLAMA EN LOCAL
+  // TRAITEMENT PDF AVEC GROQ (via Supabase Edge Function)
   // ============================================================
   const processFileWithAI = async (file: File) => {
-    console.log("🔵 === DÉBUT TRAITEMENT PDF ===");
-    console.log("🔵 Fichier:", file.name, "Taille:", file.size);
-    const startTime = Date.now();
+    // État de chargement
+    setIsProcessingPdf(true);
+    let loadingToast: string | number | undefined;
     
     try {
+      // Étape 1: Extraction du texte
+      loadingToast = toast.loading("📄 Extraction du texte...");
+      
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       
@@ -1101,7 +1234,9 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       console.log(`🔵 Texte total extrait: ${extractedText.length} caractères`);
       console.log("🔵 Début du texte:", extractedText.substring(0, 500));
       
+      // OCR si pas de texte
       if (!extractedText || extractedText.trim().length < 50) {
+        toast.loading("🔍 OCR en cours (document scanné)...", { id: loadingToast });
         console.log("🟡 Texte trop court → OCR sur la page 1...");
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: 2.0 });
@@ -1121,287 +1256,278 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       
       console.log("🔵 Texte nettoyé:", cleanText.substring(0, 800));
       
-      const prompt = `Analyse le texte suivant qui décrit un organigramme.
-
-Texte: """${cleanText.substring(0, 10000)}"""
-
-Trouve TOUTES les entités mentionnées dans ce texte et détermine leur type et leur parent.
-
-RÈGLES D'IDENTIFICATION :
-1. Les FILIALES sont les entités de plus haut niveau (ex: "Filiale 1", "Filiale 2", "Filiale France")
-   - Parent = null
-
-2. Les DIRECTION sont les entités sous une Filiale (ex: "Direction Financière", "Direction Commerciale", "Direction IT")
-   - Parent = nom de la Filiale
-
-3. Les SERVICE sont les entités sous une Direction (ex: "Service Comptabilité", "Service Client", "Service Infrastructure")
-   - Parent = nom de la Direction
-
-4. Les DÉPARTEMENT sont les entités sous une Direction (ex: "Département Audit", "Département Marketing")
-   - Parent = nom de la Direction
-
-EXTRACTION SPÉCIFIQUE :
-- Regarde les titres comme "Exemple 1 : Filiale 1" → cela donne une FILIALE
-- Regarde les puces "• Direction Financière" → cela donne une DIRECTION
-- Regarde les puces "• Service Comptabilité" → cela donne un SERVICE
-- Regarde les puces "• Département Audit" → cela donne un DÉPARTEMENT
-
-IMPORTANT : Extrais TOUTES les entités, même celles dans les exemples.
-
-Retourne UNIQUEMENT un JSON valide avec toutes les entités trouvées:
-{"entities":[
-  {"name":"Filiale 1","type":"FILIALE","parent":null},
-  {"name":"Direction Financière","type":"DIRECTION","parent":"Filiale 1"},
-  {"name":"Service Comptabilité","type":"SERVICE","parent":"Direction Financière"},
-  ...
-]}
-
-Ne retourne AUCUN autre texte, seulement le JSON.`;
-    
-    console.log("🔵 Envoi à Ollama (http://localhost:11434)...");
-    
-    // ✅ Appel à Ollama en local
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "mistral",
-        prompt: prompt,
-        options: {
-          temperature: 0.1,
-          num_predict: 3000
-        },
-        stream: false
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("🔴 Erreur HTTP:", errorText);
-      toast.error("Erreur Ollama: " + response.status + ". Vérifiez qu'Ollama tourne bien en local (ollama serve).");
-      return;
-    }
-    
-    const result = await response.json();
-    console.log("🔵 Réponse brute (début):", result.response?.substring(0, 500));
-    
-    let cleanResponse = result.response || '';
-    
-    cleanResponse = cleanResponse.replace(/```json\s*/g, '');
-    cleanResponse = cleanResponse.replace(/```\s*/g, '');
-    
-    const jsonMatches = cleanResponse.match(/\{[\s\S]*\}/g);
-    if (!jsonMatches) {
-      console.error("🔴 Aucun JSON trouvé");
-      toast.error("Format de réponse invalide - Aucun JSON trouvé");
-      return;
-    }
-    
-    let jsonStr = jsonMatches.reduce((a, b) => a.length > b.length ? a : b, '');
-    console.log("🔵 JSON extrait (brut):", jsonStr.substring(0, 500));
-    
-    jsonStr = jsonStr
-      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-      .replace(/,(\s*[}\]])/g, '$1')
-      .replace(/([{,])(\s*)(\w+)(\s*):/g, '$1"$3":')
-      .replace(/'/g, '"')
-      .replace(/\\"/g, '"')
-      .replace(/\\'/g, "'");
-    
-    console.log("🔵 JSON nettoyé:", jsonStr.substring(0, 500));
-    
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch (parseError) {
-      console.error("🔴 Erreur parsing JSON:", parseError);
-      console.log("🔵 Tentative d'extraction manuelle...");
+      // Étape 2: Appel à l'Edge Function Groq
+      toast.loading("🧠 Analyse par l'IA en cours...", { id: loadingToast });
+      console.log("🔵 Envoi à l'Edge Function Groq...");
       
-      const entities = [];
-      const lines = cleanText.split(/[•\n]/g).map(l => l.trim()).filter(l => l.length > 0);
-      
-      let currentFiliale = null;
-      let currentDirection = null;
-      
-      for (const line of lines) {
-        if (line.match(/Filiale\s*\d+/i) || line.match(/Filiale\s+[A-Z]/i)) {
-          const name = line.replace(/Exemple\s*\d+\s*:\s*/i, '').trim();
-          if (name && !entities.find(e => e.name === name && e.type === 'FILIALE')) {
-            entities.push({ name, type: 'FILIALE', parent: null });
-            currentFiliale = name;
-            currentDirection = null;
-          }
-        }
-        else if (line.match(/Direction/i) && !line.match(/Service|Département|DEPT/i)) {
-          const name = line.replace(/[•\-*]\s*/g, '').trim();
-          if (name && currentFiliale && !entities.find(e => e.name === name && e.type === 'DIRECTION')) {
-            entities.push({ name, type: 'DIRECTION', parent: currentFiliale });
-            currentDirection = name;
-          }
-        }
-        else if (line.match(/Service/i) && !line.match(/Direction/i)) {
-          const name = line.replace(/[•\-*]\s*/g, '').trim();
-          if (name && currentDirection && !entities.find(e => e.name === name && e.type === 'SERVICE')) {
-            entities.push({ name, type: 'SERVICE', parent: currentDirection });
-          } else if (name && currentFiliale && !entities.find(e => e.name === name && e.type === 'SERVICE')) {
-            entities.push({ name, type: 'SERVICE', parent: currentFiliale });
-          }
-        }
-        else if (line.match(/Département|DEPT/i)) {
-          const name = line.replace(/[•\-*]\s*/g, '').trim();
-          if (name && currentDirection && !entities.find(e => e.name === name && e.type === 'DÉPARTEMENT')) {
-            entities.push({ name, type: 'DÉPARTEMENT', parent: currentDirection });
-          } else if (name && currentFiliale && !entities.find(e => e.name === name && e.type === 'DÉPARTEMENT')) {
-            entities.push({ name, type: 'DÉPARTEMENT', parent: currentFiliale });
-          }
-        }
-      }
-      
-      if (entities.length > 0) {
-        parsed = { entities };
-        console.log("🔵 Entités extraites manuellement:", parsed);
-      } else {
-        toast.error("Impossible d'extraire les entités du texte");
+      const { data, error } = await supabase.functions.invoke('groq-extract', {
+        body: { text: cleanText.substring(0, 10000) }
+      });
+
+      if (error) {
+        console.error("🔴 Erreur Edge Function:", error);
+        toast.error("Erreur lors de l'analyse du document : " + error.message, { id: loadingToast });
+        setIsProcessingPdf(false);
+        setProcessingStep("");
         return;
       }
-    }
-    
-    if (parsed && parsed.entities && parsed.entities.length > 0) {
-      const validEntities = [];
-      const errors = [];
-      const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
-      
-      for (const entity of parsed.entities) {
-        const normalizedType = (entity.type || "DIRECTION").toUpperCase();
-        if (!validTypes.includes(normalizedType)) {
-          errors.push(`Type "${entity.type}" invalide pour "${entity.name}"`);
-          continue;
-        }
-        if (!entity.name || entity.name.trim() === '') {
-          errors.push(`Entité sans nom trouvée`);
-          continue;
-        }
-        validEntities.push({
-          name: entity.name.trim(),
-          type: normalizedType,
-          parent: entity.parent || null
-        });
+
+      if (!data || !data.response) {
+        toast.error("Aucune réponse de l'IA. Vérifiez que la Edge Function est bien déployée.", { id: loadingToast });
+        setIsProcessingPdf(false);
+        setProcessingStep("");
+        return;
       }
+
+      const result = { response: data.response };
+      console.log("🔵 Réponse brute (début):", result.response?.substring(0, 500));
       
-      if (validEntities.length === 0) {
-        toast.error("Aucune entité valide trouvée");
+      // Nettoyage du JSON
+      let cleanResponse = result.response || '';
+      cleanResponse = cleanResponse.replace(/```json\s*/g, '');
+      cleanResponse = cleanResponse.replace(/```\s*/g, '');
+      
+      const jsonMatches = cleanResponse.match(/\{[\s\S]*\}/g);
+      if (!jsonMatches) {
+        console.error("🔴 Aucun JSON trouvé");
+        toast.error("L'IA n'a pas pu structurer ce document. Essayez de reformuler le PDF avec des puces claires ou utilisez le modèle Excel.", { id: loadingToast });
+        setIsProcessingPdf(false);
+        setProcessingStep("");
         return;
       }
       
-      console.log(`🔵 ${validEntities.length} entités valides trouvées`);
-      console.log("🔵 Entités:", validEntities.map(e => `${e.name} (${e.type}) -> ${e.parent || 'Racine'}`).join(', '));
+      let jsonStr = jsonMatches.reduce((a, b) => a.length > b.length ? a : b, '');
+      console.log("🔵 JSON extrait (brut):", jsonStr.substring(0, 500));
       
-      const insertedIds = new Map();
-      for (const entity of validEntities) {
-        const { data, error } = await (supabase as any).from('organisations').insert({
-          name: entity.name,
-          type: entity.type,
-          country_code: 'FR',
-          parent_id: null,
-          pca_referent: 'À définir',
-          referent_contact: null,
-          referent_backup: '—',
-          referent_backup_contact: null,
-          pca_status: 'Non démarré',
-          maturity: 20,
-          sector: 'Général',
-          status: 'ACTIVE',
-        }).select().single();
+      jsonStr = jsonStr
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+        .replace(/,(\s*[}\]])/g, '$1')
+        .replace(/([{,])(\s*)(\w+)(\s*):/g, '$1"$3":')
+        .replace(/'/g, '"')
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'");
+      
+      console.log("🔵 JSON nettoyé:", jsonStr.substring(0, 500));
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (parseError) {
+        console.error("🔴 Erreur parsing JSON:", parseError);
         
-        if (error) {
-          errors.push(`Erreur insertion ${entity.name}: ${error.message}`);
-          console.error(`❌ Erreur insertion ${entity.name}:`, error);
-          continue;
+        // SECOND APPEL EN MODE SIMPLIFIÉ
+        toast.loading("🔄 Second essai d'analyse...", { id: loadingToast });
+        
+        // Appel simplifié pour extraire juste les noms et niveaux
+        const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke('groq-extract', {
+          body: { 
+            text: `Extrais uniquement les noms d'entités et leur niveau hiérarchique du texte suivant. Retourne un JSON avec la liste des entités.
+
+Texte: """${cleanText.substring(0, 5000)}"""
+
+Retourne: {"entities": [{"name": "Nom de l'entité", "level": 1}, ...]}
+- level 1 = Filiale (niveau le plus haut)
+- level 2 = Direction
+- level 3 = Service ou Département
+
+Ne retourne que le JSON.`
+          }
+        });
+        
+        if (!fallbackError && fallbackData && fallbackData.response) {
+          const fallbackClean = fallbackData.response
+            .replace(/```json\s*/g, '')
+            .replace(/```\s*/g, '');
+          
+          try {
+            const fallbackParsed = JSON.parse(fallbackClean);
+            if (fallbackParsed && fallbackParsed.entities && fallbackParsed.entities.length > 0) {
+              // Convertir les niveaux en types
+              const entities = fallbackParsed.entities.map((e: any) => {
+                let type = "SERVICE";
+                if (e.level === 1) type = "FILIALE";
+                else if (e.level === 2) type = "DIRECTION";
+                else if (e.level === 3) type = "SERVICE";
+                return { name: e.name, type, parent: null };
+              });
+              parsed = { entities };
+              console.log("🔵 Entités extraites par fallback:", parsed);
+            }
+          } catch (e) {
+            console.error("🔴 Fallback échoué:", e);
+          }
         }
-        insertedIds.set(entity.name, data.id);
-        console.log(`✅ Insertion OK: ${entity.name} → ${data.id}`);
+        
+        if (!parsed) {
+          toast.error("L'IA n'a pas pu structurer ce document. Essayez de reformuler le PDF avec des puces claires ou utilisez le modèle Excel.", { id: loadingToast });
+          setIsProcessingPdf(false);
+          setProcessingStep("");
+          return;
+        }
       }
       
-      const allEntitiesForValidation = [
-        ...entities,
-        ...validEntities.map(e => ({
-          id: insertedIds.get(e.name),
-          name: e.name,
-          type: e.type,
-          parentId: null,
-        } as Entity))
-      ];
-      
-      for (const entity of validEntities) {
-        if (entity.parent && insertedIds.has(entity.parent) && insertedIds.has(entity.name)) {
-          console.log(`🔗 Liaison: ${entity.name} → ${entity.parent}`);
-          const validation = validateHierarchy(
-            entity.type, 
-            insertedIds.get(entity.parent), 
-            allEntitiesForValidation
-          );
-          if (validation.valid) {
-            await (supabase as any).from('organisations')
-              .update({ parent_id: insertedIds.get(entity.parent) })
-              .eq('id', insertedIds.get(entity.name));
-            console.log(`✅ Liaison OK: ${entity.name} → ${entity.parent}`);
-          } else {
-            errors.push(`Erreur hiérarchie pour "${entity.name}": ${validation.error}`);
-            console.error(`❌ Erreur hiérarchie: ${entity.name} → ${entity.parent}: ${validation.error}`);
+      if (parsed && parsed.entities && parsed.entities.length > 0) {
+        toast.loading("💾 Import des entités...", { id: loadingToast });
+        
+        const validEntities = [];
+        const errors = [];
+        const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
+        
+        // Déterminer les parents automatiquement
+        let currentFiliale = null;
+        let currentDirection = null;
+        
+        for (const entity of parsed.entities) {
+          const normalizedType = (entity.type || "SERVICE").toUpperCase();
+          if (!validTypes.includes(normalizedType)) {
+            errors.push(`Type "${entity.type}" invalide pour "${entity.name}"`);
+            continue;
           }
-        } else if (entity.parent && !insertedIds.has(entity.parent)) {
-          const existingParent = entities.find(e => e.name === entity.parent);
-          if (existingParent) {
-            console.log(`🔗 Liaison avec parent existant: ${entity.name} → ${entity.parent}`);
+          if (!entity.name || entity.name.trim() === '') {
+            errors.push(`Entité sans nom trouvée`);
+            continue;
+          }
+          
+          // Déterminer le parent
+          let parent = null;
+          if (normalizedType === "FILIALE") {
+            currentFiliale = entity.name;
+            currentDirection = null;
+          } else if (normalizedType === "DIRECTION") {
+            parent = currentFiliale;
+            currentDirection = entity.name;
+          } else if (["SERVICE", "DÉPARTEMENT"].includes(normalizedType)) {
+            parent = currentDirection || currentFiliale;
+          }
+          
+          validEntities.push({
+            name: entity.name.trim(),
+            type: normalizedType,
+            parent: entity.parent || parent
+          });
+        }
+        
+        if (validEntities.length === 0) {
+          toast.error("Aucune entité valide trouvée", { id: loadingToast });
+          setIsProcessingPdf(false);
+          setProcessingStep("");
+          return;
+        }
+        
+        console.log(`🔵 ${validEntities.length} entités valides trouvées`);
+        console.log("🔵 Entités:", validEntities.map(e => `${e.name} (${e.type}) -> ${e.parent || 'Racine'}`).join(', '));
+        
+        // Insertion en base
+        const insertedIds = new Map();
+        for (const entity of validEntities) {
+          const { data, error } = await (supabase as any).from('organisations').insert({
+            name: entity.name,
+            type: entity.type,
+            country_code: 'FR',
+            parent_id: null,
+            pca_referent: 'À définir',
+            referent_contact: null,
+            referent_backup: '—',
+            referent_backup_contact: null,
+            pca_status: 'Non démarré',
+            maturity: 20,
+            sector: 'Général',
+            status: 'ACTIVE',
+          }).select().single();
+          
+          if (error) {
+            errors.push(`Erreur insertion ${entity.name}: ${error.message}`);
+            console.error(`❌ Erreur insertion ${entity.name}:`, error);
+            continue;
+          }
+          insertedIds.set(entity.name, data.id);
+          console.log(`✅ Insertion OK: ${entity.name} → ${data.id}`);
+        }
+        
+        // Mise à jour des parents
+        const allEntitiesForValidation = [
+          ...entities,
+          ...validEntities.map(e => ({
+            id: insertedIds.get(e.name),
+            name: e.name,
+            type: e.type,
+            parentId: null,
+          } as Entity))
+        ];
+        
+        for (const entity of validEntities) {
+          if (entity.parent && insertedIds.has(entity.parent) && insertedIds.has(entity.name)) {
+            console.log(`🔗 Liaison: ${entity.name} → ${entity.parent}`);
             const validation = validateHierarchy(
               entity.type, 
-              existingParent.id, 
+              insertedIds.get(entity.parent), 
               allEntitiesForValidation
             );
             if (validation.valid) {
               await (supabase as any).from('organisations')
-                .update({ parent_id: existingParent.id })
+                .update({ parent_id: insertedIds.get(entity.parent) })
                 .eq('id', insertedIds.get(entity.name));
-              console.log(`✅ Liaison OK avec parent existant: ${entity.name} → ${entity.parent}`);
+              console.log(`✅ Liaison OK: ${entity.name} → ${entity.parent}`);
             } else {
-              errors.push(`Erreur hiérarchie pour "${entity.name}" avec parent existant: ${validation.error}`);
+              errors.push(`Erreur hiérarchie pour "${entity.name}": ${validation.error}`);
+              console.error(`❌ Erreur hiérarchie: ${entity.name} → ${entity.parent}: ${validation.error}`);
+            }
+          } else if (entity.parent && !insertedIds.has(entity.parent)) {
+            const existingParent = entities.find(e => e.name === entity.parent);
+            if (existingParent) {
+              console.log(`🔗 Liaison avec parent existant: ${entity.name} → ${entity.parent}`);
+              const validation = validateHierarchy(
+                entity.type, 
+                existingParent.id, 
+                allEntitiesForValidation
+              );
+              if (validation.valid) {
+                await (supabase as any).from('organisations')
+                  .update({ parent_id: existingParent.id })
+                  .eq('id', insertedIds.get(entity.name));
+                console.log(`✅ Liaison OK avec parent existant: ${entity.name} → ${entity.parent}`);
+              } else {
+                errors.push(`Erreur hiérarchie pour "${entity.name}" avec parent existant: ${validation.error}`);
+              }
             }
           }
         }
-      }
-      
-      const { data: allEntities } = await (supabase as any).from('organisations').select('*');
-      if (allEntities) {
-        setEntities(allEntities.map((e: any) => ({
-          id: e.id,
-          name: e.name,
-          type: e.type,
-          country: e.country_code,
-          parentId: e.parent_id,
-          referent: e.pca_referent || '—',
-          referentContact: e.referent_contact,
-          referentBackup: e.referent_backup || '—',
-          suppleantContact: e.referent_backup_contact,
-          status: 'Actif',
-          pcaStatus: e.pca_status || 'Non démarré',
-          maturity: e.maturity || 20,
-        })));
-      }
-      
-      if (errors.length > 0) {
-        toast.warning(`${validEntities.length} entités importées avec ${errors.length} erreurs: ${errors.join(', ')}`);
+        
+        // Recharger les entités
+        const { data: allEntities } = await (supabase as any).from('organisations').select('*');
+        if (allEntities) {
+          setEntities(allEntities.map((e: any) => ({
+            id: e.id,
+            name: e.name,
+            type: e.type,
+            country: e.country_code,
+            parentId: e.parent_id,
+            referent: e.pca_referent || '—',
+            referentContact: e.referent_contact,
+            referentBackup: e.referent_backup || '—',
+            suppleantContact: e.referent_backup_contact,
+            status: 'Actif',
+            pcaStatus: e.pca_status || 'Non démarré',
+            maturity: e.maturity || 20,
+          })));
+        }
+        
+        if (errors.length > 0) {
+          toast.warning(`${validEntities.length} entités importées avec ${errors.length} erreurs: ${errors.join(', ')}`, { id: loadingToast });
+        } else {
+          toast.success(`✅ ${validEntities.length} entités importées avec succès !`, { id: loadingToast });
+        }
       } else {
-        toast.success(`✅ ${validEntities.length} entités importées en ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+        toast.error("Aucune entité trouvée dans le PDF", { id: loadingToast });
       }
-    } else {
-      toast.error("Aucune entité trouvée dans le PDF");
+    } catch (err: any) {
+      console.error("🔴 ERREUR COMPLÈTE:", err);
+      toast.error(`❌ Erreur: ${err.message}`);
     }
-  } catch (err: any) {
-    console.error("🔴 ERREUR COMPLÈTE:", err);
-    toast.error(`❌ Erreur: ${err.message}`);
-  }
-  console.log("🔵 === FIN TRAITEMENT PDF ===");
-};
+    console.log("🔵 === FIN TRAITEMENT PDF ===");
+    setIsProcessingPdf(false);
+    setProcessingStep("");
+  };
 
   const navigateToInventory = () => {
     if (panelEntity && isLowLevel(panelEntity.type)) {
@@ -1546,7 +1672,19 @@ Ne retourne AUCUN autre texte, seulement le JSON.`;
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-4">
-            <input type="file" accept=".xlsx,.xls,.csv,.pdf" onChange={handleFileImport} className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90" />
+            <input 
+              type="file" 
+              accept=".xlsx,.xls,.csv,.pdf" 
+              onChange={handleFileImport} 
+              disabled={isProcessingPdf}
+              className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed" 
+            />
+            {isProcessingPdf && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {processingStep || "Traitement en cours..."}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">Format : Nom | Type | Pays | Référent PCA | Coordonnées référent | Suppléant | Coordonnées suppléant | Entité Parente</p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={downloadTemplate} className="flex items-center gap-2">
