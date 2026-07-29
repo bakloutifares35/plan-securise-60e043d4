@@ -522,7 +522,7 @@ export const MatrixView = () => {
                                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-medium border"
                                       style={{
                                         backgroundColor: style.backgroundColor,
-                                        color: style.text,
+                                        color: style.color,
                                         borderColor: style.borderColor,
                                       }}
                                     >
