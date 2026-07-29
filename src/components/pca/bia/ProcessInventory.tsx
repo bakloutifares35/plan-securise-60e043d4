@@ -32,7 +32,7 @@ import { useRole } from "@/contexts/RoleContext";
 import { computeMaxScore, scoreToCriticality, criticalityColor, ImpactAxis, TimePeriod, type Criticality } from "@/data/bia";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { BiaWizard } from "./BiaWizard";
 import { TableauDeMonteeEnCharge } from "./TableauDeMonteeEnCharge";
 import ContournementsDeCriseIA from './ContournementsDeCriseIA';

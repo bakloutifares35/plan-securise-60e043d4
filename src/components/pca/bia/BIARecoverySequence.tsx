@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useBia } from '@/contexts/BiaContext';
 import { useGovernance } from '@/contexts/GovernanceContext';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/resillia/client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

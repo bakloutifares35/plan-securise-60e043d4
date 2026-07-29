@@ -27,7 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

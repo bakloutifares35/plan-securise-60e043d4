@@ -13,7 +13,7 @@ import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
 import { computeMaxScore, scoreToCriticality, criticalityColor } from "@/data/bia";
 import { type Entity, type EntityType, defaultMaturity } from "@/data/governance";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';

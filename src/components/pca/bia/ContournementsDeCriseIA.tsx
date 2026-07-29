@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils"; // 👈 IMPORT AJOUTÉ
 

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { computeMaxScore } from "@/data/bia";
 import { 
   RefreshCw, 
