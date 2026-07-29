@@ -183,7 +183,7 @@ const BIARecoverySequence: React.FC = () => {
         linkedSuppliers: suppMap[p.id] || [],
       }));
 
-      setEnrichedProcesses(enriched);
+      setEnrichedProcesses(enriched as any);
 
     } catch (error) {
       console.error('Erreur chargement ressources:', error);

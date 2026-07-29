@@ -570,7 +570,7 @@ export const BiaDashboard = () => {
     }
 
     // 6. Processus critiques sans PCA
-    const noPca = filteredProcesses.filter(p => !p.hasPca && computeMaxScore(p.impacts) >= 3);
+    const noPca = filteredProcesses.filter(p => !(p as any).hasPca && computeMaxScore(p.impacts) >= 3);
     if (noPca.length > 0) {
       points.push({
         icon: ShieldAlert,

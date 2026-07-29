@@ -208,7 +208,7 @@ export const MatrixView = () => {
     const style = SEVERITY_PASTEL_STYLES[score] || SEVERITY_PASTEL_STYLES[0];
     return {
       backgroundColor: style.bg,
-      color: (style as any).text ?? style.color,
+      color: style.text,
       borderColor: style.border,
     };
   };
@@ -522,7 +522,7 @@ export const MatrixView = () => {
                                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-medium border"
                                       style={{
                                         backgroundColor: style.backgroundColor,
-                                        color: (style as any).text ?? style.color,
+                                        color: style.text,
                                         borderColor: style.borderColor,
                                       }}
                                     >

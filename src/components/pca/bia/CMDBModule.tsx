@@ -1906,7 +1906,7 @@ const CMDBModule = () => {
         
         const counts: Record<string, { count: number; processes: string[]; processNames: string[]; processCriticalities: Record<string, Criticality> }> = {};
         
-        for (const item of data || []) {
+        for (const item of ((data as any[]) || [])) {
           const id = item[idColumn];
           if (!counts[id]) {
             counts[id] = { count: 0, processes: [], processNames: [], processCriticalities: {} };
@@ -2040,7 +2040,7 @@ const CMDBModule = () => {
       setUsageFilter('all');
       return;
     }
-    if (usageFilter === filter && filter !== 'all') {
+    if (usageFilter === filter) {
       setUsageFilter('all');
     } else {
       setUsageFilter(filter);
@@ -2449,7 +2449,7 @@ const CMDBModule = () => {
           />
         </div>
 
-        <Select value={usageFilter} onValueChange={setUsageFilter}>
+        <Select value={usageFilter} onValueChange={(v) => setUsageFilter(v as UsageFilter)}>
           <SelectTrigger className="w-full sm:w-[140px] border-gray-200">
             <SelectValue placeholder="Toutes" />
           </SelectTrigger>
