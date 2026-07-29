@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { initialCampaigns, type Process, type Campaign } from "@/data/bia";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 
 type Ctx = {
   processes: Process[];

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useBia } from '@/contexts/BiaContext';
 import { useGovernance } from '@/contexts/GovernanceContext';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/resillia/client';
 import { cn } from '@/lib/utils';
 import { scoreToCriticality, criticalityColor } from '@/data/bia';
 import { Button } from '@/components/ui/button';
@@ -452,7 +452,7 @@ const BIASynthesis: React.FC = () => {
         linkedSuppliers: suppMap[p.id] || [],
       }));
 
-      setEnrichedProcesses(enriched);
+      setEnrichedProcesses(enriched as any);
 
     } catch (error) {
       console.error('Erreur chargement ressources:', error);

@@ -23,7 +23,7 @@ const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
 ];
 
 export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string }) => {
-  const { loadProcesses } = useBia();
+  const { refreshProcesses: loadProcesses } = useBia();
   const [tab, setTab] = useState<Tab>(initialTab as Tab);
   const [editId, setEditId] = useState<string | undefined>();
   const [showWizard, setShowWizard] = useState(false);

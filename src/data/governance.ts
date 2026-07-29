@@ -19,6 +19,8 @@ export type Entity = {
   maturity?: number;
   processIds?: string[];
   children?: Entity[];
+  lastUpdated?: string;
+  description?: string;
 };
 
 export const ENTITY_TYPES: EntityType[] = ["Groupe", "Holding", "Filiale", "Direction", "Service", "Département"];

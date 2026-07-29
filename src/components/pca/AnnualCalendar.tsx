@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertTriangle, CalendarPlus, Calendar as CalIcon, MapPin, Users, Edit, Trash2, X, UserPlus } from "lucide-react";
 import { useRole } from "@/contexts/RoleContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 

@@ -21,12 +21,14 @@ import {
   Layers
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
-import { PERIODS, periodMaxScore, computeMaxScore, scoreToCriticality, criticalityColor, type ImpactAxis } from "@/data/bia";
+import { PERIODS, periodMaxScore, computeMaxScore, scoreToCriticality, criticalityColor } from "@/data/bia";
 import { cn } from "@/lib/utils";
 
 // ============================================================
 // CONSTANTES
 // ============================================================
+
+type ImpactAxis = "Financier" | "Conformité / Légal" | "Opérationnel" | "Réputationnel";
 
 const IMPACT_AXES: { id: ImpactAxis; label: string; icon: string }[] = [
   { id: "Financier", label: "Financier", icon: "💰" },
@@ -86,7 +88,7 @@ export const MatrixView = () => {
   // Calcul du score pour une cellule selon la vue sélectionnée
   const getCellScore = (impacts: any, periodId: string, axis: ImpactAxis | "global"): number => {
     if (axis === "global") {
-      return periodMaxScore(impacts, periodId);
+      return periodMaxScore(impacts, periodId as any);
     }
     return getAxisValue(impacts, periodId, axis);
   };
@@ -520,7 +522,7 @@ export const MatrixView = () => {
                                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-medium border"
                                       style={{
                                         backgroundColor: style.backgroundColor,
-                                        color: style.text,
+                                        color: style.color,
                                         borderColor: style.borderColor,
                                       }}
                                     >

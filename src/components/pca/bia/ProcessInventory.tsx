@@ -29,10 +29,10 @@ import {
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
-import { computeMaxScore, scoreToCriticality, criticalityColor, ImpactAxis, TimePeriod, type Criticality } from "@/data/bia";
+import { computeMaxScore, scoreToCriticality, criticalityColor, TimePeriod, type Criticality } from "@/data/bia";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { BiaWizard } from "./BiaWizard";
 import { TableauDeMonteeEnCharge } from "./TableauDeMonteeEnCharge";
 import ContournementsDeCriseIA from './ContournementsDeCriseIA';
@@ -67,6 +67,8 @@ interface ServiceBIA {
   lastReviewed?: string;
   description?: string;
 }
+
+type ImpactAxis = "Financier" | "Conformité / Légal" | "Opérationnel" | "Réputationnel";
 
 const IMPACT_AXES: ImpactAxis[] = ["Financier", "Conformité / Légal", "Opérationnel", "Réputationnel"];
 const TIME_PERIODS: TimePeriod[] = ["P0_4H", "P4_8H", "P1D", "P2D", "P1W"];

@@ -46,7 +46,7 @@ import {
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { computeMaxScore, scoreToCriticality, type Criticality } from "@/data/bia";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import html2canvas from "html2canvas";
@@ -570,7 +570,7 @@ export const BiaDashboard = () => {
     }
 
     // 6. Processus critiques sans PCA
-    const noPca = filteredProcesses.filter(p => !p.hasPca && computeMaxScore(p.impacts) >= 3);
+    const noPca = filteredProcesses.filter(p => !(p as any).hasPca && computeMaxScore(p.impacts) >= 3);
     if (noPca.length > 0) {
       points.push({
         icon: ShieldAlert,

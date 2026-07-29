@@ -13,7 +13,7 @@ import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
 import { computeMaxScore, scoreToCriticality, criticalityColor } from "@/data/bia";
 import { type Entity, type EntityType, defaultMaturity } from "@/data/governance";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/resillia/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -664,7 +664,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     };
 
     // Appliquer le style à la première ligne
-    const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0];
+    const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as any[] | undefined;
     if (headerRow) {
       for (let col = 0; col < headerRow.length; col++) {
         const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
