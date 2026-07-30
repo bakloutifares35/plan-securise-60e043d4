@@ -4,7 +4,6 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BiaProvider } from "@/contexts/BiaContext";
-import { EbiosProvider } from "@/contexts/EbiosContext";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RiskProvider } from "@/contexts/RiskContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -22,7 +21,6 @@ function App() {
         <GovernanceProvider>
           <BiaProvider>
             <RiskProvider>
-              <EbiosProvider>
                 <StrategyProvider>
                   <RoleProvider>
                     <Toaster />
@@ -61,7 +59,6 @@ function App() {
                     </BrowserRouter>
                   </RoleProvider>
                 </StrategyProvider>
-              </EbiosProvider>
             </RiskProvider>
           </BiaProvider>
         </GovernanceProvider>
