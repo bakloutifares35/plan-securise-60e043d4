@@ -1,31 +1,41 @@
 import { useState } from "react";
-import { LayoutDashboard, BookOpen, FileText, KanbanSquare, Settings } from "lucide-react";
+import { AlertTriangle, BarChart3, Boxes, KanbanSquare, Grid3x3, Loader2, Settings, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { RiskDashboard } from "./RiskDashboard";
-import { ScenarioLibrary } from "./ScenarioLibrary";
-import { ScenarioDetail } from "./ScenarioDetail";
-import { TreatmentPlan } from "./TreatmentPlan";
-import { RiskSettings } from "./RiskSettings";
+import { useRiskData } from "./useRiskData";
+import { ContexteTab } from "./tabs/ContexteTab";
+import { ReferentielsTab } from "./tabs/ReferentielsTab";
+import { RegistreTab } from "./tabs/RegistreTab";
+import { MatriceTab } from "./tabs/MatriceTab";
+import { PlansTab } from "./tabs/PlansTab";
+import { ComexTab } from "./tabs/ComexTab";
+import { ParametresTab } from "./tabs/ParametresTab";
 
-type Tab = "dashboard" | "library" | "detail" | "plan" | "settings";
+type Tab = "contexte" | "referentiels" | "registre" | "matrice" | "plans" | "comex" | "parametres";
 
-const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { id: "library", label: "Bibliothèque de scénarios", icon: BookOpen },
-  { id: "detail", label: "Fiche scénario", icon: FileText },
-  { id: "plan", label: "Plan de traitement", icon: KanbanSquare },
-  { id: "settings", label: "Paramètres", icon: Settings },
+const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
+  { id: "contexte", label: "Contexte", icon: Target },
+  { id: "referentiels", label: "Référentiels", icon: Boxes },
+  { id: "registre", label: "Registre des risques", icon: KanbanSquare },
+  { id: "matrice", label: "Matrice", icon: Grid3x3 },
+  { id: "plans", label: "Plans de traitement", icon: BarChart3 },
+  { id: "comex", label: "Dashboard COMEX", icon: BarChart3 },
+  { id: "parametres", label: "Paramètres", icon: Settings },
 ];
 
 export const RiskModule = () => {
-  const [tab, setTab] = useState<Tab>("dashboard");
-  const [scenarioId, setScenarioId] = useState<string | undefined>();
-
-  const openDetail = (id: string) => { setScenarioId(id); setTab("detail"); };
+  const [tab, setTab] = useState<Tab>("contexte");
+  const data = useRiskData();
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-1.5 border-b border-border pb-1">
+      <header>
+        <h1 className="font-serif text-3xl text-[#172030]">Analyse des Risques</h1>
+        <p className="text-sm text-[#172030]/60 mt-1">
+          Démarche ISO 31000 / 27005 : contexte, référentiels, évaluation, traitement et pilotage.
+        </p>
+      </header>
+
+      <div className="flex flex-wrap gap-1.5 border-b border-[#172030]/10 pb-1">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
@@ -34,8 +44,10 @@ export const RiskModule = () => {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                "flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors",
+                active
+                  ? "bg-[#2A5141] text-white"
+                  : "text-[#172030]/65 hover:bg-[#F8F6F2] hover:text-[#172030]"
               )}
             >
               <Icon className="h-4 w-4" />
@@ -45,15 +57,35 @@ export const RiskModule = () => {
         })}
       </div>
 
-      {tab === "dashboard" && <RiskDashboard />}
-      {tab === "library" && <ScenarioLibrary onOpen={openDetail} />}
-      {tab === "detail" && (
-        scenarioId
-          ? <ScenarioDetail scenarioId={scenarioId} onBack={() => setTab("library")} />
-          : <p className="text-sm text-muted-foreground">Sélectionnez un scénario depuis la bibliothèque.</p>
+      {!data.schemaReady && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800">
+            <p className="font-medium">Schéma incomplet</p>
+            <p>
+              Certaines tables du module (contexte_analyse, actifs, menaces, plans_traitement,
+              parametres_risques) ne sont pas encore visibles. Vérifiez l'exécution du script SQL et le
+              rafraîchissement du cache de schéma.
+            </p>
+          </div>
+        </div>
       )}
-      {tab === "plan" && <TreatmentPlan />}
-      {tab === "settings" && <RiskSettings />}
+
+      {data.loading ? (
+        <div className="flex items-center gap-2 text-[#172030]/60 py-16 justify-center">
+          <Loader2 className="h-5 w-5 animate-spin" /> Chargement des données…
+        </div>
+      ) : (
+        <div className="animate-in fade-in duration-200" key={tab}>
+          {tab === "contexte" && <ContexteTab data={data} />}
+          {tab === "referentiels" && <ReferentielsTab data={data} />}
+          {tab === "registre" && <RegistreTab data={data} />}
+          {tab === "matrice" && <MatriceTab data={data} />}
+          {tab === "plans" && <PlansTab data={data} />}
+          {tab === "comex" && <ComexTab data={data} />}
+          {tab === "parametres" && <ParametresTab data={data} />}
+        </div>
+      )}
     </div>
   );
 };

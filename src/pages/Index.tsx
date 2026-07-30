@@ -7,7 +7,7 @@ import { PlanSteps } from "@/components/pca/PlanSteps";
 import { Benchmark } from "@/components/pca/Benchmark";
 import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
-import { RiskMethodGate } from "@/components/pca/risk/RiskMethodGate";
+import { RiskModule } from "@/components/pca/risk/RiskModule";
 import { BcmAiConsultant } from "@/components/pca/BcmAiConsultant";
 import TenaciaVoice from "@/components/pca/bia/TenaciaVoice";
 import BIASynthesis from "@/components/pca/bia/BIASynthesis";
@@ -96,7 +96,7 @@ const Index = () => {
                     </div>
                   )}
                   {section === "cmdb" && <CMDBModule />}
-                  {section === "risk" && <RiskMethodGate />}
+                  {section === "risk" && <RiskModule />}
                   {section === "tenacia" && <TenaciaVoice />}
                 </div>
               </main>
