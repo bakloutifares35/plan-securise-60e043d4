@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { AlertTriangle, BarChart3, Boxes, KanbanSquare, Grid3x3, Loader2, Settings, Target } from "lucide-react";
+import { AlertTriangle, BarChart3, Boxes, KanbanSquare, Grid3x3, Loader2, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRiskData } from "./useRiskData";
-import { ContexteTab } from "./tabs/ContexteTab";
 import { ReferentielsTab } from "./tabs/ReferentielsTab";
 import { RegistreTab } from "./tabs/RegistreTab";
 import { MatriceTab } from "./tabs/MatriceTab";
@@ -10,10 +9,9 @@ import { PlansTab } from "./tabs/PlansTab";
 import { ComexTab } from "./tabs/ComexTab";
 import { ParametresTab } from "./tabs/ParametresTab";
 
-type Tab = "contexte" | "referentiels" | "registre" | "matrice" | "plans" | "comex" | "parametres";
+type Tab = "referentiels" | "registre" | "matrice" | "plans" | "comex" | "parametres";
 
-const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
-  { id: "contexte", label: "Contexte", icon: Target },
+const TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
   { id: "referentiels", label: "Référentiels", icon: Boxes },
   { id: "registre", label: "Registre des risques", icon: KanbanSquare },
   { id: "matrice", label: "Matrice", icon: Grid3x3 },
@@ -23,7 +21,7 @@ const TABS: { id: Tab; label: string; icon: typeof Target }[] = [
 ];
 
 export const RiskModule = () => {
-  const [tab, setTab] = useState<Tab>("contexte");
+  const [tab, setTab] = useState<Tab>("referentiels");
   const data = useRiskData();
 
   return (
@@ -63,9 +61,7 @@ export const RiskModule = () => {
           <div className="text-sm text-amber-800">
             <p className="font-medium">Schéma incomplet</p>
             <p>
-              Certaines tables du module (contexte_analyse, actifs, menaces, plans_traitement,
-              parametres_risques) ne sont pas encore visibles. Vérifiez l'exécution du script SQL et le
-              rafraîchissement du cache de schéma.
+              Vérifiez que les tables du module sont bien créées dans Supabase.
             </p>
           </div>
         </div>
@@ -77,7 +73,6 @@ export const RiskModule = () => {
         </div>
       ) : (
         <div className="animate-in fade-in duration-200" key={tab}>
-          {tab === "contexte" && <ContexteTab data={data} />}
           {tab === "referentiels" && <ReferentielsTab data={data} />}
           {tab === "registre" && <RegistreTab data={data} />}
           {tab === "matrice" && <MatriceTab data={data} />}

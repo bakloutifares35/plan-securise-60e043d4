@@ -24,15 +24,15 @@ import {
   BarChart3, TrendingUp as TrendingUpIcon, AlertOctagon, Check, Minus,
   Circle, CircleCheck, CircleDot, CircleDashed, CircleOff,
   Square, SquareCheck, SquareDot, SquareDashed, PlusCircle, FolderTree,
-  MoreHorizontal as MoreHoriz
+  MoreHorizontal as MoreHoriz, Loader2
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
-import { computeMaxScore, scoreToCriticality, criticalityColor, TimePeriod, type Criticality } from "@/data/bia";
+import { computeMaxScore, scoreToCriticality, criticalityColor, ImpactAxis, TimePeriod, type Criticality } from "@/data/bia";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/resillia/client";
+import { supabase } from "@/integrations/supabase/client";
 import { BiaWizard } from "./BiaWizard";
 import { TableauDeMonteeEnCharge } from "./TableauDeMonteeEnCharge";
 import ContournementsDeCriseIA from './ContournementsDeCriseIA';
@@ -67,8 +67,6 @@ interface ServiceBIA {
   lastReviewed?: string;
   description?: string;
 }
-
-type ImpactAxis = "Financier" | "Conformité / Légal" | "Opérationnel" | "Réputationnel";
 
 const IMPACT_AXES: ImpactAxis[] = ["Financier", "Conformité / Légal", "Opérationnel", "Réputationnel"];
 const TIME_PERIODS: TimePeriod[] = ["P0_4H", "P4_8H", "P1D", "P2D", "P1W"];
@@ -201,6 +199,410 @@ const edgeColor = (criticality: Criticality) => {
     case "Modéré": return "#eab308";
     default: return "#94a3b8";
   }
+};
+
+// ============================================================
+// COMPOSANT - Dialogue de sélection de processus pour liaison AVEC RTO/RPO
+// ============================================================
+const LinkProcessDialog = ({
+  open,
+  onOpenChange,
+  resourceType,
+  resourceId,
+  resourceName,
+  onLink,
+  onUnlink,
+  linkedProcesses: initialLinkedProcesses,
+  departmentProcesses,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  onLink: (processId: string, rtoHours?: number, rpoHours?: number) => void;
+  onUnlink: (processId: string) => void;
+  linkedProcesses?: any[];
+  departmentProcesses?: any[];
+}) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
+  const [linkedProcesses, setLinkedProcesses] = useState<any[]>(initialLinkedProcesses || []);
+  const [allProcesses, setAllProcesses] = useState<any[]>(departmentProcesses || []);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLinking, setIsLinking] = useState(false);
+
+  // États pour RTO/RPO dans le dialogue de liaison
+  const [linkRtoHours, setLinkRtoHours] = useState<number>(4);
+  const [linkRpoHours, setLinkRpoHours] = useState<number>(2);
+
+  const rtoOptions = [1, 2, 4, 6, 8, 12, 24, 48, 72];
+  const rpoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24];
+
+  // Déterminer si on doit afficher les champs RTO/RPO
+  const showRtoField = resourceType === 'Equipement' || resourceType === 'App' || resourceType === 'Fournisseur';
+  const showRpoField = resourceType === 'App';
+  const showNoRtoField = resourceType === 'HR';
+
+  useEffect(() => {
+    if (open && resourceId) {
+      loadData();
+    }
+    // Réinitialiser les valeurs RTO/RPO quand le dialogue s'ouvre
+    if (open) {
+      setLinkRtoHours(4);
+      setLinkRpoHours(2);
+    }
+  }, [open, resourceId]);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      // Récupérer les processus déjà liés
+      let table = '';
+      let idColumn = '';
+      switch(resourceType) {
+        case 'HR':
+          table = 'processus_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          break;
+        case 'Equipement':
+          table = 'processus_equipements';
+          idColumn = 'equipement_id';
+          break;
+        case 'App':
+          table = 'processus_applications';
+          idColumn = 'application_id';
+          break;
+        case 'Fournisseur':
+          table = 'processus_fournisseurs';
+          idColumn = 'fournisseur_id';
+          break;
+        default: return;
+      }
+
+      // Pour les RH, on ne sélectionne que processus_id (pas de RTO/RPO)
+      let selectFields = 'processus_id';
+      if (resourceType !== 'HR') {
+        selectFields = 'processus_id, rto_hours, rpo_hours';
+      }
+
+      const { data, error } = await supabase
+        .from(table)
+        .select(selectFields)
+        .eq(idColumn, resourceId);
+
+      if (error) throw error;
+
+      // Enrichir les processus liés avec leurs RTO/RPO
+      const linkedIds = data?.map((d: any) => d.processus_id) || [];
+      const linked = allProcesses
+        .filter(p => linkedIds.includes(p.id))
+        .map(p => {
+          const linkData = data?.find((d: any) => d.processus_id === p.id);
+          return {
+            ...p,
+            _linkRto: linkData?.rto_hours || 4,
+            _linkRpo: linkData?.rpo_hours || 2,
+          };
+        });
+      
+      setLinkedProcesses(linked);
+      setSelectedProcessId(null);
+    } catch (error) {
+      console.error('Erreur chargement des processus liés:', error);
+      toast({ title: "Erreur", description: "Impossible de charger les processus", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getResourceIcon = () => {
+    switch(resourceType) {
+      case 'HR': return <Users className="h-5 w-5 text-blue-600" />;
+      case 'Equipement': return <Monitor className="h-5 w-5 text-yellow-600" />;
+      case 'App': return <Server className="h-5 w-5 text-purple-600" />;
+      case 'Fournisseur': return <Handshake className="h-5 w-5 text-orange-600" />;
+      default: return <LinkIcon className="h-5 w-5 text-gray-600" />;
+    }
+  };
+
+  const getResourceLabel = () => {
+    switch(resourceType) {
+      case 'HR': return 'collaborateur';
+      case 'Equipement': return 'équipement';
+      case 'App': return 'application';
+      case 'Fournisseur': return 'prestataire';
+      default: return 'ressource';
+    }
+  };
+
+  const getResourceColor = () => {
+    switch(resourceType) {
+      case 'HR': return 'bg-blue-50 border-blue-200';
+      case 'Equipement': return 'bg-amber-50 border-amber-200';
+      case 'App': return 'bg-purple-50 border-purple-200';
+      case 'Fournisseur': return 'bg-orange-50 border-orange-200';
+      default: return 'bg-gray-50 border-gray-200';
+    }
+  };
+
+  const filteredProcesses = allProcesses.filter(p => {
+    const isLinked = linkedProcesses.some(lp => lp.id === p.id);
+    if (isLinked) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return p.name?.toLowerCase().includes(q) || p.owner?.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const handleLink = async () => {
+    if (selectedProcessId) {
+      setIsLinking(true);
+      await onLink(selectedProcessId, linkRtoHours, linkRpoHours);
+      // Recharger les données après liaison
+      await loadData();
+      setSelectedProcessId(null);
+      // Réinitialiser les valeurs RTO/RPO
+      setLinkRtoHours(4);
+      setLinkRpoHours(2);
+      setIsLinking(false);
+    }
+  };
+
+  const handleUnlink = async (processId: string) => {
+    if (confirm(`Voulez-vous dissocier cette ressource du processus ?`)) {
+      await onUnlink(processId);
+      // Recharger les données après dissociation
+      await loadData();
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-[#172030] text-xl">
+            {getResourceIcon()}
+            Gérer les processus liés à "{resourceName}"
+          </DialogTitle>
+          <DialogDescription className="text-[#172030]/60">
+            Associez ou dissociez ce {getResourceLabel()} à des processus du département
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Section des processus déjà liés */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-[#172030] flex items-center gap-2">
+                <LinkIcon className="h-4 w-4 text-[#2A5141]" />
+                Processus liés ({linkedProcesses.length})
+              </h4>
+              {linkedProcesses.length > 0 && !showNoRtoField && (
+                <span className="text-xs text-[#172030]/40">
+                  RTO/RPO spécifiques à chaque liaison
+                </span>
+              )}
+              {linkedProcesses.length > 0 && showNoRtoField && (
+                <span className="text-xs text-[#172030]/40">
+                  Liaisons sans RTO/RPO
+                </span>
+              )}
+            </div>
+            {linkedProcesses.length === 0 ? (
+              <p className="text-sm text-[#172030]/40 italic p-4 text-center bg-[#F8F6F2] rounded-lg border border-dashed border-[#E8E4DC]">
+                Aucun processus lié pour le moment
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {linkedProcesses.map(p => (
+                  <div 
+                    key={p.id} 
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg border transition-all",
+                      getResourceColor()
+                    )}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="h-8 w-8 rounded-lg bg-[#2A5141]/10 flex items-center justify-center flex-shrink-0">
+                        <Building2 className="h-4 w-4 text-[#2A5141]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-[#172030]">{p.name}</span>
+                          <Badge variant="outline" className="text-[10px] bg-white">
+                            {p.owner || "—"}
+                          </Badge>
+                        </div>
+                        {!showNoRtoField && (
+                          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                            {/* Affichage RTO si disponible */}
+                            {p._linkRto !== undefined && showRtoField && (
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+                                <Clock className="h-3 w-3" />
+                                RTO {p._linkRto}h
+                              </span>
+                            )}
+                            {/* Affichage RPO si disponible */}
+                            {p._linkRpo !== undefined && showRpoField && (
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full border border-orange-200">
+                                <Database className="h-3 w-3" />
+                                RPO {p._linkRpo}h
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full flex-shrink-0"
+                      onClick={() => handleUnlink(p.id)}
+                      title="Dissocier"
+                    >
+                      <Unlink className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-[#E8E4DC] pt-4">
+            <h4 className="text-sm font-medium text-[#172030] mb-3 flex items-center gap-2">
+              <Plus className="h-4 w-4 text-[#2A5141]" />
+              Associer à un autre processus
+            </h4>
+
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Rechercher un processus..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 border-[#E8E4DC]"
+              />
+            </div>
+
+            {/* Sélecteur de RTO/RPO avant la sélection du processus (sauf pour RH) */}
+            {!showNoRtoField && (
+              <div className="mb-3 p-3 bg-[#F8F6F2] rounded-lg border border-[#E8E4DC]">
+                <Label className="text-sm font-medium text-[#172030] flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-[#2A5141]" />
+                  Objectifs de reprise pour cette liaison
+                </Label>
+                <div className={cn("grid gap-3 mt-2", showRpoField ? "grid-cols-2" : "grid-cols-1")}>
+                  <div>
+                    <Label className="text-xs text-slate-500">RTO (heures)</Label>
+                    <select
+                      value={linkRtoHours}
+                      onChange={(e) => setLinkRtoHours(Number(e.target.value))}
+                      className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
+                    >
+                      {rtoOptions.map((val) => (
+                        <option key={val} value={val}>{val}h</option>
+                      ))}
+                    </select>
+                  </div>
+                  {showRpoField && (
+                    <div>
+                      <Label className="text-xs text-slate-500">RPO (heures)</Label>
+                      <select
+                        value={linkRpoHours}
+                        onChange={(e) => setLinkRpoHours(Number(e.target.value))}
+                        className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
+                      >
+                        {rpoOptions.map((val) => (
+                          <option key={val} value={val}>{val}h</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {showRpoField 
+                    ? "Ces valeurs seront appliquées à la liaison de cette application avec le processus sélectionné."
+                    : "Cette valeur sera appliquée à la liaison de cette ressource avec le processus sélectionné."
+                  }
+                </p>
+              </div>
+            )}
+
+            {showNoRtoField && (
+              <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-700 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Les collaborateurs n'ont pas de RTO/RPO spécifique
+                </p>
+              </div>
+            )}
+
+            <div className="max-h-48 overflow-y-auto border rounded-lg divide-y divide-[#E8E4DC]">
+              {isLoading ? (
+                <div className="p-4 text-center text-sm text-gray-400">Chargement...</div>
+              ) : filteredProcesses.length === 0 ? (
+                <div className="p-4 text-center text-sm text-gray-400">
+                  {searchQuery ? "Aucun processus trouvé" : "Tous les processus sont déjà liés"}
+                </div>
+              ) : (
+                filteredProcesses.map((p) => (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      "flex items-center justify-between p-3 cursor-pointer hover:bg-[#F8F6F2] transition-colors",
+                      selectedProcessId === p.id && "bg-[#F0F5F0] border-l-4 border-l-[#2A5141]"
+                    )}
+                    onClick={() => setSelectedProcessId(p.id)}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <Building2 className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[#172030] truncate">{p.name}</p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {p.owner || "—"} • {p.department || "Sans département"}
+                        </p>
+                      </div>
+                    </div>
+                    {selectedProcessId === p.id && (
+                      <Badge className="bg-[#2A5141] text-white text-[10px] flex-shrink-0">
+                        Sélectionné
+                      </Badge>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 border-t pt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Fermer</Button>
+          <Button
+            onClick={handleLink}
+            disabled={!selectedProcessId || isLinking}
+            className="bg-[#2A5141] hover:bg-[#1a3329] text-white"
+          >
+            {isLinking ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                Liaison en cours...
+              </>
+            ) : (
+              <>
+                <LinkIcon className="h-4 w-4 mr-1" />
+                Associer ce processus
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 };
 
 // ============================================================
@@ -378,8 +780,7 @@ const SelectFromCMDBDialog = ({
                     Aucun(e) {getResourceLabel()} trouvé(e)
                   </p>
                 )}
-                <Button
-                  variant="outline"
+                <Button                  variant="outline"
                   size="sm"
                   className="text-[#2A5141] border-[#2A5141] hover:bg-[#F8F6F2]"
                   onClick={() => {
@@ -508,7 +909,7 @@ const SelectFromCMDBDialog = ({
 };
 
 // ============================================================
-// COMPOSANT - Dialogue d'ajout au référentiel
+// COMPOSANT - Dialogue d'ajout au référentiel - CORRIGÉ
 // ============================================================
 const AddToCMDBDialog = ({
   open,
@@ -591,8 +992,9 @@ const AddToCMDBDialog = ({
           break;
         case 'App':
           table = 'applications_it';
+          // ⚠️ CORRECTION : 'service' n'existe pas dans la table
+          // On ne garde que 'type' qui existe
           if (type) data.type = type;
-          if (service) data.service = service;
           if (departmentId) data.department_id = departmentId;
           break;
         case 'Fournisseur':
@@ -728,15 +1130,7 @@ const AddToCMDBDialog = ({
                   className="mt-1 border-[#E8E4DC]"
                 />
               </div>
-              <div>
-                <Label className="text-sm font-medium">Service</Label>
-                <Input
-                  value={service}
-                  onChange={(e) => setService(e.target.value)}
-                  placeholder="Ex: CRM, ERP, Messagerie..."
-                  className="mt-1 border-[#E8E4DC]"
-                />
-              </div>
+              {/* ⚠️ SUPPRESSION du champ 'Service' car la colonne n'existe pas dans la base */}
             </>
           )}
 
@@ -1072,16 +1466,18 @@ const LinkResourceDialog = ({
 };
 
 // ============================================================
-// COMPOSANT - PersonnelTableau
+// COMPOSANT - PersonnelTableau AVEC GESTION DES LIENS
 // ============================================================
 const PersonnelTableau = ({ 
   people, 
   onDelete,
-  linkedProcessesMap 
+  linkedProcessesMap,
+  onManageLinks
 }: { 
   people: any[];
   onDelete?: (id: string, name: string) => void;
   linkedProcessesMap?: Record<string, any[]>;
+  onManageLinks?: (id: string, name: string) => void;
 }) => {
   return (
     <div className="overflow-x-auto">
@@ -1131,9 +1527,23 @@ const PersonnelTableau = ({
                         </Badge>
                       ))}
                       {remainingCount > 0 && (
-                        <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium">
-                          +{remainingCount}
-                        </Badge>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Badge variant="outline" className="text-[9px] bg-[#FAFAF9] border-[#E8E4DC] text-[#2A5141] font-medium cursor-pointer hover:bg-[#F0EDE8]">
+                              +{remainingCount}
+                            </Badge>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
+                              {displayProcesses.map((p: any) => (
+                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
+                                  {p.name}
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       )}
                     </div>
                   ) : (
@@ -1141,17 +1551,31 @@ const PersonnelTableau = ({
                   )}
                 </TableCell>
                 <TableCell className="py-2 text-center">
-                  {onDelete && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
-                      onClick={() => onDelete(person.id, person.name)}
-                      title="Retirer de la fiche BIA"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center justify-center gap-1">
+                    {onManageLinks && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onManageLinks(person.id, person.name)}
+                        title="Gérer les processus liés"
+                      >
+                        <LinkIcon className="h-3 w-3" />
+                        Liens
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                        onClick={() => onDelete(person.id, person.name)}
+                        title="Retirer de la fiche BIA"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -1170,16 +1594,18 @@ const PersonnelTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - EquipmentTableau
+// COMPOSANT - EquipmentTableau AVEC GESTION DES LIENS
 // ============================================================
 const EquipmentTableau = ({ 
   equipment, 
   onDelete,
-  linkedProcessesMap 
+  linkedProcessesMap,
+  onManageLinks
 }: { 
   equipment: any[];
   onDelete?: (id: string, name: string) => void;
   linkedProcessesMap?: Record<string, any[]>;
+  onManageLinks?: (id: string, name: string) => void;
 }) => {
   const periods = [
     { key: "P0_4H", label: "0-4h" },
@@ -1265,17 +1691,31 @@ const EquipmentTableau = ({
                   )}
                 </TableCell>
                 <TableCell className="py-2 text-center">
-                  {onDelete && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
-                      onClick={() => onDelete(eq.id, eq.name)}
-                      title="Retirer de la fiche BIA"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center justify-center gap-1">
+                    {onManageLinks && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onManageLinks(eq.id, eq.name)}
+                        title="Gérer les processus liés"
+                      >
+                        <LinkIcon className="h-3 w-3" />
+                        Liens
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                        onClick={() => onDelete(eq.id, eq.name)}
+                        title="Retirer de la fiche BIA"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -1287,16 +1727,18 @@ const EquipmentTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - AppTableau
+// COMPOSANT - AppTableau AVEC GESTION DES LIENS
 // ============================================================
 const AppTableau = ({ 
   apps, 
   onDelete,
-  linkedProcessesMap 
+  linkedProcessesMap,
+  onManageLinks
 }: { 
   apps: any[];
   onDelete?: (id: string, name: string) => void;
   linkedProcessesMap?: Record<string, any[]>;
+  onManageLinks?: (id: string, name: string) => void;
 }) => {
   return (
     <div className="overflow-x-auto">
@@ -1305,7 +1747,7 @@ const AppTableau = ({
           <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Application</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Type</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Service</TableHead>
+            {/* ❌ SUPPRESSION de la colonne "Service" car elle n'existe pas dans la table */}
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Alternative</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
@@ -1329,7 +1771,7 @@ const AppTableau = ({
                   <span className="text-sm font-medium text-[#172030]">{app.name}</span>
                 </TableCell>
                 <TableCell className="py-2 text-sm text-[#172030]/60">{app.type || "—"}</TableCell>
-                <TableCell className="py-2 text-sm text-[#172030]/60">{app.service || "—"}</TableCell>
+                {/* ❌ SUPPRESSION de la cellule "Service" */}
                 <TableCell className="py-2 text-sm text-[#172030]/60">{app.remplacablepar || "—"}</TableCell>
                 <TableCell className="py-2">
                   {displayProcesses.length > 0 ? (
@@ -1364,17 +1806,31 @@ const AppTableau = ({
                   )}
                 </TableCell>
                 <TableCell className="py-2 text-center">
-                  {onDelete && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
-                      onClick={() => onDelete(app.id, app.name)}
-                      title="Retirer de la fiche BIA"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center justify-center gap-1">
+                    {onManageLinks && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onManageLinks(app.id, app.name)}
+                        title="Gérer les processus liés"
+                      >
+                        <LinkIcon className="h-3 w-3" />
+                        Liens
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                        onClick={() => onDelete(app.id, app.name)}
+                        title="Retirer de la fiche BIA"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -1386,16 +1842,18 @@ const AppTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - SupplierTableau
+// COMPOSANT - SupplierTableau AVEC GESTION DES LIENS
 // ============================================================
 const SupplierTableau = ({ 
   suppliers, 
   onDelete,
-  linkedProcessesMap 
+  linkedProcessesMap,
+  onManageLinks
 }: { 
   suppliers: any[];
   onDelete?: (id: string, name: string) => void;
   linkedProcessesMap?: Record<string, any[]>;
+  onManageLinks?: (id: string, name: string) => void;
 }) => {
   return (
     <div className="overflow-x-auto">
@@ -1461,17 +1919,31 @@ const SupplierTableau = ({
                   )}
                 </TableCell>
                 <TableCell className="py-2 text-center">
-                  {onDelete && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
-                      onClick={() => onDelete(sup.id, sup.name)}
-                      title="Retirer de la fiche BIA"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center justify-center gap-1">
+                    {onManageLinks && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onManageLinks(sup.id, sup.name)}
+                        title="Gérer les processus liés"
+                      >
+                        <LinkIcon className="h-3 w-3" />
+                        Liens
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-[#172030]/30 hover:text-red-600 hover:bg-red-50 rounded-md"
+                        onClick={() => onDelete(sup.id, sup.name)}
+                        title="Retirer de la fiche BIA"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -2836,7 +3308,7 @@ const ProcessAccordion = ({
 };
 
 // ============================================================
-// COMPOSANT - BIAFicheDetail (SANS MTPD)
+// COMPOSANT - BIAFicheDetail (SANS MTPD) AVEC GESTION DES LIENS ET MISE À JOUR EN TEMPS RÉEL
 // ============================================================
 const BIAFicheDetail = ({
   service,
@@ -2898,6 +3370,18 @@ const BIAFicheDetail = ({
   const [isLoading, setIsLoading] = useState(true);
   const [selectedProcessDetail, setSelectedProcessDetail] = useState<any>(null);
   const [processResourcesCache, setProcessResourcesCache] = useState<Record<string, any>>({});
+
+  // États pour le dialogue de gestion des liens
+  const [linkManagementOpen, setLinkManagementOpen] = useState(false);
+  const [linkManagementResourceId, setLinkManagementResourceId] = useState<string>("");
+  const [linkManagementResourceName, setLinkManagementResourceName] = useState<string>("");
+  const [linkManagementResourceType, setLinkManagementResourceType] = useState<string>("HR");
+  const [linkManagementLinkedProcesses, setLinkManagementLinkedProcesses] = useState<any[]>([]);
+  
+  // Récupérer les processus du département
+  const departmentProcesses = useMemo(() => {
+    return processes.filter(p => p.entityId === service.id || p.department === service.name);
+  }, [processes, service]);
 
   const loadBIAResources = useCallback(async () => {
     try {
@@ -3137,7 +3621,7 @@ const BIAFicheDetail = ({
         suppliers: {} as Record<string, any[]>
       };
 
-      for (const p of processes) {
+      for (const p of departmentProcesses) {
         const { data: hrLinks } = await supabase
           .from('processus_ressources_humaines')
           .select('ressource_humaine_id')
@@ -3203,7 +3687,7 @@ const BIAFicheDetail = ({
     } catch (error) {
       console.error('Erreur chargement liens:', error);
     }
-  }, [processes]);
+  }, [departmentProcesses]);
 
   useEffect(() => {
     const loadAll = async () => {
@@ -3219,6 +3703,181 @@ const BIAFicheDetail = ({
   const handleAddToCMDB = async (type: string, newResource: any) => {
     await loadCMDBResources();
     await addResourceToBIA(type, newResource.id);
+  };
+
+  // ============================================================
+  // FONCTIONS DE GESTION DES LIENS AVEC RTO/RPO ET MISE À JOUR EN TEMPS RÉEL
+  // ============================================================
+  const handleLinkProcessToResource = async (
+    resourceType: string, 
+    resourceId: string, 
+    processId: string,
+    rtoHours?: number,
+    rpoHours?: number
+  ) => {
+    try {
+      let table = '';
+      let idColumn = '';
+      let data: any = { processus_id: processId };
+
+      switch(resourceType) {
+        case 'HR':
+          table = 'processus_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          data[idColumn] = resourceId;
+          break;
+        case 'Equipement':
+          table = 'processus_equipements';
+          idColumn = 'equipement_id';
+          data[idColumn] = resourceId;
+          if (rtoHours !== undefined) data.rto_hours = rtoHours;
+          break;
+        case 'App':
+          table = 'processus_applications';
+          idColumn = 'application_id';
+          data[idColumn] = resourceId;
+          if (rtoHours !== undefined) data.rto_hours = rtoHours;
+          if (rpoHours !== undefined) data.rpo_hours = rpoHours;
+          break;
+        case 'Fournisseur':
+          table = 'processus_fournisseurs';
+          idColumn = 'fournisseur_id';
+          data[idColumn] = resourceId;
+          if (rtoHours !== undefined) data.rto_hours = rtoHours;
+          break;
+        default: return;
+      }
+
+      const { error } = await supabase.from(table).insert(data);
+      if (error) throw error;
+
+      toast({ 
+        title: "Succès", 
+        description: `Ressource liée au processus avec RTO${rtoHours ? ` ${rtoHours}h` : ''}${rpoHours ? ` et RPO ${rpoHours}h` : ''}` 
+      });
+      
+      // 🔄 MISE À JOUR EN TEMPS RÉEL
+      await loadLinkedProcessesForResources();
+      
+      // 🔄 Recharger les ressources du processus concerné
+      await getProcessResources(processId);
+      
+      // 🔄 Précharger tous les processus pour mettre à jour le cache
+      await preloadAllProcesses();
+      
+    } catch (error: any) {
+      console.error('Erreur liaison:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de la liaison", variant: "destructive" });
+    }
+  };
+
+  const handleUnlinkProcessFromResource = async (resourceType: string, resourceId: string, processId: string) => {
+    try {
+      let table = '';
+      let idColumn = '';
+
+      switch(resourceType) {
+        case 'HR':
+          table = 'processus_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          break;
+        case 'Equipement':
+          table = 'processus_equipements';
+          idColumn = 'equipement_id';
+          break;
+        case 'App':
+          table = 'processus_applications';
+          idColumn = 'application_id';
+          break;
+        case 'Fournisseur':
+          table = 'processus_fournisseurs';
+          idColumn = 'fournisseur_id';
+          break;
+        default: return;
+      }
+
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('processus_id', processId)
+        .eq(idColumn, resourceId);
+
+      if (error) throw error;
+
+      toast({ title: "Succès", description: "Ressource dissociée du processus" });
+      
+      // 🔄 MISE À JOUR EN TEMPS RÉEL
+      await loadLinkedProcessesForResources();
+      
+      // 🔄 Recharger les ressources du processus concerné
+      await getProcessResources(processId);
+      
+      // 🔄 Précharger tous les processus pour mettre à jour le cache
+      await preloadAllProcesses();
+      
+    } catch (error: any) {
+      console.error('Erreur dissociation:', error);
+      toast({ title: "Erreur", description: error.message || "Erreur lors de la dissociation", variant: "destructive" });
+    }
+  };
+
+  const openLinkManagement = (resourceType: string, resourceId: string, resourceName: string) => {
+    setLinkManagementResourceType(resourceType);
+    setLinkManagementResourceId(resourceId);
+    setLinkManagementResourceName(resourceName);
+    
+    // Précharger les processus liés pour le dialogue
+    const loadLinkedForDialog = async () => {
+      let table = '';
+      let idColumn = '';
+      let selectFields = 'processus_id';
+      if (resourceType !== 'HR') {
+        selectFields = 'processus_id, rto_hours, rpo_hours';
+      }
+
+      switch(resourceType) {
+        case 'HR':
+          table = 'processus_ressources_humaines';
+          idColumn = 'ressource_humaine_id';
+          break;
+        case 'Equipement':
+          table = 'processus_equipements';
+          idColumn = 'equipement_id';
+          break;
+        case 'App':
+          table = 'processus_applications';
+          idColumn = 'application_id';
+          break;
+        case 'Fournisseur':
+          table = 'processus_fournisseurs';
+          idColumn = 'fournisseur_id';
+          break;
+        default: return;
+      }
+
+      const { data } = await supabase
+        .from(table)
+        .select(selectFields)
+        .eq(idColumn, resourceId);
+
+      if (data) {
+        const linkedIds = data.map((d: any) => d.processus_id);
+        const linked = departmentProcesses
+          .filter(p => linkedIds.includes(p.id))
+          .map(p => {
+            const linkData = data.find((d: any) => d.processus_id === p.id);
+            return {
+              ...p,
+              _linkRto: linkData?.rto_hours || 4,
+              _linkRpo: linkData?.rpo_hours || 2,
+            };
+          });
+        setLinkManagementLinkedProcesses(linked);
+      }
+    };
+    
+    loadLinkedForDialog();
+    setLinkManagementOpen(true);
   };
 
   const getProcessResources = useCallback(async (processId: string) => {
@@ -3307,12 +3966,12 @@ const BIAFicheDetail = ({
   }, [addedHR, addedEquipment, addedApps, addedSuppliers]);
 
   const preloadAllProcesses = useCallback(async () => {
-    if (processes.length === 0) return;
+    if (departmentProcesses.length === 0) return;
     console.log('🔄 Préchargement de tous les processus...');
-    const promises = processes.map(p => getProcessResources(p.id));
+    const promises = departmentProcesses.map(p => getProcessResources(p.id));
     await Promise.all(promises);
     console.log('✅ Préchargement terminé');
-  }, [processes, getProcessResources]);
+  }, [departmentProcesses, getProcessResources]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -3389,6 +4048,7 @@ const BIAFicheDetail = ({
 
       toast({ title: "Succès", description: `Ressource liée au processus "${linkProcess.name}"` });
       
+      // 🔄 MISE À JOUR EN TEMPS RÉEL
       await loadLinkedProcessesForResources();
       await getProcessResources(linkProcess.id);
       await preloadAllProcesses();
@@ -3503,6 +4163,23 @@ const BIAFicheDetail = ({
         resourceType="Fournisseur"
         onAdd={(data) => handleAddToCMDB('Fournisseur', data)}
         departmentId={service.id}
+      />
+
+      {/* Dialogue de gestion des liens avec RTO/RPO */}
+      <LinkProcessDialog
+        open={linkManagementOpen}
+        onOpenChange={setLinkManagementOpen}
+        resourceType={linkManagementResourceType}
+        resourceId={linkManagementResourceId}
+        resourceName={linkManagementResourceName}
+        linkedProcesses={linkManagementLinkedProcesses}
+        departmentProcesses={departmentProcesses}
+        onLink={(processId, rtoHours, rpoHours) => 
+          handleLinkProcessToResource(linkManagementResourceType, linkManagementResourceId, processId, rtoHours, rpoHours)
+        }
+        onUnlink={(processId) => 
+          handleUnlinkProcessFromResource(linkManagementResourceType, linkManagementResourceId, processId)
+        }
       />
 
       <LinkResourceDialog
@@ -3623,7 +4300,7 @@ const BIAFicheDetail = ({
           </div>
 
           <div className="space-y-3">
-            {processes.map((p, idx) => {
+            {departmentProcesses.map((p, idx) => {
               const count = getTotalResourceCount(p);
               const resources = processResourcesCache[p.id];
               return (
@@ -3694,6 +4371,7 @@ const BIAFicheDetail = ({
                   people={addedHR} 
                   onDelete={(id, name) => removeResourceFromBIA('HR', id, name)}
                   linkedProcessesMap={linkedProcessesMap.hr}
+                  onManageLinks={(id, name) => openLinkManagement('HR', id, name)}
                 />
               ) : (
                 <div className="text-center py-6 text-[#172030]/40 text-sm">
@@ -3715,6 +4393,7 @@ const BIAFicheDetail = ({
                   equipment={addedEquipment} 
                   onDelete={(id, name) => removeResourceFromBIA('Equipement', id, name)}
                   linkedProcessesMap={linkedProcessesMap.equipment}
+                  onManageLinks={(id, name) => openLinkManagement('Equipement', id, name)}
                 />
               ) : (
                 <div className="text-center py-6 text-[#172030]/40 text-sm">
@@ -3725,7 +4404,7 @@ const BIAFicheDetail = ({
           </div>
 
           <div className="mt-6">
-            <TableauDeMonteeEnCharge processes={processes} serviceName={service.name} />
+            <TableauDeMonteeEnCharge processes={departmentProcesses} serviceName={service.name} />
           </div>
         </TabsContent>
 
@@ -3761,6 +4440,7 @@ const BIAFicheDetail = ({
               apps={addedApps}
               onDelete={(id, name) => removeResourceFromBIA('App', id, name)}
               linkedProcessesMap={linkedProcessesMap.apps}
+              onManageLinks={(id, name) => openLinkManagement('App', id, name)}
             />
           ) : (
             <div className="text-center py-8 text-[#172030]/40">
@@ -3811,6 +4491,7 @@ const BIAFicheDetail = ({
               suppliers={addedSuppliers}
               onDelete={(id, name) => removeResourceFromBIA('Fournisseur', id, name)}
               linkedProcessesMap={linkedProcessesMap.suppliers}
+              onManageLinks={(id, name) => openLinkManagement('Fournisseur', id, name)}
             />
           ) : (
             <div className="text-center py-8 text-[#172030]/40">
@@ -3831,7 +4512,7 @@ const BIAFicheDetail = ({
 
         <TabsContent value="dependencies" className="pt-4">
           <DependencyMapView 
-            processes={processes} 
+            processes={departmentProcesses} 
             serviceName={service.name}
             onProcessesUpdate={() => {}}
           />
@@ -3857,7 +4538,7 @@ const BIAFicheDetail = ({
 };
 
 // ============================================================
-// COMPOSANT PRINCIPAL - ProcessInventory
+// COMPOSANT PRINCIPAL - ProcessInventory (inchangé)
 // ============================================================
 export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) => void; onCreate: () => void }) => {
   const { processes, deleteProcess } = useBia();

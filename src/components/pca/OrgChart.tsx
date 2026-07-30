@@ -13,7 +13,7 @@ import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
 import { computeMaxScore, scoreToCriticality, criticalityColor } from "@/data/bia";
 import { type Entity, type EntityType, defaultMaturity } from "@/data/governance";
-import { supabase } from "@/integrations/resillia/client";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -537,87 +537,264 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     setEditing(false);
     toast.success("Entité mise à jour");
   };
+// ============================================================
+// FONCTION RENDERFORMGRID CORRIGÉE AVEC HIÉRARCHIE VISIBLE
+// ============================================================
+const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId?: string) => {
+  // Récupérer les filiales pour le regroupement
+  const filiales = entities.filter(e => e.id !== excludeId && isFiliale(e.type));
+  
+  // Fonction pour obtenir le chemin hiérarchique complet d'une entité
+  const getFullPath = (entityId: string): string => {
+    const entity = entities.find(e => e.id === entityId);
+    if (!entity) return "";
+    
+    const path: string[] = [entity.name];
+    let current = entity;
+    
+    // Remonter jusqu'à la racine (max 5 niveaux pour éviter les boucles)
+    let maxLevels = 5;
+    while (current.parentId && maxLevels > 0) {
+      const parent = entities.find(e => e.id === current.parentId);
+      if (parent) {
+        path.unshift(parent.name);
+        current = parent;
+      } else {
+        break;
+      }
+      maxLevels--;
+    }
+    
+    return path.join(" → ");
+  };
 
-  const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId?: string) => {
-    // Filtrer les entités parentes disponibles selon le type sélectionné
-    const getAvailableParents = () => {
-      if (!state.type) return entities.filter(e => e.id !== excludeId);
-      
-      const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      
-      if (normalizedType === "FILIALE") {
-        return []; // Aucun parent possible
-      }
-      if (normalizedType === "DIRECTION") {
-        return entities.filter(e => e.id !== excludeId && isFiliale(e.type));
-      }
-      if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
-        return entities.filter(e => e.id !== excludeId && isDirection(e.type));
-      }
-      return entities.filter(e => e.id !== excludeId);
-    };
+  // Filtrer les entités parentes disponibles selon le type sélectionné
+  const getAvailableParents = () => {
+    if (!state.type) return [];
     
-    const availableParents = getAvailableParents();
-    const showParentField = state.type && state.type.toUpperCase() !== "FILIALE";
+    const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
-    return (
-      <div className="grid md:grid-cols-3 gap-3">
-        <div>
-          <Label>Nom <span className="text-destructive">*</span></Label>
-          <Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" />
-        </div>
-        <div>
-          <Label>Type <span className="text-destructive">*</span></Label>
-          <Select value={state.type} onValueChange={(v) => {
-            set({ ...state, type: v as EntityType, parentId: "" });
-          }}>
-            <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
-            <SelectContent>
-              {ENTITY_TYPES_FILTERED.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Pays</Label>
-          <Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" />
-        </div>
-        <div>
-          <Label>Référent PCA</Label>
-          <Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" />
-        </div>
-        <div>
-          <Label>Coordonnées référent</Label>
-          <Input value={state.referentContact} onChange={(e) => set({ ...state, referentContact: e.target.value })} placeholder="email ou téléphone" />
-        </div>
-        <div>
-          <Label>Suppléant</Label>
-          <Input value={state.suppleant} onChange={(e) => set({ ...state, suppleant: e.target.value })} placeholder="Nom du suppléant" />
-        </div>
-        <div>
-          <Label>Coordonnées suppléant</Label>
-          <Input value={state.suppleantContact} onChange={(e) => set({ ...state, suppleantContact: e.target.value })} placeholder="email ou téléphone" />
-        </div>
-        {showParentField && (
-          <div>
-            <Label>Entité parente <span className="text-destructive">*</span></Label>
+    if (normalizedType === "FILIALE") {
+      return []; // Aucun parent possible
+    }
+    if (normalizedType === "DIRECTION") {
+      // Directions → parent doit être une Filiale
+      return entities.filter(e => e.id !== excludeId && isFiliale(e.type));
+    }
+    if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
+      // Services/Départements → parent doit être une Direction
+      return entities.filter(e => e.id !== excludeId && isDirection(e.type));
+    }
+    return [];
+  };
+  
+  const availableParents = getAvailableParents();
+  const showParentField = state.type && state.type.toUpperCase() !== "FILIALE";
+  
+  // Grouper les parents par filiale pour les Directions
+  const getGroupedParents = () => {
+    if (!state.type) return [];
+    
+    const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    if (normalizedType === "DIRECTION") {
+      // Grouper les filiales avec leurs directions
+      const groups: { filiale: Entity; directions: Entity[] }[] = [];
+      
+      for (const filiale of filiales) {
+        const directions = availableParents.filter(e => {
+          const parent = entities.find(p => p.id === e.parentId);
+          return parent?.id === filiale.id;
+        });
+        if (directions.length > 0) {
+          groups.push({ filiale, directions });
+        }
+      }
+      
+      // Filiales sans directions
+      const filialesWithoutDirections = filiales.filter(f => {
+        return !availableParents.some(e => {
+          const parent = entities.find(p => p.id === e.parentId);
+          return parent?.id === f.id;
+        });
+      });
+      
+      return { groups, filialesWithoutDirections };
+    }
+    
+    if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
+      // Grouper les directions par filiale
+      const groups: { filiale: Entity; directions: Entity[] }[] = [];
+      
+      for (const filiale of filiales) {
+        const directionsOfFiliale = entities.filter(e => e.id !== excludeId && isDirection(e.type) && e.parentId === filiale.id);
+        const availableDirs = directionsOfFiliale.filter(d => availableParents.some(ap => ap.id === d.id));
+        if (availableDirs.length > 0) {
+          groups.push({ filiale, directions: availableDirs });
+        }
+      }
+      
+      // Directions sans filiale (cas exceptionnel)
+      const orphanDirections = availableParents.filter(e => {
+        const parent = entities.find(p => p.id === e.parentId);
+        return !parent || !isFiliale(parent.type);
+      });
+      
+      return { groups, orphanDirections };
+    }
+    
+    return { groups: [], orphanDirections: [] };
+  };
+
+  const groupedParents = getGroupedParents();
+  
+  return (
+    <div className="grid md:grid-cols-3 gap-3">
+      <div>
+        <Label>Nom <span className="text-destructive">*</span></Label>
+        <Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" />
+      </div>
+      <div>
+        <Label>Type <span className="text-destructive">*</span></Label>
+        <Select value={state.type} onValueChange={(v) => {
+          set({ ...state, type: v as EntityType, parentId: "" });
+        }}>
+          <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectContent>
+            {ENTITY_TYPES_FILTERED.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Pays</Label>
+        <Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" />
+      </div>
+      <div>
+        <Label>Référent PCA</Label>
+        <Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" />
+      </div>
+      <div>
+        <Label>Coordonnées référent</Label>
+        <Input value={state.referentContact} onChange={(e) => set({ ...state, referentContact: e.target.value })} placeholder="email ou téléphone" />
+      </div>
+      <div>
+        <Label>Suppléant</Label>
+        <Input value={state.suppleant} onChange={(e) => set({ ...state, suppleant: e.target.value })} placeholder="Nom du suppléant" />
+      </div>
+      <div>
+        <Label>Coordonnées suppléant</Label>
+        <Input value={state.suppleantContact} onChange={(e) => set({ ...state, suppleantContact: e.target.value })} placeholder="email ou téléphone" />
+      </div>
+      {showParentField && (
+        <div className="md:col-span-2">
+          <Label className="flex items-center gap-2">
+            Entité parente <span className="text-destructive">*</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              (doit être une {state.type === "DIRECTION" ? "Filiale" : "Direction"})
+            </span>
+          </Label>
+          
+          {availableParents.length === 0 ? (
+            <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+              ⚠️ Aucune {state.type === "DIRECTION" ? "filiale" : "direction"} disponible. 
+              {state.type === "DIRECTION" 
+                ? " Créez d'abord une filiale." 
+                : " Créez d'abord une direction."}
+            </div>
+          ) : (
             <Select value={state.parentId || "__root__"} onValueChange={(v) => set({ ...state, parentId: v === "__root__" ? "" : v })}>
-              <SelectTrigger><SelectValue placeholder="Sélectionner un parent" /></SelectTrigger>
-              <SelectContent>
-                {availableParents.length === 0 ? (
-                  <SelectItem value="__none__" disabled>Aucun parent disponible</SelectItem>
-                ) : (
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Sélectionner un parent" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[300px]">
+                {groupedParents && 'groups' in groupedParents && groupedParents.groups ? (
                   <>
-                    <SelectItem value="__root__">— Sélectionner —</SelectItem>
-                    {availableParents.map((e) => <SelectItem key={e.id} value={e.id}>{e.name} ({e.type})</SelectItem>)}
+                    {groupedParents.groups.map((group, idx) => (
+                      <div key={idx}>
+                        {/* En-tête de groupe - Filiale */}
+                        <div className="px-2 py-1.5 bg-[#172030]/5 text-[#172030] text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
+                          <Building2 className="h-3.5 w-3.5 text-[#172030]/50" />
+                          <span>🏢 {group.filiale.name}</span>
+                          <span className="text-[10px] font-normal text-muted-foreground">({group.filiale.country || "FR"})</span>
+                          <span className="text-[10px] font-normal text-muted-foreground ml-auto">{group.directions.length}</span>
+                        </div>
+                        {group.directions.map((e) => (
+                          <SelectItem key={e.id} value={e.id} className="pl-8">
+                            <div className="flex items-center gap-2 w-full">
+                              <span className="truncate">{e.name}</span>
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                {getFullPath(e.id)}
+                              </span>
+                              <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
+                                {e.type}
+                              </Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </div>
+                    ))}
+                    
+                    {/* Filiales sans directions (pour le cas où on sélectionne une Direction mais aucune direction existante) */}
+                    {groupedParents.filialesWithoutDirections && groupedParents.filialesWithoutDirections.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1.5 bg-gray-50 text-muted-foreground text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
+                          <span>🏢 Filiales sans directions</span>
+                        </div>
+                        {groupedParents.filialesWithoutDirections.map((f) => (
+                          <SelectItem key={f.id} value={f.id} className="pl-8 opacity-60">
+                            <div className="flex items-center gap-2 w-full">
+                              <span className="truncate">{f.name}</span>
+                              <span className="text-[10px] text-muted-foreground">(aucune direction)</span>
+                              <Badge variant="outline" className="text-[9px] ml-auto bg-gray-100">
+                                FILIALE
+                              </Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </div>
+                    )}
                   </>
+                ) : (
+                  // Fallback : affichage simple
+                  availableParents.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="truncate">{e.name}</span>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          {getFullPath(e.id)}
+                        </span>
+                        <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
+                          {e.type}
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))
                 )}
+                
+                {/* Option pour sélectionner une entité sans parent (root) */}
+                <div className="border-t border-[#E8E4DC] mt-1 pt-1">
+                  <SelectItem value="__root__" className="text-muted-foreground italic">
+                    — Aucun parent (entité racine) —
+                  </SelectItem>
+                </div>
               </SelectContent>
             </Select>
-          </div>
-        )}
-      </div>
-    );
-  };
+          )}
+          
+          {/* Indicateur de la filiale parente si une entité est sélectionnée */}
+          {state.parentId && state.parentId !== "__root__" && (
+            <div className="mt-1.5 text-xs text-muted-foreground flex items-center gap-2 bg-[#F8F6F2] p-2 rounded-lg border border-[#E8E4DC]">
+              <div className="h-2 w-2 rounded-full bg-[#2A5141] flex-shrink-0"></div>
+              <span>
+                📍 Chemin : <span className="font-medium text-[#172030]">{getFullPath(state.parentId)}</span>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
   // ============================================================
   // MODÈLE EXCEL AVEC MISE EN FORME PROFESSIONNELLE
@@ -664,7 +841,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     };
 
     // Appliquer le style à la première ligne
-    const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as any[] | undefined;
+    const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0];
     if (headerRow) {
       for (let col = 0; col < headerRow.length; col++) {
         const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
