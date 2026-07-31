@@ -13,7 +13,10 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Euro, Loader2 } from "lucide-react";
+import { 
+  Plus, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Euro, Loader2,
+  TrendingUp, Zap, Target, Shield
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type RiskData } from "../useRiskData";
 import { type Risque, NIVEAU_STYLE } from "../riskModel";
@@ -37,6 +40,7 @@ type Measure = {
   created_at?: string;
 };
 
+// ✅ EXPORT NOMINAL (sans 'default')
 export const PlansTab = ({ data }: Props) => {
   const { risques } = data;
 
@@ -86,7 +90,7 @@ export const PlansTab = ({ data }: Props) => {
     loadMeasures();
   }, []);
 
-  // 🔥 CALCUL DES KPI DYNAMIQUES
+  // KPI dynamiques
   const stats = useMemo(() => {
     const total = measures.length;
     
@@ -109,18 +113,18 @@ export const PlansTab = ({ data }: Props) => {
       }
     }
 
-    const aujourdHui = new Date();
-    const enRetard = measures.filter(m => {
-      if (!m.echeance) return false;
-      const echeance = new Date(m.echeance);
-      return echeance < aujourdHui && m.avancement < 100;
-    }).length;
+    // Actions terminées (avancement = 100%)
+    const actionsTerminees = measures.filter(m => m.avancement === 100).length;
+
+    // Actions en cours (avancement entre 1 et 99)
+    const actionsEnCours = measures.filter(m => m.avancement > 0 && m.avancement < 100).length;
 
     return {
       total,
       avancementMoyen,
       coutTotal,
-      enRetard,
+      actionsTerminees,
+      actionsEnCours,
     };
   }, [measures]);
 
@@ -161,7 +165,7 @@ export const PlansTab = ({ data }: Props) => {
 
   const handleSave = async () => {
     if (!form.mesure.trim()) {
-      toast({ title: "Erreur", description: "Le nom de la mesure est obligatoire", variant: "destructive" });
+      toast({ title: "Erreur", description: "Le nom de l'action est obligatoire", variant: "destructive" });
       return;
     }
 
@@ -192,24 +196,24 @@ export const PlansTab = ({ data }: Props) => {
           .eq("id", editingMeasure.id);
 
         if (error) throw error;
-        toast({ title: "Succès", description: "Mesure mise à jour" });
+        toast({ title: "Succès", description: "Action mise à jour" });
       } else {
         const { error } = await supabase
           .from("plans_traitement")
           .insert(dataToSave);
 
         if (error) throw error;
-        toast({ title: "Succès", description: "Mesure ajoutée au plan de traitement" });
+        toast({ title: "Succès", description: "Action ajoutée" });
       }
 
       setDialogOpen(false);
       await loadMeasures();
 
     } catch (error: any) {
-      console.error("Erreur sauvegarde mesure:", error);
+      console.error("Erreur sauvegarde action:", error);
       toast({ 
         title: "Erreur", 
-        description: error.message || "Impossible de sauvegarder la mesure", 
+        description: error.message || "Impossible de sauvegarder l'action", 
         variant: "destructive" 
       });
     } finally {
@@ -218,7 +222,7 @@ export const PlansTab = ({ data }: Props) => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Supprimer cette mesure ?")) return;
+    if (!confirm("Supprimer cette action ?")) return;
 
     try {
       const { error } = await supabase
@@ -228,14 +232,14 @@ export const PlansTab = ({ data }: Props) => {
 
       if (error) throw error;
       
-      toast({ title: "Succès", description: "Mesure supprimée" });
+      toast({ title: "Succès", description: "Action supprimée" });
       await loadMeasures();
 
     } catch (error: any) {
-      console.error("Erreur suppression mesure:", error);
+      console.error("Erreur suppression action:", error);
       toast({ 
         title: "Erreur", 
-        description: error.message || "Impossible de supprimer la mesure", 
+        description: error.message || "Impossible de supprimer l'action", 
         variant: "destructive" 
       });
     }
@@ -249,7 +253,7 @@ export const PlansTab = ({ data }: Props) => {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-[#2A5141]" />
-        <span className="ml-2 text-[#172030]/60">Chargement des mesures...</span>
+        <span className="ml-2 text-[#172030]/60">Chargement des actions...</span>
       </div>
     );
   }
@@ -259,46 +263,61 @@ export const PlansTab = ({ data }: Props) => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold text-[#172030]">Plans de traitement</h2>
-          <p className="text-sm text-[#172030]/60">Gérez les mesures de traitement pour chaque risque</p>
+          <p className="text-sm text-[#172030]/60">Gérez les actions de traitement pour chaque risque</p>
         </div>
       </div>
 
-      {/* KPI */}
+      {/* KPI avec couleurs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-[#172030]/10">
+        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#F8F6F2]">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-xs text-[#172030]/50">En retard</p>
-              <p className="text-2xl font-bold text-[#172030]">{stats.enRetard}</p>
-            </div>
-            <AlertTriangle className={`h-5 w-5 ${stats.enRetard > 0 ? 'text-red-500' : 'text-[#172030]/30'}`} />
-          </CardContent>
-        </Card>
-        <Card className="border-[#172030]/10">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-[#172030]/50">Avancement moyen</p>
-              <p className="text-2xl font-bold text-[#172030]">{stats.avancementMoyen}%</p>
-            </div>
-            <Clock className="h-5 w-5 text-[#2A5141]" />
-          </CardContent>
-        </Card>
-        <Card className="border-[#172030]/10">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-[#172030]/50">Coût total estimé</p>
-              <p className="text-2xl font-bold text-[#172030]">{stats.coutTotal} €</p>
-            </div>
-            <Euro className="h-5 w-5 text-[#2A5141]" />
-          </CardContent>
-        </Card>
-        <Card className="border-[#172030]/10">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-[#172030]/50">Mesures totales</p>
+              <p className="text-xs text-[#172030]/50 font-medium">Actions totales</p>
               <p className="text-2xl font-bold text-[#172030]">{stats.total}</p>
+              <p className="text-[10px] text-[#172030]/40">Planifiées</p>
             </div>
-            <CheckCircle2 className="h-5 w-5 text-[#2A5141]" />
+            <div className="h-10 w-10 rounded-xl bg-[#172030]/10 flex items-center justify-center">
+              <Target className="h-5 w-5 text-[#172030]" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#ECFDF5]">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-[#059669]/70 font-medium">Avancement moyen</p>
+              <p className="text-2xl font-bold text-[#059669]">{stats.avancementMoyen}%</p>
+              <p className="text-[10px] text-[#059669]/50">En progression</p>
+            </div>
+            <div className="h-10 w-10 rounded-xl bg-[#D1FAE5] flex items-center justify-center">
+              <TrendingUp className="h-5 w-5 text-[#059669]" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#FEF3C7]">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-[#D97706]/70 font-medium">Coût total estimé</p>
+              <p className="text-2xl font-bold text-[#D97706]">{stats.coutTotal.toLocaleString()} €</p>
+              <p className="text-[10px] text-[#D97706]/50">Budget alloué</p>
+            </div>
+            <div className="h-10 w-10 rounded-xl bg-[#FDE68A] flex items-center justify-center">
+              <Euro className="h-5 w-5 text-[#D97706]" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#E0F2FE]">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-[#2563EB]/70 font-medium">Actions terminées</p>
+              <p className="text-2xl font-bold text-[#2563EB]">{stats.actionsTerminees}</p>
+              <p className="text-[10px] text-[#2563EB]/50">Sur {stats.total} totales</p>
+            </div>
+            <div className="h-10 w-10 rounded-xl bg-[#DBEAFE] flex items-center justify-center">
+              <CheckCircle2 className="h-5 w-5 text-[#2563EB]" />
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -309,7 +328,7 @@ export const PlansTab = ({ data }: Props) => {
         <div className="md:col-span-1">
           <Card className="border-[#172030]/10">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-[#172030]">Risques</CardTitle>
+              <CardTitle className="text-lg font-semibold text-[#172030]">Risques</CardTitle>
             </CardHeader>
             <CardContent className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
               {risques.length === 0 ? (
@@ -341,7 +360,7 @@ export const PlansTab = ({ data }: Props) => {
                         <span className="text-xs text-[#172030]/40">{r.category || "—"}</span>
                         {count > 0 && (
                           <Badge variant="outline" className="text-[9px] border-[#172030]/20">
-                            {count} mesure{count > 1 ? 's' : ''}
+                            {count} action{count > 1 ? 's' : ''}
                           </Badge>
                         )}
                       </div>
@@ -353,40 +372,40 @@ export const PlansTab = ({ data }: Props) => {
           </Card>
         </div>
 
-        {/* Détails du risque + Mesures */}
+        {/* Détails du risque + Actions */}
         <div className="md:col-span-2">
           {selectedRisk ? (
             <Card className="border-[#172030]/10">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-sm font-medium text-[#172030]">
-                      {selectedRisk.title}
+                    <CardTitle className="text-lg font-semibold text-[#172030]">
+                      Actions
                     </CardTitle>
                     <p className="text-xs text-[#172030]/50 mt-0.5">
-                      {selectedRisk.description || "Pas de description"}
+                      {selectedRisk.title} — {selectedRisk.description || "Pas de description"}
                     </p>
                   </div>
                   <Button 
                     size="sm" 
-                    className="bg-[#2A5141] hover:bg-[#1f3d31] text-white shrink-0"
+                    className="bg-[#2A5141] hover:bg-[#1f3d31] text-white"
                     onClick={openCreate}
                   >
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter une mesure
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Nouvelle action
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {riskMeasures.length === 0 ? (
                   <div className="text-center py-8 text-[#172030]/40 border-2 border-dashed border-[#E8E4DC] rounded-lg">
-                    <p className="text-sm">Aucune mesure pour ce risque</p>
+                    <p className="text-sm">Aucune action pour ce risque</p>
                     <Button 
                       variant="outline" 
                       size="sm" 
                       className="mt-2 border-[#2A5141] text-[#2A5141]"
                       onClick={openCreate}
                     >
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Ajouter une mesure
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Nouvelle action
                     </Button>
                   </div>
                 ) : (
@@ -421,7 +440,7 @@ export const PlansTab = ({ data }: Props) => {
                             <span>⏱️ {m.charge_jh || 0} j/h</span>
                           </div>
                         </div>
-                        <div className="flex gap-1 shrink-0">
+                        <div className="flex gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -449,32 +468,32 @@ export const PlansTab = ({ data }: Props) => {
             <Card className="border-[#172030]/10">
               <CardContent className="py-12 text-center text-[#172030]/40">
                 <AlertTriangle className="h-12 w-12 mx-auto text-[#172030]/20" />
-                <p className="mt-3">Sélectionnez un risque pour voir ses mesures</p>
+                <p className="mt-3">Sélectionnez un risque pour voir ses actions</p>
               </CardContent>
             </Card>
           )}
         </div>
       </div>
 
-      {/* Dialog Ajout/Modification de mesure */}
+      {/* Dialog Ajout/Modification d'action */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-[#172030]">
-              {editingMeasure ? "Modifier la mesure" : "Ajouter une mesure"}
+              {editingMeasure ? "Modifier l'action" : "Nouvelle action"}
             </DialogTitle>
             <DialogDescription className="text-[#172030]/60">
-              {editingMeasure ? "Modifiez les détails de la mesure" : "Ajoutez une mesure au plan de traitement"}
+              {editingMeasure ? "Modifiez les détails de l'action" : "Ajoutez une action au plan de traitement"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Mesure *</Label>
+              <Label className="text-sm font-medium text-[#172030]">Action *</Label>
               <Input
                 value={form.mesure}
                 onChange={(e) => setForm({ ...form, mesure: e.target.value })}
-                placeholder="Nom de la mesure"
+                placeholder="Nom de l'action"
                 className="mt-1 border-[#172030]/20"
               />
             </div>
@@ -485,13 +504,13 @@ export const PlansTab = ({ data }: Props) => {
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={2}
-                placeholder="Décrivez la mesure..."
+                placeholder="Décrivez l'action..."
                 className="mt-1 border-[#172030]/20"
               />
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Type de mesure</Label>
+              <Label className="text-sm font-medium text-[#172030]">Type d'action</Label>
               <Select
                 value={form.type_mesure}
                 onValueChange={(v) => setForm({ ...form, type_mesure: v })}
@@ -582,10 +601,8 @@ export const PlansTab = ({ data }: Props) => {
             </div>
           </div>
 
-          <DialogFooter className="pt-2 border-t border-[#172030]/10">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Annuler
-            </Button>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Annuler</Button>
             <Button 
               onClick={handleSave} 
               disabled={saving}
@@ -599,3 +616,5 @@ export const PlansTab = ({ data }: Props) => {
     </div>
   );
 };
+
+// ✅ FIN DU FICHIER - Export déjà fait ci-dessus

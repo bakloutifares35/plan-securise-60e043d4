@@ -2,26 +2,27 @@ import { useState } from "react";
 import { AlertTriangle, BarChart3, Boxes, KanbanSquare, Grid3x3, Loader2, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRiskData } from "./useRiskData";
-import { ReferentielsTab } from "./tabs/ReferentielsTab";
-import { RegistreTab } from "./tabs/RegistreTab";
-import { MatriceTab } from "./tabs/MatriceTab";
-import { PlansTab } from "./tabs/PlansTab";
 import { ComexTab } from "./tabs/ComexTab";
+import { RegistreTab } from "./tabs/RegistreTab";
+import { PlansTab } from "./tabs/PlansTab";
+import { MatriceTab } from "./tabs/MatriceTab";
 import { ParametresTab } from "./tabs/ParametresTab";
+import { ReferentielsTab } from "./tabs/ReferentielsTab";
 
-type Tab = "referentiels" | "registre" | "matrice" | "plans" | "comex" | "parametres";
+type Tab = "comex" | "registre" | "plans" | "matrice" | "parametres" | "referentiels";
 
+// ✅ NOUVEL ORDRE : Dashboard COMEX en premier
 const TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
-  { id: "referentiels", label: "Référentiels", icon: Boxes },
-  { id: "registre", label: "Registre des risques", icon: KanbanSquare },
-  { id: "matrice", label: "Matrice", icon: Grid3x3 },
-  { id: "plans", label: "Plans de traitement", icon: BarChart3 },
   { id: "comex", label: "Dashboard COMEX", icon: BarChart3 },
+  { id: "registre", label: "Registre des risques", icon: KanbanSquare },
+  { id: "plans", label: "Plans de traitement", icon: BarChart3 },
+  { id: "matrice", label: "Matrice", icon: Grid3x3 },
   { id: "parametres", label: "Paramètres", icon: Settings },
+  { id: "referentiels", label: "Référentiels", icon: Boxes },
 ];
 
 export const RiskModule = () => {
-  const [tab, setTab] = useState<Tab>("referentiels");
+  const [tab, setTab] = useState<Tab>("comex"); // ✅ Dashboard COMEX par défaut
   const data = useRiskData();
 
   return (
@@ -73,12 +74,12 @@ export const RiskModule = () => {
         </div>
       ) : (
         <div className="animate-in fade-in duration-200" key={tab}>
-          {tab === "referentiels" && <ReferentielsTab data={data} />}
-          {tab === "registre" && <RegistreTab data={data} />}
-          {tab === "matrice" && <MatriceTab data={data} />}
-          {tab === "plans" && <PlansTab data={data} />}
           {tab === "comex" && <ComexTab data={data} />}
+          {tab === "registre" && <RegistreTab data={data} />}
+          {tab === "plans" && <PlansTab data={data} />}
+          {tab === "matrice" && <MatriceTab data={data} />}
           {tab === "parametres" && <ParametresTab data={data} />}
+          {tab === "referentiels" && <ReferentielsTab data={data} />}
         </div>
       )}
     </div>

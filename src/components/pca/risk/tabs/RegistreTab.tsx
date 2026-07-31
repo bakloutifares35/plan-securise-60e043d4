@@ -27,6 +27,7 @@ type Props = {
   data: RiskData;
 };
 
+// ✅ BON EXPORT
 export const RegistreTab = ({ data }: Props) => {
   const { risques, loading, saveRisque, deleteRow } = data;
   const [query, setQuery] = useState("");
@@ -47,6 +48,7 @@ export const RegistreTab = ({ data }: Props) => {
   const openEdit = (r: Risque) => {
     setEditing(r);
     setForm({
+      id: r.id,
       title: r.title,
       description: r.description || "",
       category: r.category || "Cyber",

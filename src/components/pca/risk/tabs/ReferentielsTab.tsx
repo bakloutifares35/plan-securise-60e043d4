@@ -21,6 +21,7 @@ type Props = {
   data: RiskData;
 };
 
+// ✅ EXPORT NOMINAL (sans 'default')
 export const ReferentielsTab = ({ data }: Props) => {
   const { actifs, menaces, saveActif, saveMenace, deleteRow } = data;
   const [activeTab, setActiveTab] = useState<"actifs" | "menaces">("actifs");
@@ -45,9 +46,11 @@ export const ReferentielsTab = ({ data }: Props) => {
     setActifDialogOpen(true);
   };
 
+  // ✅ CORRIGÉ : on garde l'ID pour la modification
   const openActifEdit = (a: Actif) => {
     setEditingActif(a);
     setActifForm({
+      id: a.id, // ✅ CRUCIAL : on garde l'ID pour faire UPDATE
       nom: a.nom,
       type: a.type,
       description: a.description || "",
@@ -59,6 +62,7 @@ export const ReferentielsTab = ({ data }: Props) => {
     setActifDialogOpen(true);
   };
 
+  // ✅ CORRIGÉ : on passe l'ID si on modifie → UPDATE au lieu de INSERT
   const handleActifSave = async () => {
     if (!actifForm.nom?.trim()) {
       toast({ title: "Erreur", description: "Le nom est obligatoire", variant: "destructive" });
@@ -77,9 +81,11 @@ export const ReferentielsTab = ({ data }: Props) => {
     setMenaceDialogOpen(true);
   };
 
+  // ✅ CORRIGÉ : on garde l'ID pour la modification
   const openMenaceEdit = (m: Menace) => {
     setEditingMenace(m);
     setMenaceForm({
+      id: m.id, // ✅ CRUCIAL : on garde l'ID pour faire UPDATE
       nom: m.nom,
       code: m.code || "",
       categorie: m.categorie,
@@ -91,6 +97,7 @@ export const ReferentielsTab = ({ data }: Props) => {
     setMenaceDialogOpen(true);
   };
 
+  // ✅ CORRIGÉ : on passe l'ID si on modifie → UPDATE au lieu de INSERT
   const handleMenaceSave = async () => {
     if (!menaceForm.nom?.trim()) {
       toast({ title: "Erreur", description: "Le nom est obligatoire", variant: "destructive" });
@@ -174,7 +181,7 @@ export const ReferentielsTab = ({ data }: Props) => {
         />
       </div>
 
-      {/* Liste des Actifs */}
+      {/* ✅ Liste des Actifs - COLONNE "PROCESSUS" SUPPRIMÉE */}
       {activeTab === "actifs" && (
         <div className="border rounded-xl overflow-hidden bg-white">
           <div className="overflow-x-auto">
@@ -183,7 +190,7 @@ export const ReferentielsTab = ({ data }: Props) => {
                 <tr className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
                   <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Actif</th>
                   <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Type</th>
-                  <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Processus</th>
+                  {/* ❌ COLONNE "PROCESSUS" SUPPRIMÉE */}
                   <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Propriétaire</th>
                   <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Criticité</th>
                   <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">D</th>
@@ -193,7 +200,7 @@ export const ReferentielsTab = ({ data }: Props) => {
               <tbody>
                 {filteredActifs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-[#172030]/40">
+                    <td colSpan={6} className="text-center py-8 text-[#172030]/40">
                       Aucun actif trouvé
                     </td>
                   </tr>
@@ -206,7 +213,7 @@ export const ReferentielsTab = ({ data }: Props) => {
                           {a.type || "—"}
                         </Badge>
                       </td>
-                      <td className="p-3 text-xs text-[#172030]/40">—</td>
+                      {/* ❌ CELLULE "PROCESSUS" SUPPRIMÉE */}
                       <td className="p-3 text-xs text-[#172030]/60">{a.proprietaire || "—"}</td>
                       <td className="p-3 text-center">
                         <Badge className={cn(
@@ -251,7 +258,7 @@ export const ReferentielsTab = ({ data }: Props) => {
               </tbody>
               <tfoot>
                 <tr className="bg-[#F8F6F2] border-t-2 border-[#E8E4DC]">
-                  <td colSpan={7} className="p-3 font-semibold text-sm text-[#172030]">
+                  <td colSpan={6} className="p-3 font-semibold text-sm text-[#172030]">
                     {filteredActifs.length} actif{filteredActifs.length > 1 ? 's' : ''}
                   </td>
                 </tr>
@@ -335,7 +342,7 @@ export const ReferentielsTab = ({ data }: Props) => {
         </div>
       )}
 
-      {/* Dialog Création/Édition Actif - SEULEMENT Disponibilité */}
+      {/* Dialog Création/Édition Actif */}
       <Dialog open={actifDialogOpen} onOpenChange={setActifDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -402,7 +409,7 @@ export const ReferentielsTab = ({ data }: Props) => {
               />
             </div>
 
-            {/* SEULEMENT Disponibilité - PAS Intégrité, Confidentialité, Traçabilité */}
+            {/* SEULEMENT Disponibilité */}
             <div className="border-t border-[#172030]/10 pt-4">
               <div className="flex justify-between items-center mb-1">
                 <Label className="text-sm font-medium text-[#172030]">Disponibilité</Label>
@@ -456,7 +463,7 @@ export const ReferentielsTab = ({ data }: Props) => {
               disabled={savingActif}
               className="bg-[#2A5141] hover:bg-[#1f3d31] text-white"
             >
-              {savingActif ? "Enregistrement…" : "Enregistrer"}
+              {savingActif ? "Enregistrement…" : editingActif ? "Mettre à jour" : "Enregistrer"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -580,7 +587,7 @@ export const ReferentielsTab = ({ data }: Props) => {
               disabled={savingMenace}
               className="bg-[#2A5141] hover:bg-[#1f3d31] text-white"
             >
-              {savingMenace ? "Enregistrement…" : "Enregistrer"}
+              {savingMenace ? "Enregistrement…" : editingMenace ? "Mettre à jour" : "Enregistrer"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -588,3 +595,5 @@ export const ReferentielsTab = ({ data }: Props) => {
     </div>
   );
 };
+
+// ✅ FIN DU FICHIER - Export déjà fait ci-dessus
