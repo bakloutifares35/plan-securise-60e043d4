@@ -40,7 +40,28 @@ type Measure = {
   created_at?: string;
 };
 
-// ✅ EXPORT NOMINAL (sans 'default')
+// ============================================================
+// CHARTE GRAPHIQUE RESILLIA PREMIUM
+// ============================================================
+const COLORS = {
+  navy: "#172030",
+  cream: "#F8F6F2",
+  forest: "#2A5141",
+  text: "#172030",
+  muted: "#6C7A8A",
+  border: "#E5E2DD",
+  
+  // Badges d'avancement (Intégration des teintes Resillia)
+  progress: {
+    done: { bg: "#E5F0EB", text: "#1F4E39" },    // Vert Forêt clair
+    half: { bg: "#FDF3D6", text: "#A38730" },    // Ambre/Doré
+    low: { bg: "#F8F6F2", text: "#6C7A8A" },     // Gris subtil
+  }
+};
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 export const PlansTab = ({ data }: Props) => {
   const { risques } = data;
 
@@ -113,10 +134,7 @@ export const PlansTab = ({ data }: Props) => {
       }
     }
 
-    // Actions terminées (avancement = 100%)
     const actionsTerminees = measures.filter(m => m.avancement === 100).length;
-
-    // Actions en cours (avancement entre 1 et 99)
     const actionsEnCours = measures.filter(m => m.avancement > 0 && m.avancement < 100).length;
 
     return {
@@ -251,72 +269,77 @@ export const PlansTab = ({ data }: Props) => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-12 bg-[#F8F6F2]">
         <Loader2 className="h-8 w-8 animate-spin text-[#2A5141]" />
-        <span className="ml-2 text-[#172030]/60">Chargement des actions...</span>
+        <span className="ml-2 text-[#172030]/60 font-sans">Chargement des actions...</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-[1440px] mx-auto p-6 space-y-6 bg-[#F8F6F2] min-h-screen font-sans">
+      
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-[#172030]">Plans de traitement</h2>
-          <p className="text-sm text-[#172030]/60">Gérez les actions de traitement pour chaque risque</p>
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-[#172030]">Plans de traitement</h1>
+          <p className="text-sm text-[#172030]/60 font-sans">Gérez les actions de traitement pour chaque risque</p>
         </div>
       </div>
 
-      {/* KPI avec couleurs */}
+      {/* KPI PREMIUM UNIFIÉS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#F8F6F2]">
-          <CardContent className="p-4 flex items-center justify-between">
+        <Card className="border-0 shadow-sm bg-white rounded-xl">
+          <CardContent className="p-5 flex justify-between items-start">
             <div>
-              <p className="text-xs text-[#172030]/50 font-medium">Actions totales</p>
-              <p className="text-2xl font-bold text-[#172030]">{stats.total}</p>
-              <p className="text-[10px] text-[#172030]/40">Planifiées</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-[#172030]/50 font-sans">Actions totales</p>
+              <p className="font-serif text-3xl font-bold text-[#172030] mt-1">{stats.total}</p>
+              <p className="text-[10px] text-[#172030]/40 mt-0.5 font-sans">Planifiées</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-[#172030]/10 flex items-center justify-center">
-              <Target className="h-5 w-5 text-[#172030]" />
+            <div className="h-10 w-10 rounded-xl bg-[#172030]/5 flex items-center justify-center">
+              <Target className="h-5 w-5 text-[#172030]/50" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#ECFDF5]">
-          <CardContent className="p-4 flex items-center justify-between">
+        <Card className="border-0 shadow-sm bg-white rounded-xl">
+          <CardContent className="p-5 flex justify-between items-start">
             <div>
-              <p className="text-xs text-[#059669]/70 font-medium">Avancement moyen</p>
-              <p className="text-2xl font-bold text-[#059669]">{stats.avancementMoyen}%</p>
-              <p className="text-[10px] text-[#059669]/50">En progression</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-[#1F4E39]/70 font-sans">Avancement moyen</p>
+              <div className="flex items-end gap-2 mt-1">
+                <p className="font-serif text-3xl font-bold text-[#1F4E39]">{stats.avancementMoyen}%</p>
+              </div>
+              <p className="text-[10px] text-[#1F4E39]/60 mt-0.5 font-sans">En progression</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-[#D1FAE5] flex items-center justify-center">
-              <TrendingUp className="h-5 w-5 text-[#059669]" />
+            <div className="h-10 w-10 rounded-xl bg-[#E5F0EB] flex items-center justify-center">
+              <TrendingUp className="h-5 w-5 text-[#1F4E39]" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#FEF3C7]">
-          <CardContent className="p-4 flex items-center justify-between">
+        <Card className="border-0 shadow-sm bg-white rounded-xl">
+          <CardContent className="p-5 flex justify-between items-start">
             <div>
-              <p className="text-xs text-[#D97706]/70 font-medium">Coût total estimé</p>
-              <p className="text-2xl font-bold text-[#D97706]">{stats.coutTotal.toLocaleString()} €</p>
-              <p className="text-[10px] text-[#D97706]/50">Budget alloué</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-[#A38730]/70 font-sans">Coût total estimé</p>
+              <p className="font-serif text-3xl font-bold text-[#A38730] mt-1">
+                {stats.coutTotal.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 })}
+              </p>
+              <p className="text-[10px] text-[#A38730]/50 mt-0.5 font-sans">Budget alloué</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-[#FDE68A] flex items-center justify-center">
-              <Euro className="h-5 w-5 text-[#D97706]" />
+            <div className="h-10 w-10 rounded-xl bg-[#FDF3D6] flex items-center justify-center">
+              <Euro className="h-5 w-5 text-[#A38730]" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-[#172030]/10 bg-gradient-to-br from-white to-[#E0F2FE]">
-          <CardContent className="p-4 flex items-center justify-between">
+        <Card className="border-0 shadow-sm bg-white rounded-xl">
+          <CardContent className="p-5 flex justify-between items-start">
             <div>
-              <p className="text-xs text-[#2563EB]/70 font-medium">Actions terminées</p>
-              <p className="text-2xl font-bold text-[#2563EB]">{stats.actionsTerminees}</p>
-              <p className="text-[10px] text-[#2563EB]/50">Sur {stats.total} totales</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-[#172030]/50 font-sans">Actions terminées</p>
+              <p className="font-serif text-3xl font-bold text-[#172030] mt-1">{stats.actionsTerminees}</p>
+              <p className="text-[10px] text-[#172030]/40 mt-0.5 font-sans">Sur {stats.total} totales</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-[#DBEAFE] flex items-center justify-center">
-              <CheckCircle2 className="h-5 w-5 text-[#2563EB]" />
+            <div className="h-10 w-10 rounded-xl bg-[#F8F6F2] border border-[#172030]/10 flex items-center justify-center">
+              <CheckCircle2 className="h-5 w-5 text-[#2A5141]" />
             </div>
           </CardContent>
         </Card>
@@ -326,13 +349,13 @@ export const PlansTab = ({ data }: Props) => {
       <div className="grid md:grid-cols-3 gap-4">
         {/* Liste des risques */}
         <div className="md:col-span-1">
-          <Card className="border-[#172030]/10">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-semibold text-[#172030]">Risques</CardTitle>
+          <Card className="border-0 shadow-sm bg-white rounded-xl">
+            <CardHeader className="p-5 pb-2 border-b border-[#F8F6F2]">
+              <CardTitle className="font-serif text-[#172030] text-base">Risques</CardTitle>
             </CardHeader>
-            <CardContent className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
+            <CardContent className="p-4 space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar">
               {risques.length === 0 ? (
-                <p className="text-sm text-[#172030]/40 text-center py-4">Aucun risque</p>
+                <p className="text-sm text-[#172030]/40 text-center py-4 font-sans">Aucun risque</p>
               ) : (
                 risques.map((r) => {
                   const niveau = getNiveauLabel(r);
@@ -344,22 +367,22 @@ export const PlansTab = ({ data }: Props) => {
                       key={r.id}
                       onClick={() => setSelectedRiskId(r.id)}
                       className={cn(
-                        "p-3 rounded-lg border cursor-pointer transition-all",
+                        "p-4 rounded-xl border cursor-pointer transition-all duration-200",
                         selectedRiskId === r.id
-                          ? "border-[#2A5141] bg-[#F8F6F2] ring-1 ring-[#2A5141]"
-                          : "border-[#E8E4DC] hover:border-[#2A5141]/30 hover:bg-[#F8F6F2]/50"
+                          ? "border-[#2A5141] bg-[#F8F6F2] shadow-sm"
+                          : "border-[#E5E2DD] hover:border-[#2A5141]/30 hover:bg-[#F8F6F2]/50 bg-white"
                       )}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm text-[#172030] truncate">{r.title}</span>
-                        <Badge className={cn("text-[9px]", style?.badge)}>
+                        <span className="font-medium text-sm text-[#172030] font-sans truncate">{r.title}</span>
+                        <Badge className={cn("text-[9px] font-medium border-0 rounded-full px-2 py-0.5", style?.badge)}>
                           {niveau}
                         </Badge>
                       </div>
                       <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-[#172030]/40">{r.category || "—"}</span>
+                        <span className="text-xs text-[#172030]/40 font-sans">{r.category || "—"}</span>
                         {count > 0 && (
-                          <Badge variant="outline" className="text-[9px] border-[#172030]/20">
+                          <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/50 font-sans rounded-full px-2 py-0.5 bg-white">
                             {count} action{count > 1 ? 's' : ''}
                           </Badge>
                         )}
@@ -375,246 +398,271 @@ export const PlansTab = ({ data }: Props) => {
         {/* Détails du risque + Actions */}
         <div className="md:col-span-2">
           {selectedRisk ? (
-            <Card className="border-[#172030]/10">
-              <CardHeader className="pb-2">
+            <Card className="border-0 shadow-sm bg-white rounded-xl h-full">
+              <CardHeader className="p-5 pb-3 border-b border-[#F8F6F2]">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-lg font-semibold text-[#172030]">
+                    <CardTitle className="font-serif text-[#172030] text-lg">
                       Actions
                     </CardTitle>
-                    <p className="text-xs text-[#172030]/50 mt-0.5">
+                    <p className="text-xs text-[#172030]/50 font-sans mt-0.5">
                       {selectedRisk.title} — {selectedRisk.description || "Pas de description"}
                     </p>
                   </div>
                   <Button 
                     size="sm" 
-                    className="bg-[#2A5141] hover:bg-[#1f3d31] text-white"
+                    className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm font-sans"
                     onClick={openCreate}
                   >
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Nouvelle action
+                    <Plus className="h-4 w-4 mr-1.5" /> Nouvelle action
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="p-5 space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
                 {riskMeasures.length === 0 ? (
-                  <div className="text-center py-8 text-[#172030]/40 border-2 border-dashed border-[#E8E4DC] rounded-lg">
-                    <p className="text-sm">Aucune action pour ce risque</p>
+                  <div className="text-center py-12 text-[#172030]/40 border-2 border-dashed border-[#E5E2DD] rounded-xl bg-[#F8F6F2]/50">
+                    <Shield className="h-10 w-10 mx-auto text-[#172030]/20 mb-2" />
+                    <p className="text-sm font-sans">Aucune action pour ce risque</p>
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="mt-2 border-[#2A5141] text-[#2A5141]"
+                      className="mt-3 border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2]"
                       onClick={openCreate}
                     >
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Nouvelle action
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Créer une action
                     </Button>
                   </div>
                 ) : (
-                  riskMeasures.map((m) => (
-                    <div key={m.id} className="border rounded-lg p-3 hover:bg-[#F8F6F2] transition-colors">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm text-[#172030]">{m.mesure}</span>
-                            <Badge variant="outline" className="text-[9px] border-[#172030]/20">
-                              {m.type_mesure}
-                            </Badge>
-                            <Badge className={cn(
-                              "text-[9px]",
-                              m.avancement >= 100 ? "bg-green-100 text-green-700" :
-                              m.avancement >= 50 ? "bg-amber-100 text-amber-700" :
-                              "bg-blue-100 text-blue-700"
-                            )}>
-                              {m.avancement}%
-                            </Badge>
-                            <Badge variant="outline" className="text-[9px] border-[#172030]/20">
-                              {m.statut || "À faire"}
-                            </Badge>
+                  riskMeasures.map((m) => {
+                    // Style d'avancement premium
+                    const progressStyle = m.avancement >= 100 ? COLORS.progress.done : m.avancement >= 50 ? COLORS.progress.half : COLORS.progress.low;
+                    
+                    return (
+                      <div key={m.id} className="border border-[#E5E2DD] rounded-xl p-4 hover:bg-[#F8F6F2] transition-colors bg-white">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 pr-4">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className="font-medium text-sm text-[#172030] font-sans">{m.mesure}</span>
+                              <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/50 font-sans">
+                                {m.type_mesure}
+                              </Badge>
+                              <Badge className="text-[9px] font-medium border-0 rounded-full px-2 py-0.5" style={{ backgroundColor: progressStyle.bg, color: progressStyle.text }}>
+                                {m.avancement}%
+                              </Badge>
+                              <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/50 font-sans">
+                                {m.statut || "À faire"}
+                              </Badge>
+                            </div>
+                            {m.description && (
+                              <p className="text-xs text-[#172030]/60 font-sans mt-1">{m.description}</p>
+                            )}
+                            <div className="flex flex-wrap gap-4 mt-2 text-xs text-[#172030]/50 font-sans">
+                              <span className="flex items-center gap-1">👤 {m.responsable || "—"}</span>
+                              <span className="flex items-center gap-1">📅 {m.echeance ? new Date(m.echeance).toLocaleDateString('fr-FR') : "—"}</span>
+                              <span className="flex items-center gap-1">💰 {m.cout_estime || 0} €</span>
+                              <span className="flex items-center gap-1">⏱️ {m.charge_jh || 0} j/h</span>
+                            </div>
                           </div>
-                          {m.description && (
-                            <p className="text-xs text-[#172030]/60 mt-0.5">{m.description}</p>
-                          )}
-                          <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-[#172030]/50">
-                            <span>👤 {m.responsable || "—"}</span>
-                            <span>📅 {m.echeance ? new Date(m.echeance).toLocaleDateString('fr-FR') : "—"}</span>
-                            <span>💰 {m.cout_estime || 0} €</span>
-                            <span>⏱️ {m.charge_jh || 0} j/h</span>
+                          <div className="flex gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-[#172030]/40 hover:text-[#172030] hover:bg-[#F8F6F2]"
+                              onClick={() => openEdit(m)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-[#A52A2A]/50 hover:text-[#A52A2A] hover:bg-[#FDE8E8]"
+                              onClick={() => handleDelete(m.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 hover:bg-[#F8F6F2]"
-                            onClick={() => openEdit(m)}
-                          >
-                            <Pencil className="h-3.5 w-3.5 text-[#172030]/60" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 hover:bg-red-50"
-                            onClick={() => handleDelete(m.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-400 hover:text-red-600" />
-                          </Button>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </CardContent>
             </Card>
           ) : (
-            <Card className="border-[#172030]/10">
-              <CardContent className="py-12 text-center text-[#172030]/40">
-                <AlertTriangle className="h-12 w-12 mx-auto text-[#172030]/20" />
-                <p className="mt-3">Sélectionnez un risque pour voir ses actions</p>
+            <Card className="border-0 shadow-sm bg-white rounded-xl h-full flex items-center justify-center">
+              <CardContent className="py-16 text-center text-[#172030]/40">
+                <div className="h-16 w-16 rounded-2xl bg-[#F8F6F2] flex items-center justify-center mx-auto mb-4">
+                  <AlertTriangle className="h-8 w-8 text-[#172030]/20" />
+                </div>
+                <p className="text-base font-serif text-[#172030]/40">Sélectionnez un risque</p>
+                <p className="text-sm font-sans mt-1">Choisissez un risque dans la colonne de gauche pour gérer ses actions.</p>
               </CardContent>
             </Card>
           )}
         </div>
       </div>
 
-      {/* Dialog Ajout/Modification d'action */}
+      {/* Dialog Ajout/Modification d'action (Premium) */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md bg-white border-[#E5E2DD] shadow-xl rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-[#172030]">
+            <DialogTitle className="font-serif text-[#172030] text-lg">
               {editingMeasure ? "Modifier l'action" : "Nouvelle action"}
             </DialogTitle>
-            <DialogDescription className="text-[#172030]/60">
+            <DialogDescription className="text-[#172030]/60 font-sans text-sm">
               {editingMeasure ? "Modifiez les détails de l'action" : "Ajoutez une action au plan de traitement"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Action *</Label>
+              <Label className="text-sm font-medium text-[#172030] font-sans">Action *</Label>
               <Input
                 value={form.mesure}
                 onChange={(e) => setForm({ ...form, mesure: e.target.value })}
                 placeholder="Nom de l'action"
-                className="mt-1 border-[#172030]/20"
+                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
               />
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Description</Label>
+              <Label className="text-sm font-medium text-[#172030] font-sans">Description</Label>
               <Textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={2}
                 placeholder="Décrivez l'action..."
-                className="mt-1 border-[#172030]/20"
+                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
               />
             </div>
 
-            <div>
-              <Label className="text-sm font-medium text-[#172030]">Type d'action</Label>
-              <Select
-                value={form.type_mesure}
-                onValueChange={(v) => setForm({ ...form, type_mesure: v })}
-              >
-                <SelectTrigger className="mt-1 border-[#172030]/20">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Préventive">Préventive</SelectItem>
-                  <SelectItem value="Corrective">Corrective</SelectItem>
-                  <SelectItem value="Détective">Détective</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-[#172030]">Avancement (%)</Label>
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                value={form.avancement}
-                onChange={(e) => setForm({ ...form, avancement: Number(e.target.value) })}
-                placeholder="0"
-                className="mt-1 border-[#172030]/20"
-              />
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-[#172030]">Statut</Label>
-              <Select
-                value={form.statut}
-                onValueChange={(v) => setForm({ ...form, statut: v })}
-              >
-                <SelectTrigger className="mt-1 border-[#172030]/20">
-                  <SelectValue placeholder="Statut" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="À faire">À faire</SelectItem>
-                  <SelectItem value="En cours">En cours</SelectItem>
-                  <SelectItem value="Terminé">Terminé</SelectItem>
-                  <SelectItem value="Acceptée">Acceptée</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium text-[#172030]">Responsable</Label>
-              <Input
-                value={form.responsable}
-                onChange={(e) => setForm({ ...form, responsable: e.target.value })}
-                placeholder="Nom du responsable"
-                className="mt-1 border-[#172030]/20"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-sm font-medium text-[#172030]">Échéance</Label>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Type d'action</Label>
+                <Select
+                  value={form.type_mesure}
+                  onValueChange={(v) => setForm({ ...form, type_mesure: v })}
+                >
+                  <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]">
+                    <SelectValue placeholder="Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Préventive">Préventive</SelectItem>
+                    <SelectItem value="Corrective">Corrective</SelectItem>
+                    <SelectItem value="Détective">Détective</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Statut</Label>
+                <Select
+                  value={form.statut}
+                  onValueChange={(v) => setForm({ ...form, statut: v })}
+                >
+                  <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]">
+                    <SelectValue placeholder="Statut" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="À faire">À faire</SelectItem>
+                    <SelectItem value="En cours">En cours</SelectItem>
+                    <SelectItem value="Terminé">Terminé</SelectItem>
+                    <SelectItem value="Acceptée">Acceptée</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Avancement (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.avancement}
+                  onChange={(e) => setForm({ ...form, avancement: Number(e.target.value) })}
+                  placeholder="0"
+                  className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Responsable</Label>
+                <Input
+                  value={form.responsable}
+                  onChange={(e) => setForm({ ...form, responsable: e.target.value })}
+                  placeholder="Nom"
+                  className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Échéance</Label>
                 <Input
                   type="date"
                   value={form.echeance}
                   onChange={(e) => setForm({ ...form, echeance: e.target.value })}
-                  className="mt-1 border-[#172030]/20"
+                  className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium text-[#172030]">Coût estimé (€)</Label>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Coût estimé (€)</Label>
                 <Input
                   type="number"
                   value={form.cout_estime}
                   onChange={(e) => setForm({ ...form, cout_estime: e.target.value })}
                   placeholder="0"
-                  className="mt-1 border-[#172030]/20"
+                  className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
                 />
               </div>
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Charge (j/h)</Label>
+              <Label className="text-sm font-medium text-[#172030] font-sans">Charge (j/h)</Label>
               <Input
                 type="number"
                 value={form.charge_jh}
                 onChange={(e) => setForm({ ...form, charge_jh: e.target.value })}
                 placeholder="0"
-                className="mt-1 border-[#172030]/20"
+                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
               />
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Annuler</Button>
+          <DialogFooter className="mt-2">
+            <Button variant="outline" className="border-[#E5E2DD] text-[#172030]/60 hover:bg-[#F8F6F2]" onClick={() => setDialogOpen(false)}>Annuler</Button>
             <Button 
               onClick={handleSave} 
               disabled={saving}
-              className="bg-[#2A5141] hover:bg-[#1f3d31] text-white"
+              className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm"
             >
-              {saving ? "Enregistrement..." : editingMeasure ? "Mettre à jour" : "Ajouter"}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {saving ? "Enregistrement..." : (editingMeasure ? "Mettre à jour" : "Ajouter")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ==========================================================
+          STYLE SCROLLBAR PERSONNALISÉ
+          ========================================================== */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #E5E2DD;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #C0D8CF;
+        }
+      `}</style>
     </div>
   );
 };
-
-// ✅ FIN DU FICHIER - Export déjà fait ci-dessus

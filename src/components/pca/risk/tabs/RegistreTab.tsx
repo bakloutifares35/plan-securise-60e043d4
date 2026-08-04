@@ -27,11 +27,15 @@ type Props = {
   data: RiskData;
 };
 
-// ✅ BON EXPORT
+type FilterType = "all" | "critical" | "analyzed" | "pending" | null;
+
 export const RegistreTab = ({ data }: Props) => {
   const { risques, loading, saveRisque, deleteRow } = data;
   const [query, setQuery] = useState("");
   const [filterSev, setFilterSev] = useState<string>("all");
+  
+  // Filtre actif des KPIs
+  const [activeFilter, setActiveFilter] = useState<FilterType>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Risque | null>(null);
@@ -92,16 +96,31 @@ export const RegistreTab = ({ data }: Props) => {
     setToDelete(null);
   };
 
+  // ============================================================
+  // LOGIQUE DE FILTRAGE COMBINÉ (KPIs + Recherche + Niveau)
+  // ============================================================
   const filtered = risques.filter((r) => {
+    // 1. Recherche textuelle
     const q = query.trim().toLowerCase();
     if (q) {
       const searchText = `${r.title} ${r.description ?? ""} ${r.category ?? ""} ${r.owner ?? ""}`.toLowerCase();
       if (!searchText.includes(q)) return false;
     }
+    
+    // 2. Filtre par niveau (Dropdown)
     if (filterSev !== "all" && r.niveau !== filterSev) return false;
+
+    // 3. Filtre par clic sur KPI
+    if (activeFilter === "critical" && r.niveau !== "Critique") return false;
+    if (activeFilter === "analyzed" && (!r.score_brut || r.score_brut === 0)) return false;
+    if (activeFilter === "pending" && r.status !== "À analyser") return false;
+    
     return true;
   });
 
+  // ============================================================
+  // STATISTIQUES DES KPIs
+  // ============================================================
   const stats = {
     total: risques.length,
     critical: risques.filter((r) => r.niveau === "Critique").length,
@@ -114,62 +133,113 @@ export const RegistreTab = ({ data }: Props) => {
   };
 
   if (loading) {
-    return <div className="text-center py-8 text-[#172030]/60">Chargement...</div>;
+    return <div className="text-center py-8 text-[#172030]/60 font-sans">Chargement...</div>;
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header avec stats */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-[#172030]/10 p-6">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold text-[#172030]">Registre des risques</h2>
-            <p className="text-sm text-[#172030]/70 mt-1">
-              Gérez tous vos risques évalués.
-            </p>
+    <div className="max-w-[1440px] mx-auto space-y-6 font-sans">
+      {/* ==========================================================
+          HEADER & KPIs CLIQUABLES (Filtres actifs)
+          ========================================================== */}
+      <Card className="border-0 shadow-sm bg-white rounded-xl">
+        <CardContent className="p-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="font-serif text-2xl font-bold tracking-tight text-[#172030]">Registre des risques</h2>
+              <p className="text-sm text-[#172030]/60 mt-1 font-sans">Gérez tous vos risques évalués.</p>
+            </div>
+            <Button 
+              onClick={openCreate} 
+              className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm"
+            >
+              <Plus className="h-4 w-4 mr-2" /> Nouveau risque
+            </Button>
           </div>
-          <Button 
-            onClick={openCreate} 
-            className="bg-[#2A5141] hover:bg-[#1f3d31] text-white"
-          >
-            <Plus className="h-4 w-4 mr-2" /> Nouveau risque
-          </Button>
-        </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-          <div className="bg-[#2A5141]/10 rounded-lg p-4 border border-[#2A5141]/20">
-            <div className="flex items-center gap-2 text-[#2A5141] text-sm">
-              <Database className="h-4 w-4" />
-              <span>Total</span>
+          {/* KPIs INTERACTIFS */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div 
+              onClick={() => setActiveFilter(activeFilter === "all" ? null : "all")}
+              className={cn(
+                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
+                activeFilter === "all" 
+                  ? "bg-[#F8F6F2] border-[#2A5141] ring-1 ring-[#2A5141]" 
+                  : "bg-[#F3F1ED] border-transparent hover:border-[#2A5141]/30"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[#172030] text-sm font-medium">
+                  <Database className="h-4 w-4 text-[#172030]/50" />
+                  <span>Total</span>
+                </div>
+                {activeFilter === "all" && <div className="h-2 w-2 rounded-full bg-[#2A5141]" />}
+              </div>
+              <div className="text-3xl font-bold text-[#172030] mt-2 font-serif">{stats.total}</div>
             </div>
-            <div className="text-2xl font-bold text-[#2A5141] mt-1">{stats.total}</div>
-          </div>
-          <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-            <div className="flex items-center gap-2 text-red-600 text-sm">
-              <AlertTriangle className="h-4 w-4" />
-              <span>Critiques</span>
-            </div>
-            <div className="text-2xl font-bold text-red-700 mt-1">{stats.critical}</div>
-          </div>
-          <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-            <div className="flex items-center gap-2 text-green-600 text-sm">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>Analysés</span>
-            </div>
-            <div className="text-2xl font-bold text-green-700 mt-1">{stats.analyzed}</div>
-          </div>
-          <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-            <div className="flex items-center gap-2 text-yellow-600 text-sm">
-              <Clock className="h-4 w-4" />
-              <span>À analyser</span>
-            </div>
-            <div className="text-2xl font-bold text-yellow-700 mt-1">{stats.pending}</div>
-          </div>
-        </div>
-      </div>
 
-      {/* Filters */}
+            <div 
+              onClick={() => setActiveFilter(activeFilter === "critical" ? null : "critical")}
+              className={cn(
+                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
+                activeFilter === "critical" 
+                  ? "bg-[#FDE8E8] border-[#A52A2A] ring-1 ring-[#A52A2A]" 
+                  : "bg-[#FDE8E8]/50 border-transparent hover:border-[#A52A2A]/30"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[#A52A2A] text-sm font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Critiques</span>
+                </div>
+                {activeFilter === "critical" && <div className="h-2 w-2 rounded-full bg-[#A52A2A]" />}
+              </div>
+              <div className="text-3xl font-bold text-[#A52A2A] mt-2 font-serif">{stats.critical}</div>
+            </div>
+
+            <div 
+              onClick={() => setActiveFilter(activeFilter === "analyzed" ? null : "analyzed")}
+              className={cn(
+                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
+                activeFilter === "analyzed" 
+                  ? "bg-[#E5F0EB] border-[#1F4E39] ring-1 ring-[#1F4E39]" 
+                  : "bg-[#E5F0EB]/50 border-transparent hover:border-[#1F4E39]/30"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[#1F4E39] text-sm font-medium">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Analysés</span>
+                </div>
+                {activeFilter === "analyzed" && <div className="h-2 w-2 rounded-full bg-[#1F4E39]" />}
+              </div>
+              <div className="text-3xl font-bold text-[#1F4E39] mt-2 font-serif">{stats.analyzed}</div>
+            </div>
+
+            <div 
+              onClick={() => setActiveFilter(activeFilter === "pending" ? null : "pending")}
+              className={cn(
+                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
+                activeFilter === "pending" 
+                  ? "bg-[#FDF3D6] border-[#A38730] ring-1 ring-[#A38730]" 
+                  : "bg-[#FDF3D6]/50 border-transparent hover:border-[#A38730]/30"
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[#A38730] text-sm font-medium">
+                  <Clock className="h-4 w-4" />
+                  <span>À analyser</span>
+                </div>
+                {activeFilter === "pending" && <div className="h-2 w-2 rounded-full bg-[#A38730]" />}
+              </div>
+              <div className="text-3xl font-bold text-[#A38730] mt-2 font-serif">{stats.pending}</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ==========================================================
+          BARRE DE RECHERCHE & FILTRES
+          ========================================================== */}
       <div className="flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#172030]/40" />
@@ -177,44 +247,63 @@ export const RegistreTab = ({ data }: Props) => {
             placeholder="Rechercher un risque..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="pl-9 border-[#172030]/20 focus:border-[#2A5141]"
+            className="pl-9 border-[#E5E2DD] focus-visible:ring-[#2A5141] bg-white shadow-sm"
           />
         </div>
         <Select value={filterSev} onValueChange={setFilterSev}>
-          <SelectTrigger className="w-full md:w-[180px] border-[#172030]/20">
+          <SelectTrigger className="w-full md:w-[180px] border-[#E5E2DD] focus:ring-[#2A5141] bg-white shadow-sm">
             <SelectValue placeholder="Tous les niveaux" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les niveaux</SelectItem>
-            {["Faible", "Modéré", "Élevé", "Critique"].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            {["Faible", "Modéré", "Élevé", "Critique"].map((s) => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
+        
+        {/* Bouton pour réinitialiser tous les filtres */}
+        {(activeFilter || filterSev !== "all" || query) && (
+          <Button 
+            variant="outline" 
+            onClick={() => { setActiveFilter(null); setFilterSev("all"); setQuery(""); }}
+            className="border-[#E5E2DD] text-[#172030]/60 hover:text-[#2A5141] shadow-sm bg-white"
+          >
+            Réinitialiser
+          </Button>
+        )}
       </div>
 
-      {/* Tableau */}
-      <div className="border rounded-xl overflow-hidden bg-white">
+      {/* ==========================================================
+          TABLEAU PREMIUM
+          ========================================================== */}
+      <Card className="border-0 shadow-sm bg-white rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-                <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Réf.</th>
-                <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Risque</th>
-                <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Actif / Menace</th>
-                <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">P</th>
-                <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">I</th>
-                <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Brut</th>
-                <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Maîtrise</th>
-                <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Résiduel</th>
-                <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Niveau</th>
-                <th className="text-left text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Pilote</th>
-                <th className="text-center text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider p-3">Actions</th>
+              <tr className="bg-[#F8F6F2] border-b border-[#E5E2DD]">
+                <th className="text-left text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Réf.</th>
+                <th className="text-left text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Risque</th>
+                <th className="text-left text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Actif / Menace</th>
+                <th className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">P</th>
+                <th className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">I</th>
+                <th className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Brut</th>
+                <th className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Maîtrise</th>
+                <th className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Résiduel</th>
+                <th className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Niveau</th>
+                <th className="text-left text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Pilote</th>
+                <th className="text-center text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider p-3 font-sans">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-8 text-[#172030]/40">
-                    Aucun risque trouvé
+                  <td colSpan={11} className="text-center py-12 text-[#172030]/40 font-sans">
+                    <div className="h-12 w-12 rounded-full bg-[#F8F6F2] flex items-center justify-center mx-auto mb-2">
+                      <Database className="h-5 w-5 text-[#172030]/20" />
+                    </div>
+                    <p className="text-sm">Aucun risque trouvé</p>
+                    <p className="text-xs mt-1">Essayez de modifier vos filtres.</p>
                   </td>
                 </tr>
               ) : (
@@ -223,51 +312,51 @@ export const RegistreTab = ({ data }: Props) => {
                   const style = NIVEAU_STYLE[niveau as keyof typeof NIVEAU_STYLE];
                   
                   return (
-                    <tr key={r.id} className="border-b border-[#E8E4DC] hover:bg-[#F8F6F2] transition-colors">
-                      <td className="p-3 font-mono text-xs text-[#172030]/60">{getReference(index)}</td>
+                    <tr key={r.id} className="border-b border-[#F3F1ED] hover:bg-[#F8F6F2]/80 transition-colors">
+                      <td className="p-3 font-mono text-xs text-[#172030]/50 font-sans">{getReference(index)}</td>
                       <td className="p-3">
-                        <div className="font-medium text-[#172030]">{r.title}</div>
-                        <div className="text-xs text-[#172030]/40 flex items-center gap-2 mt-0.5">
-                          <Badge variant="outline" className="text-[9px] border-[#172030]/20">
+                        <div className="font-medium text-[#172030] font-sans">{r.title}</div>
+                        <div className="text-[10px] text-[#172030]/40 flex items-center gap-2 mt-0.5 font-sans">
+                          <Badge variant="outline" className="text-[8px] border-[#E5E2DD] text-[#172030]/50 rounded-full px-2 py-0.5 h-5 bg-white">
                             {r.status || "À analyser"}
                           </Badge>
                           {r.date_identification && (
-                            <span>revue {new Date(r.date_identification).toLocaleDateString('fr-FR')}</span>
+                            <span className="flex items-center gap-1">revue {new Date(r.date_identification).toLocaleDateString('fr-FR')}</span>
                           )}
                           {r.category && (
-                            <span>• {r.category}</span>
+                            <span className="flex items-center gap-1">• {r.category}</span>
                           )}
                         </div>
                       </td>
-                      <td className="p-3 text-xs text-[#172030]/40">—</td>
-                      <td className="p-3 text-center font-mono text-sm">{r.probabilite || 3}</td>
-                      <td className="p-3 text-center font-mono text-sm">{r.impact || 3}</td>
-                      <td className="p-3 text-center font-mono text-sm font-medium">{r.score_brut || 0}</td>
-                      <td className="p-3 text-center font-mono text-sm">{r.maitrise || 1}</td>
-                      <td className="p-3 text-center font-mono text-sm font-medium">{r.score_residuel || 0}</td>
+                      <td className="p-3 text-xs text-[#172030]/40 font-sans">—</td>
+                      <td className="p-3 text-center font-mono text-sm text-[#172030]">{r.probabilite || 3}</td>
+                      <td className="p-3 text-center font-mono text-sm text-[#172030]">{r.impact || 3}</td>
+                      <td className="p-3 text-center font-mono text-sm font-medium text-[#172030]">{r.score_brut || 0}</td>
+                      <td className="p-3 text-center font-mono text-sm text-[#172030]">{r.maitrise || 1}</td>
+                      <td className="p-3 text-center font-mono text-sm font-medium text-[#172030]">{r.score_residuel || 0}</td>
                       <td className="p-3 text-center">
-                        <Badge className={cn("text-[10px]", style?.badge)}>
+                        <Badge className={cn("text-[9px] font-medium border-0 rounded-full px-2 py-0.5", style?.badge)}>
                           {niveau}
                         </Badge>
                       </td>
-                      <td className="p-3 text-xs text-[#172030]/60">{r.owner || "—"}</td>
+                      <td className="p-3 text-xs text-[#172030]/60 font-sans">{r.owner || "—"}</td>
                       <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-0.5">
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 hover:bg-[#F8F6F2]"
+                            className="h-8 w-8 text-[#172030]/40 hover:text-[#172030] hover:bg-[#F8F6F2]"
                             onClick={() => openEdit(r)}
                           >
-                            <Pencil className="h-3.5 w-3.5 text-[#172030]/60" />
+                            <Pencil className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 hover:bg-red-50"
+                            className="h-8 w-8 text-[#A52A2A]/50 hover:text-[#A52A2A] hover:bg-[#FDE8E8]"
                             onClick={() => setToDelete(r)}
                           >
-                            <Trash2 className="h-3.5 w-3.5 text-red-400 hover:text-red-600" />
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </td>
@@ -277,63 +366,65 @@ export const RegistreTab = ({ data }: Props) => {
               )}
             </tbody>
             <tfoot>
-              <tr className="bg-[#F8F6F2] border-t-2 border-[#E8E4DC]">
-                <td colSpan={11} className="p-3 font-semibold text-sm text-[#172030]">
+              <tr className="bg-[#F8F6F2] border-t-2 border-[#E5E2DD]">
+                <td colSpan={11} className="p-3 font-medium text-sm text-[#172030] font-sans">
                   Registre des risques ({filtered.length})
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
-      </div>
+      </Card>
 
-      {/* Dialog Création/Édition */}
+      {/* ==========================================================
+          DIALOG CRÉATION/ÉDITION (Premium)
+          ========================================================== */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white border-[#E5E2DD] shadow-xl rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-xl text-[#172030]">
+            <DialogTitle className="font-serif text-[#172030] text-xl">
               {editing ? "Modifier le risque" : "Nouveau risque"}
             </DialogTitle>
-            <DialogDescription className="text-[#172030]/60">
+            <DialogDescription className="text-[#172030]/60 font-sans text-sm">
               Renseignez les informations du risque et évaluez la probabilité et l'impact.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
             {/* Titre */}
             <div>
-              <Label className="text-sm font-medium text-[#172030]">
-                Titre <span className="text-red-500">*</span>
+              <Label className="text-sm font-medium text-[#172030] font-sans">
+                Titre <span className="text-[#A52A2A]">*</span>
               </Label>
               <Input
                 value={form.title || ""}
                 onChange={(e) => updateField("title", e.target.value)}
                 placeholder="Ex: Cyberattaque ransomware"
-                className="mt-1 border-[#172030]/20 focus:border-[#2A5141]"
+                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
               />
             </div>
 
             {/* Description */}
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Description</Label>
+              <Label className="text-sm font-medium text-[#172030] font-sans">Description</Label>
               <Textarea
                 value={form.description || ""}
                 onChange={(e) => updateField("description", e.target.value)}
                 rows={2}
                 placeholder="Décrivez le risque…"
-                className="mt-1 border-[#172030]/20 focus:border-[#2A5141]"
+                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
               />
             </div>
 
-            {/* Catégorie + Pilote sur une ligne */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Catégorie + Pilote */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-sm font-medium text-[#172030]">Catégorie</Label>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Catégorie</Label>
                 <Select
                   value={form.category || "Cyber"}
                   onValueChange={(v) => updateField("category", v)}
                 >
-                  <SelectTrigger className="mt-1 border-[#172030]/20">
+                  <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]">
                     <SelectValue placeholder="Sélectionner" />
                   </SelectTrigger>
                   <SelectContent>
@@ -344,81 +435,80 @@ export const RegistreTab = ({ data }: Props) => {
                 </Select>
               </div>
               <div>
-                <Label className="text-sm font-medium text-[#172030]">Pilote</Label>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Pilote</Label>
                 <Input
                   value={form.owner || ""}
                   onChange={(e) => updateField("owner", e.target.value)}
                   placeholder="Nom du responsable"
-                  className="mt-1 border-[#172030]/20 focus:border-[#2A5141]"
+                  className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
                 />
               </div>
             </div>
 
-            {/* Probabilité + Impact côte à côte */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="flex justify-between items-center">
-                  <Label className="text-sm font-medium text-[#172030]">Probabilité</Label>
-                  <span className="text-sm font-bold text-[#2A5141]">{form.probabilite || 3}/5</span>
-                </div>
-                <div className="flex gap-1 mt-1">
-                  {[1, 2, 3, 4, 5].map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => updateField("probabilite", v)}
-                      className={cn(
-                        "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center",
-                        (form.probabilite || 3) === v
-                          ? "bg-[#2A5141] text-white border-[#2A5141]"
-                          : "bg-white text-[#172030]/60 border-[#172030]/20 hover:border-[#2A5141]"
-                      )}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
+            {/* Probabilité */}
+            <div>
+              <div className="flex justify-between items-center">
+                <Label className="text-sm font-medium text-[#172030] font-sans">Probabilité</Label>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.probabilite || 3}/5</span>
               </div>
-
-              <div>
-                <div className="flex justify-between items-center">
-                  <Label className="text-sm font-medium text-[#172030]">Impact</Label>
-                  <span className="text-sm font-bold text-[#2A5141]">{form.impact || 3}/5</span>
-                </div>
-                <div className="flex gap-1 mt-1">
-                  {[1, 2, 3, 4, 5].map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => updateField("impact", v)}
-                      className={cn(
-                        "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center",
-                        (form.impact || 3) === v
-                          ? "bg-[#2A5141] text-white border-[#2A5141]"
-                          : "bg-white text-[#172030]/60 border-[#172030]/20 hover:border-[#2A5141]"
-                      )}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex gap-1 mt-1.5">
+                {[1, 2, 3, 4, 5].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => updateField("probabilite", v)}
+                    className={cn(
+                      "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans",
+                      (form.probabilite || 3) === v
+                        ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm"
+                        : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]"
+                    )}
+                  >
+                    {v}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Niveau de maîtrise actuel */}
+            {/* Impact */}
             <div>
               <div className="flex justify-between items-center">
-                <Label className="text-sm font-medium text-[#172030]">Niveau de maîtrise actuel</Label>
-                <span className="text-sm font-bold text-[#2A5141]">{form.maitrise || 1}/5</span>
+                <Label className="text-sm font-medium text-[#172030] font-sans">Impact</Label>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.impact || 3}/5</span>
               </div>
-              <div className="flex gap-1 mt-1">
+              <div className="flex gap-1 mt-1.5">
+                {[1, 2, 3, 4, 5].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => updateField("impact", v)}
+                    className={cn(
+                      "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans",
+                      (form.impact || 3) === v
+                        ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm"
+                        : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]"
+                    )}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Maîtrise */}
+            <div>
+              <div className="flex justify-between items-center">
+                <Label className="text-sm font-medium text-[#172030] font-sans">Niveau de maîtrise</Label>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.maitrise || 1}/5</span>
+              </div>
+              <div className="flex gap-1 mt-1.5">
                 {[1, 2, 3, 4, 5].map((v) => (
                   <button
                     key={v}
                     onClick={() => updateField("maitrise", v)}
                     className={cn(
-                      "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center",
+                      "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans",
                       (form.maitrise || 1) === v
-                        ? "bg-[#2A5141] text-white border-[#2A5141]"
-                        : "bg-white text-[#172030]/60 border-[#172030]/20 hover:border-[#2A5141]"
+                        ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm"
+                        : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]"
                     )}
                   >
                     {v}
@@ -429,28 +519,28 @@ export const RegistreTab = ({ data }: Props) => {
 
             {/* Mesures existantes */}
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Mesures existantes</Label>
+              <Label className="text-sm font-medium text-[#172030] font-sans">Mesures existantes</Label>
               <Textarea
                 value={form.mesures_existantes || ""}
                 onChange={(e) => updateField("mesures_existantes", e.target.value)}
                 rows={2}
                 placeholder="Mesures déjà en place…"
-                className="mt-1 border-[#172030]/20 focus:border-[#2A5141]"
+                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
               />
             </div>
 
-            {/* Scores côte à côte */}
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#172030]/10">
-              <div className="bg-[#F8F6F2] rounded-lg p-2 text-center">
-                <p className="text-xs text-[#172030]/50">Score brut</p>
-                <p className="text-lg font-bold text-[#172030]">{form.score_brut || 0}/25</p>
-                <p className="text-[9px] text-[#172030]/40">Probabilité × Impact</p>
+            {/* Scores */}
+            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-[#E5E2DD]">
+              <div className="bg-[#F8F6F2] rounded-xl p-3 text-center">
+                <p className="text-[10px] text-[#172030]/40 font-sans uppercase tracking-wider">Score brut</p>
+                <p className="text-xl font-bold text-[#172030] font-serif">{form.score_brut || 0}/25</p>
+                <p className="text-[9px] text-[#172030]/30 font-sans">Probabilité × Impact</p>
               </div>
-              <div className="bg-[#F8F6F2] rounded-lg p-2 text-center">
-                <p className="text-xs text-[#172030]/50">Score résiduel</p>
-                <p className="text-lg font-bold text-[#172030]">{form.score_residuel || 0}/25</p>
+              <div className="bg-[#F8F6F2] rounded-xl p-3 text-center">
+                <p className="text-[10px] text-[#172030]/40 font-sans uppercase tracking-wider">Score résiduel</p>
+                <p className="text-xl font-bold text-[#172030] font-serif">{form.score_residuel || 0}/25</p>
                 <Badge className={cn(
-                  "mt-0.5",
+                  "mt-1 text-[9px] font-medium border-0 rounded-full px-2 py-0.5",
                   NIVEAU_STYLE[(form.niveau || "Faible") as keyof typeof NIVEAU_STYLE]?.badge
                 )}>
                   {form.niveau || "Faible"}
@@ -460,12 +550,12 @@ export const RegistreTab = ({ data }: Props) => {
 
             {/* Statut */}
             <div>
-              <Label className="text-sm font-medium text-[#172030]">Statut</Label>
+              <Label className="text-sm font-medium text-[#172030] font-sans">Statut</Label>
               <Select
                 value={form.status || "À analyser"}
                 onValueChange={(v) => updateField("status", v)}
               >
-                <SelectTrigger className="mt-1 border-[#172030]/20">
+                <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]">
                   <SelectValue placeholder="Statut" />
                 </SelectTrigger>
                 <SelectContent>
@@ -477,14 +567,14 @@ export const RegistreTab = ({ data }: Props) => {
             </div>
           </div>
 
-          <DialogFooter className="gap-2 pt-3 border-t border-[#172030]/10">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+          <DialogFooter className="gap-2 pt-4 border-t border-[#E5E2DD]">
+            <Button variant="outline" className="border-[#E5E2DD] text-[#172030]/60 hover:bg-[#F8F6F2]" onClick={() => setDialogOpen(false)}>
               Annuler
             </Button>
             <Button
               onClick={handleSave}
               disabled={saving}
-              className="bg-[#2A5141] hover:bg-[#1f3d31] text-white"
+              className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm"
             >
               {saving ? "Enregistrement…" : editing ? "Mettre à jour" : "Créer"}
             </Button>
@@ -492,18 +582,20 @@ export const RegistreTab = ({ data }: Props) => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirm */}
+      {/* ==========================================================
+          ALERTE SUPPRESSION
+          ========================================================== */}
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-white border-[#E5E2DD] shadow-xl rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-[#172030]">Supprimer ce risque ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Cette action est irréversible. Le risque « {toDelete?.title} » sera supprimé.
+            <AlertDialogTitle className="font-serif text-[#172030] text-lg">Supprimer ce risque ?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#172030]/60 font-sans text-sm">
+              Cette action est irréversible. Le risque « <span className="font-medium text-[#172030]">{toDelete?.title}</span> » et toutes ses données associées seront définitivement supprimés.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700 text-white">
+            <AlertDialogCancel className="border-[#E5E2DD] text-[#172030]/60 hover:bg-[#F8F6F2]">Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-[#A52A2A] hover:bg-[#8B2323] text-white">
               Supprimer
             </AlertDialogAction>
           </AlertDialogFooter>
