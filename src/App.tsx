@@ -52,6 +52,9 @@ function App() {
                         <Route path="/form" element={<Index />} />
                         <Route path="/ai" element={<Index />} />
                         
+                        {/* ⬇️ AJOUTEZ LA ROUTE STRATÉGIES ICI */}
+                        <Route path="/strategies" element={<Index />} />
+                        
                         {/* 404 */}
                         <Route path="*" element={<NotFound />} />
                       </Routes>

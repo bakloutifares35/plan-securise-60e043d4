@@ -13,6 +13,7 @@ import TenaciaVoice from "@/components/pca/bia/TenaciaVoice";
 import BIASynthesis from "@/components/pca/bia/BIASynthesis";
 import BIARecoverySequence from "@/components/pca/bia/BIARecoverySequence";
 import CMDBModule from "@/components/pca/bia/CMDBModule";
+import StrategyModule from "@/components/strategy/StrategyModule"; // ⬅️ AJOUT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -41,6 +42,8 @@ const Index = () => {
       setSection("cmdb");
     } else if (path === "/tenacia-voice") {
       setSection("tenacia");
+    } else if (path === "/strategies") { // ⬅️ AJOUT
+      setSection("strategies");
     }
   }, [location]);
 
@@ -78,6 +81,7 @@ const Index = () => {
                       <SelectItem value="plan">Plan de continuité</SelectItem>
                       <SelectItem value="benchmark">Benchmark</SelectItem>
                       <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem>
+                      <SelectItem value="strategies">Stratégies de continuité</SelectItem> {/* ⬅️ AJOUT */}
                     </SelectContent>
                   </Select>
                 </header>
@@ -98,6 +102,7 @@ const Index = () => {
                   {section === "cmdb" && <CMDBModule />}
                   {section === "risk" && <RiskModule />}
                   {section === "tenacia" && <TenaciaVoice />}
+                  {section === "strategies" && <StrategyModule />} {/* ⬅️ AJOUT */}
                 </div>
               </main>
             </div>

@@ -202,7 +202,7 @@ const edgeColor = (criticality: Criticality) => {
 };
 
 // ============================================================
-// COMPOSANT - Dialogue de sélection de processus pour liaison AVEC RTO/RPO
+// COMPOSANT - Dialogue de sélection de processus pour liaison AVEC RTO/RPO (CORRIGÉ)
 // ============================================================
 const LinkProcessDialog = ({
   open,
@@ -227,9 +227,6 @@ const LinkProcessDialog = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
-  const [linkedProcesses, setLinkedProcesses] = useState<any[]>(initialLinkedProcesses || []);
-  const [allProcesses, setAllProcesses] = useState<any[]>(departmentProcesses || []);
-  const [isLoading, setIsLoading] = useState(true);
   const [isLinking, setIsLinking] = useState(false);
 
   // États pour RTO/RPO dans le dialogue de liaison
@@ -244,76 +241,45 @@ const LinkProcessDialog = ({
   const showRpoField = resourceType === 'App';
   const showNoRtoField = resourceType === 'HR';
 
+  // Réinitialiser la sélection quand on ouvre
   useEffect(() => {
-    if (open && resourceId) {
-      loadData();
-    }
-    // Réinitialiser les valeurs RTO/RPO quand le dialogue s'ouvre
     if (open) {
+      setSelectedProcessId(null);
+      setSearchQuery("");
       setLinkRtoHours(4);
       setLinkRpoHours(2);
     }
-  }, [open, resourceId]);
+  }, [open]);
 
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      // Récupérer les processus déjà liés
-      let table = '';
-      let idColumn = '';
-      switch(resourceType) {
-        case 'HR':
-          table = 'processus_ressources_humaines';
-          idColumn = 'ressource_humaine_id';
-          break;
-        case 'Equipement':
-          table = 'processus_equipements';
-          idColumn = 'equipement_id';
-          break;
-        case 'App':
-          table = 'processus_applications';
-          idColumn = 'application_id';
-          break;
-        case 'Fournisseur':
-          table = 'processus_fournisseurs';
-          idColumn = 'fournisseur_id';
-          break;
-        default: return;
-      }
+  // 🔥 CORRECTION : On utilise directement les props passées, plus besoin de les mettre dans des states locaux !
+  const linkedProcesses = initialLinkedProcesses || [];
+  const allProcesses = departmentProcesses || [];
 
-      // Pour les RH, on ne sélectionne que processus_id (pas de RTO/RPO)
-      let selectFields = 'processus_id';
-      if (resourceType !== 'HR') {
-        selectFields = 'processus_id, rto_hours, rpo_hours';
-      }
+  // Filtrer les processus disponibles pour la liaison (ceux qui ne sont PAS déjà liés)
+  const filteredProcesses = allProcesses.filter(p => {
+    const isLinked = linkedProcesses.some(lp => lp.id === p.id);
+    if (isLinked) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return p.name?.toLowerCase().includes(q) || p.owner?.toLowerCase().includes(q);
+    }
+    return true;
+  });
 
-      const { data, error } = await supabase
-        .from(table)
-        .select(selectFields)
-        .eq(idColumn, resourceId);
-
-      if (error) throw error;
-
-      // Enrichir les processus liés avec leurs RTO/RPO
-      const linkedIds = data?.map((d: any) => d.processus_id) || [];
-      const linked = allProcesses
-        .filter(p => linkedIds.includes(p.id))
-        .map(p => {
-          const linkData = data?.find((d: any) => d.processus_id === p.id);
-          return {
-            ...p,
-            _linkRto: linkData?.rto_hours || 4,
-            _linkRpo: linkData?.rpo_hours || 2,
-          };
-        });
-      
-      setLinkedProcesses(linked);
+  const handleLink = async () => {
+    if (selectedProcessId) {
+      setIsLinking(true);
+      await onLink(selectedProcessId, linkRtoHours, linkRpoHours);
       setSelectedProcessId(null);
-    } catch (error) {
-      console.error('Erreur chargement des processus liés:', error);
-      toast({ title: "Erreur", description: "Impossible de charger les processus", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
+      setLinkRtoHours(4);
+      setLinkRpoHours(2);
+      setIsLinking(false);
+    }
+  };
+
+  const handleUnlink = async (processId: string) => {
+    if (confirm(`Voulez-vous dissocier cette ressource du processus ?`)) {
+      await onUnlink(processId);
     }
   };
 
@@ -344,38 +310,6 @@ const LinkProcessDialog = ({
       case 'App': return 'bg-purple-50 border-purple-200';
       case 'Fournisseur': return 'bg-orange-50 border-orange-200';
       default: return 'bg-gray-50 border-gray-200';
-    }
-  };
-
-  const filteredProcesses = allProcesses.filter(p => {
-    const isLinked = linkedProcesses.some(lp => lp.id === p.id);
-    if (isLinked) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return p.name?.toLowerCase().includes(q) || p.owner?.toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  const handleLink = async () => {
-    if (selectedProcessId) {
-      setIsLinking(true);
-      await onLink(selectedProcessId, linkRtoHours, linkRpoHours);
-      // Recharger les données après liaison
-      await loadData();
-      setSelectedProcessId(null);
-      // Réinitialiser les valeurs RTO/RPO
-      setLinkRtoHours(4);
-      setLinkRpoHours(2);
-      setIsLinking(false);
-    }
-  };
-
-  const handleUnlink = async (processId: string) => {
-    if (confirm(`Voulez-vous dissocier cette ressource du processus ?`)) {
-      await onUnlink(processId);
-      // Recharger les données après dissociation
-      await loadData();
     }
   };
 
@@ -540,10 +474,9 @@ const LinkProcessDialog = ({
               </div>
             )}
 
+            {/* 🔥 CORRECTION ICI : On affiche directement filteredProcesses, plus besoin de isLoading */}
             <div className="max-h-48 overflow-y-auto border rounded-lg divide-y divide-[#E8E4DC]">
-              {isLoading ? (
-                <div className="p-4 text-center text-sm text-gray-400">Chargement...</div>
-              ) : filteredProcesses.length === 0 ? (
+              {filteredProcesses.length === 0 ? (
                 <div className="p-4 text-center text-sm text-gray-400">
                   {searchQuery ? "Aucun processus trouvé" : "Tous les processus sont déjà liés"}
                 </div>

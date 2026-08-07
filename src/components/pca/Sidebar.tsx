@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
+  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
@@ -44,7 +45,8 @@ export type Section =
   | "exercices"
   | "ressources"
   | "rapports"
-  | "scenarios";
+  | "scenarios"
+  | "strategies";
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard; subItems?: { id: Section; label: string }[] }[] }[] = [
   {
@@ -62,10 +64,10 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
           { id: "bia-recovery", label: "Séquence de reprise" },
         ]
       },
-      // 👈 NOUVEAU : Référentiel des ressources comme élément indépendant
       { id: "cmdb", label: "Référentiel des ressources", icon: Database },
       { id: "risk", label: "Risques", icon: AlertTriangle },
       { id: "scenarios", label: "Scénarios", icon: GitBranch },
+      { id: "strategies", label: "Stratégies de continuité", icon: Layers },
       { id: "plan", label: "Plans de continuité", icon: ListChecks },
       { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
       { id: "ressources", label: "Ressources", icon: Users },
@@ -75,6 +77,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
   {
     label: "Planifier",
     items: [
+      { id: "strategies", label: "Stratégies de continuité", icon: Layers },
       { id: "plan", label: "Plans de continuité", icon: ListChecks },
       { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
     ],
@@ -120,6 +123,7 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     if (path === "/ressources") return "ressources";
     if (path === "/rapports") return "rapports";
     if (path === "/scenarios") return "scenarios";
+    if (path === "/strategies") return "strategies";
     if (path === "/form") return "form";
     if (path === "/ai") return "ai";
     return "dashboard";
@@ -164,6 +168,9 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         case 'tenacia':
           navigate('/tenacia-voice');
           break;
+        case 'strategies':
+          navigate('/strategies');
+          break;
         default:
           navigate(`/${item.id}`);
       }
@@ -205,6 +212,8 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         return path === '/cmdb';
       case 'tenacia':
         return path === '/tenacia-voice';
+      case 'strategies':
+        return path === '/strategies';
       default:
         return path === `/${item.id}`;
     }

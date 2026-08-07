@@ -1,3 +1,4 @@
+// src/contexts/StrategyContext.tsx - VERSION ORIGINALE
 import { createContext, useContext, useState, ReactNode } from "react";
 import { Strategy, StrategyAssociation, initialStrategies, initialAssociations } from "@/data/strategy";
 
