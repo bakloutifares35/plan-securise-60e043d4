@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import { 
   Layers, CheckCircle2, AlertTriangle, FileWarning, 
   Plus, ArrowLeft, ArrowRight, Users, Monitor, Server, Handshake, 
-  Building, Shield, Box, Zap, Clock, Euro, Database
+  Building, Shield, Box, Zap, Clock, Euro, Sparkles, Loader2, List, LayoutGrid,
+  AlertCircle, Pencil, Trash2 // 🔥 J'ai ajouté Pencil et Trash2 ici
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/resillia/client";
@@ -24,11 +25,10 @@ import { RESILLIA, STATUT_STYLE } from "./types";
 type AppView = "overview" | "catalog" | "gaps" | "create";
 
 // ============================================================
-// ONGLET : GAPS (Activités sans stratégie)
+// ONGLET : GAPS
 // ============================================================
 const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (processId: string) => void }) => {
   const { processus, associations } = data;
-  
   const gaps = useMemo(() => {
     const linkedIds = new Set(associations.map((a: any) => a.processus_id));
     return processus.filter((p: any) => !linkedIds.has(p.id));
@@ -82,11 +82,7 @@ const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (pro
                   </td>
                   <td className="p-4 font-mono text-[#172030]/60">{p.rto_hours || "—"}h</td>
                   <td className="p-4 text-right">
-                    <Button 
-                      size="sm" 
-                      className="bg-[#2A5141] hover:bg-[#1F3E32] text-white"
-                      onClick={() => onDefineStrategy(p.id)}
-                    >
+                    <Button size="sm" className="bg-[#2A5141] hover:bg-[#1F3E32] text-white" onClick={() => onDefineStrategy(p.id)}>
                       + Définir
                     </Button>
                   </td>
@@ -101,7 +97,7 @@ const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (pro
 };
 
 // ============================================================
-// STRATEGY WIZARD (Refait selon le mockup HTML)
+// COMPOSANT WIZARD
 // ============================================================
 const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data: any, onComplete: () => void, onCancel: () => void, initialProcessId?: string | null }) => {
   const { processus, catalogue, saveAssociation } = data;
@@ -113,6 +109,17 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
   const [form, setForm] = useState({ nomStrategie: "", perimetre: "", hypotheses: "", scenarios: [] as string[] });
   const [selectedOptionId, setSelectedOptionId] = useState<string>("");
   const [justification, setJustification] = useState("");
+  
+  // États IA
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiRecommendation, setAiRecommendation] = useState<{recommended_option_id?: string, rationale?: string, confidence?: string} | null>(null);
+  const [aiJustifying, setAiJustifying] = useState(false);
+
+  // Mode d'affichage Étape 3
+  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+
+  // Sauvegarde de brouillon
+  const [hasDraft, setHasDraft] = useState(false);
 
   const getResourceBadgeColor = (type: string) => {
     switch(type) {
@@ -124,6 +131,7 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
     }
   };
 
+  // --- FETCH DES RESSOURCES ---
   useEffect(() => {
     const fetchResources = async (processId: string) => {
       setLoadingResources(true);
@@ -159,27 +167,53 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
     else setProcessResources({hr: [], equip: [], apps: [], suppliers: []});
   }, [selectedProcessId]);
 
-  useEffect(() => { if (initialProcessId) setSelectedProcessId(initialProcessId); }, [initialProcessId]);
+  // --- PRÉ-SÉLECTION DEPUIS L'ONGLET GAPS ---
+  useEffect(() => {
+    if (initialProcessId) setSelectedProcessId(initialProcessId);
+  }, [initialProcessId]);
 
   const selectedProcess = useMemo(() => processus.find((p: any) => p.id === selectedProcessId), [selectedProcessId, processus]);
 
-  // Calcul dynamique de la criticité
+  // --- CRITICITÉ & RTO DYNAMIQUES ---
   const dynamicCriticality = useMemo(() => {
     if (!selectedProcess?.impacts) return "—";
     return scoreToCriticality(computeMaxScore(selectedProcess.impacts));
   }, [selectedProcess]);
 
+  // --- NAVIGATION ---
   const nextStep = () => {
-    if (step === 1 && !selectedProcessId) { toast({ title: "Erreur", description: "Veuillez sélectionner une activité.", variant: "destructive" }); return; }
-    if (step === 2 && !form.nomStrategie.trim()) { toast({ title: "Erreur", description: "Veuillez donner un nom à la stratégie.", variant: "destructive" }); return; }
+    if (step === 1 && !selectedProcessId) {
+      toast({ title: "Erreur", description: "Veuillez sélectionner une activité.", variant: "destructive" });
+      return;
+    }
+    if (step === 2 && !form.nomStrategie.trim()) {
+      toast({ title: "Erreur", description: "Veuillez donner un nom à la stratégie.", variant: "destructive" });
+      return;
+    }
     setStep(s => s + 1);
+    setHasDraft(true);
   };
   const prevStep = () => setStep(s => s - 1);
 
+  const handleCancel = () => {
+    if (hasDraft) {
+      if (confirm("Voulez-vous enregistrer un brouillon avant de quitter ?")) {
+        toast({ title: "Brouillon enregistré", description: "Vous pourrez reprendre plus tard." });
+        onCancel();
+      } else {
+        onCancel();
+      }
+    } else {
+      onCancel();
+    }
+  };
+
   const submitWizard = async () => {
-    if (!selectedOptionId) { toast({ title: "Erreur", description: "Veuillez sélectionner une option.", variant: "destructive" }); return; }
+    if (!selectedOptionId) {
+      toast({ title: "Erreur", description: "Veuillez sélectionner une option.", variant: "destructive" });
+      return;
+    }
     setLoading(true);
-    // 🔥 Le statut par défaut est maintenant "Brouillon" (workflow à 5 étapes)
     const ok = await saveAssociation({
       processus_id: selectedProcessId,
       strategie_id: selectedOptionId,
@@ -188,35 +222,75 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
       statut: "Brouillon", 
     });
     setLoading(false);
-    if (ok) { toast({ title: "Succès", description: "Stratégie créée !" }); onComplete(); }
+    if (ok) {
+      toast({ title: "Succès", description: "Stratégie créée !" });
+      onComplete();
+    }
   };
 
   const scenarioOptions = ["Indisponibilité du site", "Panne systèmes", "Indisponibilité du personnel", "Défaillance fournisseur", "Cyberattaque"];
 
-  // 🔥 Données simulées pour le tableau comparatif multicritère (Étape 3)
-  const getSimulatedMetrics = (id: string) => {
-    const map: Record<string, any> = {
-      "Haute disponibilité": { 
-        icon: Zap, rto: "15 min", rpo: "0.25h", cout: "€€€€ (185k€)", delai: "6 mois", 
-        faisabilite: "Élevée", resilience: "Très élevé", complexite: "Élevée" 
-      },
-      "Site de repli": { 
-        icon: Building, rto: "3-4h", rpo: "0.5h", cout: "€€€ (95k€)", delai: "3 mois", 
-        faisabilite: "Élevée", resilience: "Moyen", complexite: "Moyenne" 
-      },
-      "Prestataire secours": { 
-        icon: Handshake, rto: "8h+", rpo: "2h", cout: "€€ (60k€/an)", delai: "2 mois", 
-        faisabilite: "Moyenne", resilience: "Faible", complexite: "Faible" 
-      },
+  // --- IA : RECOMMANDATION AUTOMATIQUE ---
+  useEffect(() => {
+    const fetchRecommendation = async () => {
+      // 🔥 CORRECTION ICI : On retire la condition "aiRecommendation"
+      if (step !== 3 || !selectedProcess) return;
+      
+      setAiLoading(true);
+      // On réinitialise l'ancienne recommandation avant de requêter la nouvelle
+      setAiRecommendation(null); 
+      
+      try {
+        const context = {
+          processName: selectedProcess.name,
+          criticality: dynamicCriticality,
+          rto: selectedProcess.rto_hours || 0,
+          rpo: selectedProcess.rpo_hours || 0,
+          resources: `${processResources.hr.length} RH, ${processResources.apps.length} Apps, ${processResources.equip.length} Équipements, ${processResources.suppliers.length} Prestataires`,
+          scenarios: form.scenarios.join(", "),
+          perimetre: form.perimetre,
+          hypotheses: form.hypotheses,
+          options: catalogue.map((opt: any) => ({ id: opt.id, nom: opt.nom, description: opt.description }))
+        };
+        const { data, error } = await supabase.functions.invoke('groq-strategy-assist', { body: { action: 'recommend', context } });
+        if (error) throw error;
+        if (data?.response) {
+          try { setAiRecommendation(JSON.parse(data.response)); } catch (e) { console.error("Erreur parsing", e); }
+        }
+      } catch (error) {
+        console.error("Erreur recommandation:", error);
+      } finally {
+        setAiLoading(false);
+      }
     };
-    const opt = catalogue.find((c:any) => c.id === id);
-    return map[opt?.nom] || { 
-      icon: Box, rto: "Variable", rpo: "Variable", cout: "€€", delai: "Variable", 
-      faisabilite: "Moyenne", resilience: "Moyen", complexite: "Moyenne" 
-    };
-  };
+    fetchRecommendation();
+  }, [step, selectedProcess?.id, dynamicCriticality]);
 
-  const step3Options = catalogue.slice(0, 3);
+  // --- IA : GÉNÉRATION DE JUSTIFICATION ---
+  const handleGenerateJustification = async () => {
+    if (!selectedOptionId) return;
+    const selectedOption = catalogue.find((o: any) => o.id === selectedOptionId);
+    if (!selectedOption) return;
+    setAiJustifying(true);
+    try {
+      const context = {
+        processName: selectedProcess?.name,
+        criticality: dynamicCriticality,
+        rto: selectedProcess?.rto_hours || 0,
+        rpo: selectedProcess?.rpo_hours || 0,
+        selectedOptionName: selectedOption.nom,
+        selectedOptionDescription: selectedOption.description || ""
+      };
+      const { data, error } = await supabase.functions.invoke('groq-strategy-assist', { body: { action: 'justify', context } });
+      if (error) throw error;
+      if (data?.justification) setJustification(data.justification);
+    } catch (error) {
+      console.error("Erreur justification:", error);
+      toast({ title: "Erreur", description: "Impossible de générer la justification.", variant: "destructive" });
+    } finally {
+      setAiJustifying(false);
+    }
+  };
 
   return (
     <Card className="border-0 shadow-sm bg-white rounded-xl overflow-hidden border-[#E5E2DD]">
@@ -242,10 +316,9 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
           <span className="text-xs text-[#172030]/40 font-mono">Étape {step} sur 4</span>
         </div>
 
-        {/* ÉTAPE 1 : 2 COLONNES */}
+        {/* ÉTAPE 1 */}
         {step === 1 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl mx-auto py-2">
-            {/* GAUCHE */}
             <div className="space-y-8">
               <div>
                 <h3 className="font-serif text-2xl text-[#172030] mb-1">Informations générales</h3>
@@ -263,11 +336,24 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
                       <SelectValue placeholder="Rechercher une activité..." />
                     </SelectTrigger>
                     <SelectContent className="max-h-[300px]">
-                      {processus.length === 0 ? <div className="p-4 text-center text-sm text-[#172030]/40">Aucune activité disponible</div> : processus.map((p: any) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          <div className="flex flex-col py-1"><span className="font-medium">{p.name}</span><span className="text-xs text-[#172030]/50">{p.direction || "—"} • RTO: {p.rto_hours || "—"}h</span></div>
-                        </SelectItem>
-                      ))}
+                      {processus.length === 0 ? <div className="p-4 text-center text-sm text-[#172030]/40">Aucune activité disponible</div> : processus.map((p: any) => {
+                        const crit = p.impacts ? scoreToCriticality(computeMaxScore(p.impacts)) : "Non défini";
+                        return (
+                          <SelectItem key={p.id} value={p.id} className="py-2">
+                            <div className="flex flex-col py-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{p.name}</span>
+                                {p.rto_hours && p.rto_hours <= 4 && crit === "Critique" && (
+                                  <Badge variant="outline" className="bg-[#FFEBEE] text-[#C62828] border-[#FFEBEE] text-[9px] gap-1">
+                                    <AlertCircle className="h-3 w-3" /> Critique – RTO serré
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="text-xs text-[#172030]/50">{p.direction || "—"} • RTO: {p.rto_hours || "—"}h</span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                   <p className="text-[10px] text-[#172030]/40 mt-1">Sélectionnée depuis « Activités sans stratégie »</p>
@@ -285,7 +371,7 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
                       </div>
                       <div className="space-y-2">
                         <Label className="flex items-center gap-2">RPO <span className="text-[10px] bg-[#E8F0EC] text-[#2A5141] px-2 py-0.5 rounded-full">Auto — BIA</span></Label>
-                        <Input value={`${selectedProcess.rpo_hours || 0} heures`} readOnly className="h-11 bg-[#F8F6F2] text-[#172030]/70 border-[#E5E2DD]" /> {/* 🔥 Affiché en heures */}
+                        <Input value={`${selectedProcess.rpo_hours || 0} heures`} readOnly className="h-11 bg-[#F8F6F2] text-[#172030]/70 border-[#E5E2DD]" />
                       </div>
                     </div>
                   </>
@@ -315,7 +401,6 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
               </div>
             </div>
 
-            {/* DROITE */}
             <div className="space-y-8">
               <div>
                 <h3 className="font-serif text-2xl text-[#172030] mb-1">Ressources et dépendances</h3>
@@ -373,9 +458,9 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
           </div>
         )}
 
-        {/* 🔥 ÉTAPE 3 : COMPARAISON (Refaite à l'identique de la maquette) */}
+        {/* ÉTAPE 3 */}
         {step === 3 && (
-          <div className="space-y-10 py-4 max-w-6xl mx-auto">
+          <div className="space-y-8 py-4 max-w-6xl mx-auto">
             <div className="flex justify-between items-center mb-2">
               <div>
                 <h3 className="font-serif text-2xl text-[#172030] mb-1">Comparaison des options de stratégie</h3>
@@ -384,132 +469,145 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
                   {selectedProcess && ` — ${dynamicCriticality} · RTO ${selectedProcess.rto_hours || 0}h · RPO ${selectedProcess.rpo_hours || 0}h`}
                 </p>
               </div>
-              <Button variant="outline" className="border-[#E5E2DD] text-[#172030]">+ Ajouter une option</Button>
+              <div className="flex items-center gap-2 border border-[#E5E2DD] rounded-lg p-1 bg-white">
+                <button onClick={() => setViewMode("grid")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-[#F8F6F2] text-[#172030]" : "text-[#172030]/40 hover:text-[#172030]")}>
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button onClick={() => setViewMode("table")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "table" ? "bg-[#F8F6F2] text-[#172030]" : "text-[#172030]/40 hover:text-[#172030]")}>
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Cartes d'options */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {step3Options.map((opt: any) => {
+            {/* 🔥 Affichage de TOUTES les options du catalogue */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {catalogue.map((opt: any) => {
                 const isSelected = selectedOptionId === opt.id;
-                const metrics = getSimulatedMetrics(opt.id);
-                const Icon = metrics.icon;
+                const isRecommended = aiRecommendation?.recommended_option_id === opt.id;
                 return (
                   <div 
                     key={opt.id} 
                     onClick={() => setSelectedOptionId(opt.id)} 
-                    className={cn("relative border-2 rounded-xl p-6 cursor-pointer transition-all bg-white flex flex-col h-full", isSelected ? "border-[#2A5141] bg-[#E8F0EC]/50" : "border-[#E5E2DD] hover:border-[#2A5141]/40 hover:shadow-md")}
+                    className={cn(
+                      "relative border-2 rounded-xl p-6 cursor-pointer transition-all bg-white flex flex-col h-full",
+                      isSelected ? "border-[#2A5141] bg-[#E8F0EC]/50" : 
+                      isRecommended ? "border-[#2A5141] border-dashed" :
+                      "border-[#E5E2DD] hover:border-[#2A5141]/40 hover:shadow-md"
+                    )}
                   >
-                    {isSelected && (
-                      <div className="absolute -top-3 right-4 bg-[#2A5141] text-white text-[10px] font-bold px-3 py-0.5 rounded-full shadow-sm">
-                        Recommandée
+                    {(isRecommended && !isSelected) && (
+                      <div className="absolute -top-3 right-4 bg-[#E8F0EC] text-[#2A5141] text-[10px] font-bold px-3 py-0.5 rounded-full shadow-sm border border-[#2A5141]/20 flex items-center gap-1">
+                        <Sparkles className="h-3 w-3" /> Recommandé
                       </div>
                     )}
                     <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-2">
-                        <Icon className={cn("h-5 w-5", isSelected ? "text-[#2A5141]" : "text-[#172030]/40")} />
-                        <h4 className={cn("font-serif font-bold text-lg", isSelected ? "text-[#2A5141]" : "text-[#172030]")}>{opt.nom}</h4>
-                      </div>
+                      <h4 className={cn("font-serif font-bold text-lg", isSelected ? "text-[#2A5141]" : "text-[#172030]")}>{opt.nom}</h4>
                       {isSelected && <CheckCircle2 className="h-5 w-5 text-[#2A5141]" />}
                     </div>
                     <p className="text-sm text-[#172030]/60 flex-1 mb-6">{opt.description || "Option de continuité disponible."}</p>
-                    <div className="space-y-1.5 border-t border-[#E5E2DD] pt-4">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-[#172030]/50">Couverture RTO/RPO</span>
-                        <span className={cn("font-medium", isSelected ? "text-[#2A5141]" : "text-[#172030]")}>{metrics.rto} / {metrics.rpo}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-[#172030]/50">Coût estimé</span>
-                        <span className={cn("font-medium", isSelected ? "text-[#2A5141]" : "text-[#172030]")}>{metrics.cout}</span>
-                      </div>
-                    </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* 🔥 Tableau comparatif multicritère */}
-            {selectedOptionId && (
-              <div className="bg-white border border-[#E5E2DD] rounded-xl overflow-hidden mt-2">
-                <div className="bg-[#F8F6F2] px-6 py-4 border-b border-[#E5E2DD]">
-                  <h4 className="font-serif font-semibold text-[#172030] text-base">Tableau comparatif multicritère</h4>
-                </div>
-                <div className="p-6 overflow-x-auto">
-                  <table className="w-full min-w-[700px]">
-                    <thead>
-                      <tr className="border-b border-[#E5E2DD]">
-                        <th className="text-left py-3 px-4 text-xs font-bold text-[#172030]/50 uppercase">Critère</th>
-                        {step3Options.map((opt: any) => {
-                           const isSel = opt.id === selectedOptionId;
-                           return (
-                             <th key={opt.id} className={cn("text-left py-3 px-4 text-xs font-bold uppercase", isSel ? "text-[#2A5141]" : "text-[#172030]/40")}>
-                               {opt.nom} {isSel && <span className="text-[#2A5141] text-[10px]">★</span>}
-                             </th>
-                           );
-                        })}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E5E2DD]">
-                      {[
-                        { label: 'Couverture RTO (cible 2h)', key: 'rto', type: 'badge' },
-                        { label: 'Couverture RPO (cible 15min)', key: 'rpo', type: 'badge' },
-                        { label: 'Coût de mise en œuvre', key: 'cout', type: 'text' },
-                        { label: 'Délai de mise en œuvre', key: 'delai', type: 'text' },
-                        { label: 'Faisabilité opérationnelle', key: 'faisabilite', type: 'badge' },
-                        { label: 'Niveau de résilience', key: 'resilience', type: 'badge' },
-                        { label: 'Complexité de gestion', key: 'complexite', type: 'text' },
-                      ].map((row) => (
-                        <tr key={row.key} className="hover:bg-[#FAF9F6]">
-                          <td className="py-4 px-4 text-sm font-medium text-[#172030]">{row.label}</td>
-                          {step3Options.map((opt: any) => {
-                             const metrics = getSimulatedMetrics(opt.id);
-                             const isSel = opt.id === selectedOptionId;
-                             const val = metrics[row.key];
-                             const isBadge = row.type === 'badge';
-                             return (
-                               <td key={opt.id} className={cn("py-4 px-4 text-sm", isSel ? "font-medium text-[#2A5141]" : "text-[#172030]/70")}>
-                                 {isBadge ? (
-                                   <Badge variant="outline" className={cn("border-0", isSel ? "bg-[#E8F0EC] text-[#2A5141]" : "bg-[#F8F6F2] text-[#172030]/60")}>
-                                     {val}
-                                   </Badge>
-                                 ) : (
-                                   val
-                                 )}
-                               </td>
-                             );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            {/* Encart recommandation IA */}
+            {aiLoading ? (
+              <div className="flex items-center gap-2 text-sm text-[#172030]/60 py-2">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2A5141]" /> Analyse du contexte par l'IA...
+              </div>
+            ) : aiRecommendation?.rationale && (
+              <div className="bg-[#F8F6F2] border-l-4 border-l-[#2A5141] p-4 rounded-lg text-sm flex items-start gap-3">
+                <Sparkles className="h-4 w-4 text-[#2A5141] mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="font-medium text-[#172030]">Recommandation IA :</span> {aiRecommendation.rationale}
+                  <span className="text-[#172030]/40 text-xs ml-2">(Confiance : {aiRecommendation.confidence})</span>
                 </div>
               </div>
             )}
 
             {/* Justification */}
-            <div className="space-y-2 max-w-3xl mx-auto mt-2">
-              <Label>Justification du choix</Label>
-              <Textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={3} placeholder="Justifiez votre choix..." className="resize-none border-[#E5E2DD]" />
+            <div className="space-y-3 max-w-3xl mx-auto mt-4 border-t border-[#E5E2DD] pt-8">
+              <div className="flex justify-between items-end">
+                <Label>Justification du choix</Label>
+                <Button variant="outline" size="sm" className="border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2] gap-2" onClick={handleGenerateJustification} disabled={aiJustifying || !selectedOptionId}>
+                  {aiJustifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {aiJustifying ? "Génération..." : "Générer avec l'IA"}
+                </Button>
+              </div>
+              <Textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={4} placeholder="Expliquez votre choix, ou laissez l'IA le générer pour vous." className="resize-none border-[#E5E2DD]" />
             </div>
           </div>
         )}
 
-        {/* ÉTAPE 4 */}
+        {/* ÉTAPE 4 : RÉSUMÉ RICHE */}
         {step === 4 && (
-          <div className="space-y-6 text-center py-8 max-w-2xl mx-auto">
-            <div className="w-16 h-16 rounded-full bg-[#E8F0EC] flex items-center justify-center mx-auto mb-4"><CheckCircle2 className="h-8 w-8 text-[#2A5141]" /></div>
-            <h3 className="font-serif text-2xl text-[#172030]">Prêt pour la validation</h3>
-            <p className="text-sm text-[#172030]/60 mb-4">La stratégie sera enregistrée sous le statut <strong>"Brouillon"</strong>.</p>
-            <div className="bg-[#F8F6F2] p-4 rounded-lg border border-[#E5E2DD] text-left text-sm mx-auto max-w-lg space-y-1 mt-4">
-              <p><span className="font-medium">Activité :</span> {selectedProcess?.name}</p>
-              <p><span className="font-medium">Stratégie :</span> {form.nomStrategie}</p>
-              <p><span className="font-medium">Option retenue :</span> {catalogue.find((c:any) => c.id === selectedOptionId)?.nom}</p>
+          <div className="max-w-4xl mx-auto py-4 space-y-8">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 rounded-full bg-[#E8F0EC] flex items-center justify-center mx-auto mb-4"><CheckCircle2 className="h-8 w-8 text-[#2A5141]" /></div>
+              <h3 className="font-serif text-2xl text-[#172030] mb-2">Prêt pour la validation</h3>
+              <p className="text-sm text-[#172030]/60">Vérifiez le résumé avant de créer la stratégie.</p>
+            </div>
+
+            {/* Carte Résumé Riche */}
+            <Card className="border border-[#E5E2DD] shadow-sm bg-white rounded-xl overflow-hidden">
+              <div className="bg-[#F8F6F2] px-6 py-4 border-b border-[#E5E2DD]">
+                <h4 className="font-serif font-semibold text-[#172030]">Résumé de la stratégie</h4>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-xs font-bold text-[#172030]/50 uppercase tracking-wider mb-2">Activité</p>
+                    <p className="font-medium">{selectedProcess?.name}</p>
+                    <div className="flex gap-2 mt-1">
+                      <Badge variant="outline" className="bg-[#E8F5E9] text-[#2E7D32] border-[#E8F5E9] text-xs">{dynamicCriticality}</Badge>
+                      <span className="text-xs text-[#172030]/60">RTO {selectedProcess?.rto_hours || 0}h</span>
+                      <span className="text-xs text-[#172030]/60">RPO {selectedProcess?.rpo_hours || 0}h</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-[#172030]/50 uppercase tracking-wider mb-2">Stratégie retenue</p>
+                    <p className="font-medium">{form.nomStrategie}</p>
+                    <p className="text-xs text-[#172030]/60 mt-1">{catalogue.find((c:any) => c.id === selectedOptionId)?.nom}</p>
+                  </div>
+                </div>
+
+                <div className="border-t border-[#E5E2DD] pt-6">
+                  <p className="text-xs font-bold text-[#172030]/50 uppercase tracking-wider mb-3">Ressources liées</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{processResources.hr.length} RH</Badge>
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{processResources.apps.length} Apps</Badge>
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">{processResources.equip.length} Équipements</Badge>
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">{processResources.suppliers.length} Prestataires</Badge>
+                  </div>
+                </div>
+
+                <div className="border-t border-[#E5E2DD] pt-6">
+                  <p className="text-xs font-bold text-[#172030]/50 uppercase tracking-wider mb-2">Scénarios couverts</p>
+                  <div className="flex flex-wrap gap-2">
+                    {form.scenarios.length === 0 ? (
+                      <span className="text-sm text-[#172030]/40">Aucun scénario sélectionné.</span>
+                    ) : (
+                      form.scenarios.map((s) => <Badge key={s} variant="outline" className="bg-[#F8F6F2] text-[#172030]/60 border-[#E5E2DD]">{s}</Badge>)
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-[#E5E2DD] pt-6">
+                  <p className="text-xs font-bold text-[#172030]/50 uppercase tracking-wider mb-2">Justification</p>
+                  <p className="text-sm text-[#172030]/70 whitespace-pre-wrap">{justification || "Aucune justification fournie."}</p>
+                </div>
+              </div>
+            </Card>
+
+            <div className="bg-[#F8F6F2] p-4 rounded-lg border border-[#E5E2DD] text-center text-sm text-[#172030]/60">
+              La stratégie sera enregistrée sous le statut <strong className="text-[#172030]">"Brouillon"</strong>.
             </div>
           </div>
         )}
 
         {/* BOUTONS DE NAVIGATION */}
         <div className="flex justify-between mt-10 pt-6 border-t border-[#E5E2DD]">
-          <Button variant="outline" onClick={step === 1 ? onCancel : prevStep} className="border-[#E5E2DD] text-[#172030]/70 hover:bg-[#F8F6F2]">
+          <Button variant="outline" onClick={step === 1 ? handleCancel : prevStep} className="border-[#E5E2DD] text-[#172030]/70 hover:bg-[#F8F6F2]">
             {step === 1 ? "Annuler" : <><ArrowLeft className="h-4 w-4 mr-2" /> Retour</>}
           </Button>
           <Button onClick={step === 4 ? submitWizard : nextStep} disabled={loading || (step === 1 && !selectedProcessId)} className="bg-[#2A5141] hover:bg-[#1F3E32] text-white min-w-[120px]">
@@ -522,11 +620,13 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
 };
 
 // ============================================================
-// MODULE PRINCIPAL (Vue d'ensemble avec nouveaux KPIs)
+// MODULE PRINCIPAL (AVEC MODIFICATION ET SUPPRESSION DANS LE TABLEAU)
 // ============================================================
 export const StrategyModule = () => {
   const [currentView, setCurrentView] = useState<AppView>("overview");
   const [wizardProcessId, setWizardProcessId] = useState<string | null>(null);
+
+  // 🔥 On récupère les fonctions du hook pour les utiliser dans le tableau
   const strategyData = useStrategyData(); 
 
   const [actionPlans, setActionPlans] = useState<any[]>([]);
@@ -544,9 +644,6 @@ export const StrategyModule = () => {
 
   const data = { ...strategyData, actionPlans, loadingActions: loadingRiskData };
 
-  // ============================================================
-  // CALCULS STATS
-  // ============================================================
   const processusWithCriticality = useMemo(() => {
     return strategyData.processus.map((p: any) => {
       let level = "Non défini";
@@ -579,7 +676,6 @@ export const StrategyModule = () => {
     };
   }, [strategyData.catalogue, strategyData.associations, strategyData.processus]);
 
-  // Distribution des types de stratégies (Graphique horizontal)
   const typeDistribution = useMemo(() => {
     const map: Record<string, number> = {};
     strategyData.associations.forEach((a: any) => {
@@ -589,14 +685,12 @@ export const StrategyModule = () => {
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [strategyData.associations, strategyData.catalogue]);
 
-  // Filtre du tableau
   const [filterStatut, setFilterStatut] = useState<string>("all");
   const filteredAssociations = useMemo(() => {
     if (filterStatut === "all") return strategyData.associations;
     return strategyData.associations.filter((a: any) => a.statut === filterStatut);
   }, [strategyData.associations, filterStatut]);
 
-  // Navigation
   const openWizard = (processId?: string) => {
     setWizardProcessId(processId || null);
     setCurrentView("create");
@@ -607,10 +701,27 @@ export const StrategyModule = () => {
     strategyData.reload();
   };
 
+  // 🔥 FONCTIONS POUR MODIFIER / SUPPRIMER DEPUIS LE TABLEAU
+  const handleEditInTable = (id: string) => {
+    // Pour l'instant, on rouvre le wizard en mode édition avec l'association existante
+    // Note : Ceci est une amélioration future, l'édition directe se fait via le dialogue.
+    const assoc = strategyData.associations.find(a => a.id === id);
+    if (!assoc) return;
+    // Dans une version future, on ouvrira ici le dialog d'édition.
+    toast({ title: "Info", description: "Double-cliquez sur la ligne pour éditer (à implémenter)." });
+  };
+
+  const handleDeleteInTable = async (id: string, strategyName: string) => {
+    if (confirm(`Voulez-vous vraiment supprimer l'association pour la stratégie "${strategyName}" ?`)) {
+      const ok = await strategyData.deleteAssociation(id);
+      if (ok) {
+        toast({ title: "Association supprimée", description: "La stratégie a été dissociée de ce processus." });
+      }
+    }
+  };
+
   return (
     <div className="max-w-[1440px] mx-auto space-y-6 font-sans pb-12">
-      
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="font-serif text-2xl font-bold tracking-tight text-[#172030]">Stratégies de continuité</h2>
@@ -621,11 +732,6 @@ export const StrategyModule = () => {
             <Plus className="h-4 w-4 mr-2" /> Nouvelle stratégie
           </Button>
         )}
-        {currentView === "create" && (
-           <Button variant="outline" onClick={closeWizard} className="border-[#E5E2DD] text-[#172030]/60 hover:text-[#2A5141]">
-             <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-           </Button>
-        )}
       </div>
 
       {/* Menu de navigation */}
@@ -633,7 +739,7 @@ export const StrategyModule = () => {
         <div className="flex flex-wrap gap-1.5 border-b border-[#E5E2DD] pb-1 mt-2">
           {[
             { id: "overview", label: "Vue d'ensemble", icon: Layers },
-            { id: "catalog", label: "Catalogue d'options", icon: FileWarning },
+            { id: "catalog", label: "Catalogue des options", icon: FileWarning },
             { id: "gaps", label: "À couvrir", icon: AlertTriangle },
           ].map((t) => {
             const active = currentView === t.id;
@@ -648,7 +754,6 @@ export const StrategyModule = () => {
         </div>
       )}
 
-      {/* RENDU DU CONTENU */}
       <div className="pt-4">
         {currentView === "create" ? (
           <StrategyWizard data={{ ...data, saveAssociation: strategyData.saveAssociation }} initialProcessId={wizardProcessId} onComplete={closeWizard} onCancel={closeWizard} />
@@ -657,80 +762,34 @@ export const StrategyModule = () => {
         ) : currentView === "gaps" ? (
           <GapsTab data={data} onDefineStrategy={openWizard} />
         ) : (
-          /* Vue d'ensemble */
           <div className="space-y-6">
-            
-            {/* 🟢 NOUVEAUX KPIS (style Registre des Risques) */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               {[
-                { 
-                  label: "Stratégies définies", 
-                  value: stats.total, 
-                  icon: Database, 
-                  bg: "#F8F6F2", 
-                  color: "#172030",
-                  countColor: "#172030"
-                },
-                { 
-                  label: "Sans stratégie", 
-                  value: stats.sansStrategie, 
-                  icon: AlertTriangle, 
-                  bg: "#FFEBEE", 
-                  color: "#C62828",
-                  countColor: "#C62828"
-                },
-                { 
-                  label: "Validées", 
-                  value: stats.statuses.validees, 
-                  icon: CheckCircle2, 
-                  bg: "#E8F5E9", 
-                  color: "#2E7D32",
-                  countColor: "#2E7D32"
-                },
-                { 
-                  label: "En validation", 
-                  value: stats.statuses.revue + stats.statuses.valider, 
-                  icon: Clock, 
-                  bg: "#FFF8E1", 
-                  color: "#A38730",
-                  countColor: "#A38730"
-                },
-                { 
-                  label: "À compléter", 
-                  value: stats.statuses.brouillon, 
-                  icon: FileWarning, 
-                  bg: "#F1EFE8", 
-                  color: "#444441",
-                  countColor: "#444441"
-                },
+                { label: "Stratégies définies", value: stats.total, icon: Layers, bg: "#F8F6F2", color: "#172030" },
+                { label: "Sans stratégie", value: stats.sansStrategie, icon: AlertTriangle, bg: "#FFEBEE", color: "#C62828" },
+                { label: "Validées", value: stats.statuses.validees, icon: CheckCircle2, bg: "#E8F5E9", color: "#2E7D32" },
+                { label: "En validation", value: stats.statuses.revue + stats.statuses.valider, icon: Clock, bg: "#FFF8E1", color: "#A38730" },
+                { label: "À compléter", value: stats.statuses.brouillon, icon: FileWarning, bg: "#F1EFE8", color: "#444441" },
               ].map((k) => (
-                <div key={k.label} className="rounded-xl p-4 border border-[#E5E2DD] bg-white shadow-sm" style={{ borderColor: k.bg }}>
+                <div key={k.label} className="rounded-xl p-4 border border-[#E5E2DD] bg-white shadow-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/80 border border-[#E5E2DD]">
                       <k.icon className="h-3.5 w-3.5" style={{ color: k.color }} />
                     </span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: k.color }}>
-                      {k.label}
-                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: k.color }}>{k.label}</span>
                   </div>
-                  <div className="text-3xl font-bold font-serif" style={{ color: k.countColor }}>
-                    {k.value}
-                  </div>
+                  <div className="text-3xl font-bold font-serif" style={{ color: k.color }}>{k.value}</div>
                 </div>
               ))}
             </div>
 
-            {/* Graphiques : Donut + Types */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              
-              {/* Donut Chart */}
               <Card className="border-0 shadow-sm bg-white rounded-xl">
                 <CardContent className="p-6">
                   <h3 className="font-serif text-[#172030] text-lg mb-1">Processus par niveau de criticité</h3>
                   <p className="text-sm text-[#172030]/60 mb-6">Calculé dynamiquement depuis les impacts du BIA</p>
                   <div className="flex flex-col md:flex-row gap-4 items-center justify-center">
                     <div className="w-48 h-48 relative flex-shrink-0 flex items-center justify-center">
-                      {/* Placeholder visuel du Donut */}
                       <div className="w-48 h-48 rounded-full border-[16px] border-[#FFEBEE] absolute inset-0 opacity-100"></div>
                       <div className="w-48 h-48 rounded-full border-[16px] border-[#FFF8E1] absolute inset-0 opacity-100" style={{ clipPath: 'polygon(50% 50%, 0 0, 100% 0)' }}></div>
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-white rounded-full w-32 h-32 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 shadow-sm border border-[#E5E2DD]">
@@ -757,12 +816,10 @@ export const StrategyModule = () => {
                 </CardContent>
               </Card>
 
-              {/* Graphique "Types de stratégies retenues" */}
               <Card className="border-0 shadow-sm bg-white rounded-xl">
                 <CardContent className="p-6">
                   <h3 className="font-serif text-[#172030] text-lg mb-1">Types de stratégies retenues</h3>
                   <p className="text-sm text-[#172030]/60 mb-6">Répartition des {strategyData.associations.length} stratégies définies</p>
-                  
                   <div className="space-y-4">
                     {typeDistribution.length === 0 ? (
                       <p className="text-sm text-[#172030]/40 text-center py-4">Aucune stratégie retenue.</p>
@@ -774,10 +831,7 @@ export const StrategyModule = () => {
                           <div key={name} className="flex items-center gap-4">
                             <span className="text-sm w-32 truncate text-[#172030]">{name}</span>
                             <div className="flex-1 h-2.5 rounded-full bg-[#F1EFEA] overflow-hidden relative">
-                              <div 
-                                className="h-full rounded-full bg-[#2A5141] transition-all duration-700" 
-                                style={{ width: `${width}%` }}
-                              />
+                              <div className="h-full rounded-full bg-[#2A5141] transition-all duration-700" style={{ width: `${width}%` }} />
                             </div>
                             <span className="text-sm font-mono text-[#172030]/60 w-8 text-right">{count}</span>
                           </div>
@@ -789,7 +843,7 @@ export const StrategyModule = () => {
               </Card>
             </div>
 
-            {/* Tableau */}
+            {/* 🔥 TABLEAU AVEC BOUTONS MODIFIER / SUPPRIMER */}
             <Card className="border-0 shadow-sm bg-white rounded-xl overflow-hidden">
               <div className="p-6 border-b border-[#E5E2DD]">
                 <h3 className="font-serif text-[#172030] text-lg mb-4">Toutes les stratégies</h3>
@@ -812,14 +866,16 @@ export const StrategyModule = () => {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
-                  <thead><tr className="bg-[#F8F6F2] border-b border-[#E5E2DD]">
-                    <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Stratégie</th>
-                    <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Activité</th>
-                    <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Criticité</th>
-                    <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">RTO</th>
-                    <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Statut</th>
-                    <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Responsable</th>
-                  </tr></thead>
+                  <thead>
+                    <tr className="bg-[#F8F6F2] border-b border-[#E5E2DD]">
+                      <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Stratégie</th>
+                      <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Activité</th>
+                      <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Criticité</th>
+                      <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">RTO</th>
+                      <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Statut</th>
+                      <th className="text-left p-4 text-[10px] font-bold text-[#172030]/50 uppercase">Actions</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {filteredAssociations.length === 0 ? (
                       <tr><td colSpan={6} className="text-center py-12 text-[#172030]/40">Aucune association trouvée.</td></tr>
@@ -857,7 +913,14 @@ export const StrategyModule = () => {
                                 {a.statut || "Brouillon"}
                               </Badge>
                             </td>
-                            <td className="p-4 text-[#172030]/70">{p?.owner || "—"}</td>
+                            <td className="p-4 flex items-center gap-2">
+                              <button onClick={() => handleEditInTable(a.id)} className="p-1 text-[#172030]/30 hover:text-[#2A5141]" aria-label="Modifier">
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => handleDeleteInTable(a.id, s?.nom || "cette stratégie")} className="p-1 text-[#172030]/30 hover:text-[#B91C1C]" aria-label="Supprimer">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })

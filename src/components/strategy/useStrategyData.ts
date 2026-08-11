@@ -40,7 +40,7 @@ export const useStrategyData = () => {
       .select("*")
       .order("created_at", { ascending: false });
     
-    // 🔥 CORRECTION ICI : On ajoute 'impacts' dans le select
+    // 🔥 CORRECTION ICI : On ajoute 'impacts' pour que l'IA et les KPIs calculent la vraie criticité
     const { data: procData, error: procError } = await supabase
       .from("processus_metier")
       .select("id, name, direction, owner, description, criticality_level, rto_hours, rpo_hours, status, is_critical, impacts") 
