@@ -18,8 +18,10 @@ import {
 import { toast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, ShieldAlert, Search, AlertTriangle, CheckCircle2, Clock, Database,
+  Sparkles, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/resillia/client";
 import { type RiskData } from "../useRiskData";
 import { type Risque, CATEGORIES_RISQUE, STATUTS_RISQUE, recompute, emptyRisque, NIVEAU_STYLE } from "../riskModel";
 
@@ -34,7 +36,6 @@ export const RegistreTab = ({ data }: Props) => {
   const [query, setQuery] = useState("");
   const [filterSev, setFilterSev] = useState<string>("all");
   
-  // Filtre actif des KPIs
   const [activeFilter, setActiveFilter] = useState<FilterType>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -42,6 +43,8 @@ export const RegistreTab = ({ data }: Props) => {
   const [form, setForm] = useState<Partial<Risque>>({});
   const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<Risque | null>(null);
+
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
@@ -79,6 +82,65 @@ export const RegistreTab = ({ data }: Props) => {
     setForm(updated);
   };
 
+  // ==========================================================
+  // handleAIAnalyze : Remplit Probabilité, Impact, Maîtrise, Mesures
+  // ==========================================================
+  const handleAIAnalyze = async () => {
+    if (!form.title?.trim()) {
+      toast({ title: "Erreur", description: "Veuillez d'abord saisir le titre du risque.", variant: "destructive" });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const context = {
+        title: form.title,
+        description: form.description || "",
+        category: form.category || "Cyber",
+      };
+
+      const { data, error } = await supabase.functions.invoke('groq-strategy-assist', {
+        body: { 
+          action: 'suggest_risk_measures',
+          context 
+        }
+      });
+
+      if (error) throw error;
+
+      // 🔥 NOUVELLE LOGIQUE : On construit un objet mis à jour
+      const updates: Partial<Risque> = {
+        mesures_existantes: data?.mesures_existantes || form.mesures_existantes || "",
+      };
+
+      if (typeof data?.probabilite === 'number') updates.probabilite = data.probabilite;
+      if (typeof data?.impact === 'number') updates.impact = data.impact;
+      if (typeof data?.maitrise === 'number') updates.maitrise = data.maitrise;
+
+      // 🔥 On fait un seul setForm avec le recompute final
+      const updatedForm = { ...form, ...updates };
+      const recomputed = recompute(updatedForm);
+      
+      // On applique tout en une fois
+      setForm({
+        ...updatedForm,
+        score_brut: recomputed.score_brut,
+        score_residuel: recomputed.score_residuel,
+        niveau: recomputed.niveau,
+      });
+
+      toast({ 
+        title: "Suggestions IA", 
+        description: "Probabilité, impact, maîtrise et mesures suggérés par l'IA." 
+      });
+    } catch (error) {
+      console.error("Erreur suggestion IA:", error);
+      toast({ title: "Erreur", description: "Impossible d'obtenir une suggestion.", variant: "destructive" });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.title?.trim()) {
       toast({ title: "Titre requis", description: "Le titre du risque est obligatoire", variant: "destructive" });
@@ -96,31 +158,19 @@ export const RegistreTab = ({ data }: Props) => {
     setToDelete(null);
   };
 
-  // ============================================================
-  // LOGIQUE DE FILTRAGE COMBINÉ (KPIs + Recherche + Niveau)
-  // ============================================================
   const filtered = risques.filter((r) => {
-    // 1. Recherche textuelle
     const q = query.trim().toLowerCase();
     if (q) {
       const searchText = `${r.title} ${r.description ?? ""} ${r.category ?? ""} ${r.owner ?? ""}`.toLowerCase();
       if (!searchText.includes(q)) return false;
     }
-    
-    // 2. Filtre par niveau (Dropdown)
     if (filterSev !== "all" && r.niveau !== filterSev) return false;
-
-    // 3. Filtre par clic sur KPI
     if (activeFilter === "critical" && r.niveau !== "Critique") return false;
     if (activeFilter === "analyzed" && (!r.score_brut || r.score_brut === 0)) return false;
     if (activeFilter === "pending" && r.status !== "À analyser") return false;
-    
     return true;
   });
 
-  // ============================================================
-  // STATISTIQUES DES KPIs
-  // ============================================================
   const stats = {
     total: risques.length,
     critical: risques.filter((r) => r.niveau === "Critique").length,
@@ -138,9 +188,6 @@ export const RegistreTab = ({ data }: Props) => {
 
   return (
     <div className="max-w-[1440px] mx-auto space-y-6 font-sans">
-      {/* ==========================================================
-          HEADER & KPIs CLIQUABLES (Filtres actifs)
-          ========================================================== */}
       <Card className="border-0 shadow-sm bg-white rounded-xl">
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -148,87 +195,37 @@ export const RegistreTab = ({ data }: Props) => {
               <h2 className="font-serif text-2xl font-bold tracking-tight text-[#172030]">Registre des risques</h2>
               <p className="text-sm text-[#172030]/60 mt-1 font-sans">Gérez tous vos risques évalués.</p>
             </div>
-            <Button 
-              onClick={openCreate} 
-              className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm"
-            >
+            <Button onClick={openCreate} className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm">
               <Plus className="h-4 w-4 mr-2" /> Nouveau risque
             </Button>
           </div>
 
-          {/* KPIs INTERACTIFS */}
+          {/* KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div 
-              onClick={() => setActiveFilter(activeFilter === "all" ? null : "all")}
-              className={cn(
-                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
-                activeFilter === "all" 
-                  ? "bg-[#F8F6F2] border-[#2A5141] ring-1 ring-[#2A5141]" 
-                  : "bg-[#F3F1ED] border-transparent hover:border-[#2A5141]/30"
-              )}
-            >
+            <div onClick={() => setActiveFilter(activeFilter === "all" ? null : "all")} className={cn("rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm", activeFilter === "all" ? "bg-[#F8F6F2] border-[#2A5141] ring-1 ring-[#2A5141]" : "bg-[#F3F1ED] border-transparent hover:border-[#2A5141]/30")}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[#172030] text-sm font-medium">
-                  <Database className="h-4 w-4 text-[#172030]/50" />
-                  <span>Total</span>
-                </div>
+                <div className="flex items-center gap-2 text-[#172030] text-sm font-medium"><Database className="h-4 w-4 text-[#172030]/50" /><span>Total</span></div>
                 {activeFilter === "all" && <div className="h-2 w-2 rounded-full bg-[#2A5141]" />}
               </div>
               <div className="text-3xl font-bold text-[#172030] mt-2 font-serif">{stats.total}</div>
             </div>
-
-            <div 
-              onClick={() => setActiveFilter(activeFilter === "critical" ? null : "critical")}
-              className={cn(
-                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
-                activeFilter === "critical" 
-                  ? "bg-[#FDE8E8] border-[#A52A2A] ring-1 ring-[#A52A2A]" 
-                  : "bg-[#FDE8E8]/50 border-transparent hover:border-[#A52A2A]/30"
-              )}
-            >
+            <div onClick={() => setActiveFilter(activeFilter === "critical" ? null : "critical")} className={cn("rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm", activeFilter === "critical" ? "bg-[#FDE8E8] border-[#A52A2A] ring-1 ring-[#A52A2A]" : "bg-[#FDE8E8]/50 border-transparent hover:border-[#A52A2A]/30")}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[#A52A2A] text-sm font-medium">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>Critiques</span>
-                </div>
+                <div className="flex items-center gap-2 text-[#A52A2A] text-sm font-medium"><AlertTriangle className="h-4 w-4" /><span>Critiques</span></div>
                 {activeFilter === "critical" && <div className="h-2 w-2 rounded-full bg-[#A52A2A]" />}
               </div>
               <div className="text-3xl font-bold text-[#A52A2A] mt-2 font-serif">{stats.critical}</div>
             </div>
-
-            <div 
-              onClick={() => setActiveFilter(activeFilter === "analyzed" ? null : "analyzed")}
-              className={cn(
-                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
-                activeFilter === "analyzed" 
-                  ? "bg-[#E5F0EB] border-[#1F4E39] ring-1 ring-[#1F4E39]" 
-                  : "bg-[#E5F0EB]/50 border-transparent hover:border-[#1F4E39]/30"
-              )}
-            >
+            <div onClick={() => setActiveFilter(activeFilter === "analyzed" ? null : "analyzed")} className={cn("rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm", activeFilter === "analyzed" ? "bg-[#E5F0EB] border-[#1F4E39] ring-1 ring-[#1F4E39]" : "bg-[#E5F0EB]/50 border-transparent hover:border-[#1F4E39]/30")}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[#1F4E39] text-sm font-medium">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Analysés</span>
-                </div>
+                <div className="flex items-center gap-2 text-[#1F4E39] text-sm font-medium"><CheckCircle2 className="h-4 w-4" /><span>Analysés</span></div>
                 {activeFilter === "analyzed" && <div className="h-2 w-2 rounded-full bg-[#1F4E39]" />}
               </div>
               <div className="text-3xl font-bold text-[#1F4E39] mt-2 font-serif">{stats.analyzed}</div>
             </div>
-
-            <div 
-              onClick={() => setActiveFilter(activeFilter === "pending" ? null : "pending")}
-              className={cn(
-                "rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm",
-                activeFilter === "pending" 
-                  ? "bg-[#FDF3D6] border-[#A38730] ring-1 ring-[#A38730]" 
-                  : "bg-[#FDF3D6]/50 border-transparent hover:border-[#A38730]/30"
-              )}
-            >
+            <div onClick={() => setActiveFilter(activeFilter === "pending" ? null : "pending")} className={cn("rounded-xl p-4 border transition-all duration-200 cursor-pointer hover:shadow-sm", activeFilter === "pending" ? "bg-[#FDF3D6] border-[#A38730] ring-1 ring-[#A38730]" : "bg-[#FDF3D6]/50 border-transparent hover:border-[#A38730]/30")}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[#A38730] text-sm font-medium">
-                  <Clock className="h-4 w-4" />
-                  <span>À analyser</span>
-                </div>
+                <div className="flex items-center gap-2 text-[#A38730] text-sm font-medium"><Clock className="h-4 w-4" /><span>À analyser</span></div>
                 {activeFilter === "pending" && <div className="h-2 w-2 rounded-full bg-[#A38730]" />}
               </div>
               <div className="text-3xl font-bold text-[#A38730] mt-2 font-serif">{stats.pending}</div>
@@ -237,18 +234,10 @@ export const RegistreTab = ({ data }: Props) => {
         </CardContent>
       </Card>
 
-      {/* ==========================================================
-          BARRE DE RECHERCHE & FILTRES
-          ========================================================== */}
       <div className="flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#172030]/40" />
-          <Input
-            placeholder="Rechercher un risque..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9 border-[#E5E2DD] focus-visible:ring-[#2A5141] bg-white shadow-sm"
-          />
+          <Input placeholder="Rechercher un risque..." value={query} onChange={(e) => setQuery(e.target.value)} className="pl-9 border-[#E5E2DD] focus-visible:ring-[#2A5141] bg-white shadow-sm" />
         </div>
         <Select value={filterSev} onValueChange={setFilterSev}>
           <SelectTrigger className="w-full md:w-[180px] border-[#E5E2DD] focus:ring-[#2A5141] bg-white shadow-sm">
@@ -256,27 +245,14 @@ export const RegistreTab = ({ data }: Props) => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les niveaux</SelectItem>
-            {["Faible", "Modéré", "Élevé", "Critique"].map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
+            {["Faible", "Modéré", "Élevé", "Critique"].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
-        
-        {/* Bouton pour réinitialiser tous les filtres */}
         {(activeFilter || filterSev !== "all" || query) && (
-          <Button 
-            variant="outline" 
-            onClick={() => { setActiveFilter(null); setFilterSev("all"); setQuery(""); }}
-            className="border-[#E5E2DD] text-[#172030]/60 hover:text-[#2A5141] shadow-sm bg-white"
-          >
-            Réinitialiser
-          </Button>
+          <Button variant="outline" onClick={() => { setActiveFilter(null); setFilterSev("all"); setQuery(""); }} className="border-[#E5E2DD] text-[#172030]/60 hover:text-[#2A5141] shadow-sm bg-white">Réinitialiser</Button>
         )}
       </div>
 
-      {/* ==========================================================
-          TABLEAU PREMIUM
-          ========================================================== */}
       <Card className="border-0 shadow-sm bg-white rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -299,9 +275,7 @@ export const RegistreTab = ({ data }: Props) => {
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="text-center py-12 text-[#172030]/40 font-sans">
-                    <div className="h-12 w-12 rounded-full bg-[#F8F6F2] flex items-center justify-center mx-auto mb-2">
-                      <Database className="h-5 w-5 text-[#172030]/20" />
-                    </div>
+                    <div className="h-12 w-12 rounded-full bg-[#F8F6F2] flex items-center justify-center mx-auto mb-2"><Database className="h-5 w-5 text-[#172030]/20" /></div>
                     <p className="text-sm">Aucun risque trouvé</p>
                     <p className="text-xs mt-1">Essayez de modifier vos filtres.</p>
                   </td>
@@ -310,22 +284,15 @@ export const RegistreTab = ({ data }: Props) => {
                 filtered.map((r, index) => {
                   const niveau = r.niveau || "Faible";
                   const style = NIVEAU_STYLE[niveau as keyof typeof NIVEAU_STYLE];
-                  
                   return (
                     <tr key={r.id} className="border-b border-[#F3F1ED] hover:bg-[#F8F6F2]/80 transition-colors">
                       <td className="p-3 font-mono text-xs text-[#172030]/50 font-sans">{getReference(index)}</td>
                       <td className="p-3">
                         <div className="font-medium text-[#172030] font-sans">{r.title}</div>
                         <div className="text-[10px] text-[#172030]/40 flex items-center gap-2 mt-0.5 font-sans">
-                          <Badge variant="outline" className="text-[8px] border-[#E5E2DD] text-[#172030]/50 rounded-full px-2 py-0.5 h-5 bg-white">
-                            {r.status || "À analyser"}
-                          </Badge>
-                          {r.date_identification && (
-                            <span className="flex items-center gap-1">revue {new Date(r.date_identification).toLocaleDateString('fr-FR')}</span>
-                          )}
-                          {r.category && (
-                            <span className="flex items-center gap-1">• {r.category}</span>
-                          )}
+                          <Badge variant="outline" className="text-[8px] border-[#E5E2DD] text-[#172030]/50 rounded-full px-2 py-0.5 h-5 bg-white">{r.status || "À analyser"}</Badge>
+                          {r.date_identification && <span className="flex items-center gap-1">revue {new Date(r.date_identification).toLocaleDateString('fr-FR')}</span>}
+                          {r.category && <span className="flex items-center gap-1">• {r.category}</span>}
                         </div>
                       </td>
                       <td className="p-3 text-xs text-[#172030]/40 font-sans">—</td>
@@ -334,30 +301,12 @@ export const RegistreTab = ({ data }: Props) => {
                       <td className="p-3 text-center font-mono text-sm font-medium text-[#172030]">{r.score_brut || 0}</td>
                       <td className="p-3 text-center font-mono text-sm text-[#172030]">{r.maitrise || 1}</td>
                       <td className="p-3 text-center font-mono text-sm font-medium text-[#172030]">{r.score_residuel || 0}</td>
-                      <td className="p-3 text-center">
-                        <Badge className={cn("text-[9px] font-medium border-0 rounded-full px-2 py-0.5", style?.badge)}>
-                          {niveau}
-                        </Badge>
-                      </td>
+                      <td className="p-3 text-center"><Badge className={cn("text-[9px] font-medium border-0 rounded-full px-2 py-0.5", style?.badge)}>{niveau}</Badge></td>
                       <td className="p-3 text-xs text-[#172030]/60 font-sans">{r.owner || "—"}</td>
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center gap-0.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-[#172030]/40 hover:text-[#172030] hover:bg-[#F8F6F2]"
-                            onClick={() => openEdit(r)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-[#A52A2A]/50 hover:text-[#A52A2A] hover:bg-[#FDE8E8]"
-                            onClick={() => setToDelete(r)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#172030]/40 hover:text-[#172030] hover:bg-[#F8F6F2]" onClick={() => openEdit(r)}><Pencil className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#A52A2A]/50 hover:text-[#A52A2A] hover:bg-[#FDE8E8]" onClick={() => setToDelete(r)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                       </td>
                     </tr>
@@ -367,169 +316,83 @@ export const RegistreTab = ({ data }: Props) => {
             </tbody>
             <tfoot>
               <tr className="bg-[#F8F6F2] border-t-2 border-[#E5E2DD]">
-                <td colSpan={11} className="p-3 font-medium text-sm text-[#172030] font-sans">
-                  Registre des risques ({filtered.length})
-                </td>
+                <td colSpan={11} className="p-3 font-medium text-sm text-[#172030] font-sans">Registre des risques ({filtered.length})</td>
               </tr>
             </tfoot>
           </table>
         </div>
       </Card>
 
-      {/* ==========================================================
-          DIALOG CRÉATION/ÉDITION (Premium)
-          ========================================================== */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white border-[#E5E2DD] shadow-xl rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="font-serif text-[#172030] text-xl">
-              {editing ? "Modifier le risque" : "Nouveau risque"}
-            </DialogTitle>
-            <DialogDescription className="text-[#172030]/60 font-sans text-sm">
-              Renseignez les informations du risque et évaluez la probabilité et l'impact.
-            </DialogDescription>
+            <DialogTitle className="font-serif text-[#172030] text-xl">{editing ? "Modifier le risque" : "Nouveau risque"}</DialogTitle>
+            <DialogDescription className="text-[#172030]/60 font-sans text-sm">Renseignez les informations du risque et évaluez la probabilité et l'impact.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Titre */}
             <div>
-              <Label className="text-sm font-medium text-[#172030] font-sans">
-                Titre <span className="text-[#A52A2A]">*</span>
-              </Label>
-              <Input
-                value={form.title || ""}
-                onChange={(e) => updateField("title", e.target.value)}
-                placeholder="Ex: Cyberattaque ransomware"
-                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
-              />
+              <Label className="text-sm font-medium text-[#172030] font-sans">Titre <span className="text-[#A52A2A]">*</span></Label>
+              <Input value={form.title || ""} onChange={(e) => updateField("title", e.target.value)} placeholder="Ex: Cyberattaque ransomware" className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]" />
             </div>
 
-            {/* Description */}
             <div>
               <Label className="text-sm font-medium text-[#172030] font-sans">Description</Label>
-              <Textarea
-                value={form.description || ""}
-                onChange={(e) => updateField("description", e.target.value)}
-                rows={2}
-                placeholder="Décrivez le risque…"
-                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
-              />
+              <Textarea value={form.description || ""} onChange={(e) => updateField("description", e.target.value)} rows={2} placeholder="Décrivez le risque…" className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]" />
             </div>
 
-            {/* Catégorie + Pilote */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium text-[#172030] font-sans">Catégorie</Label>
-                <Select
-                  value={form.category || "Cyber"}
-                  onValueChange={(v) => updateField("category", v)}
-                >
-                  <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]">
-                    <SelectValue placeholder="Sélectionner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES_RISQUE.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
+                <Select value={form.category || "Cyber"} onValueChange={(v) => updateField("category", v)}>
+                  <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]"><SelectValue placeholder="Sélectionner" /></SelectTrigger>
+                  <SelectContent>{CATEGORIES_RISQUE.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
                 <Label className="text-sm font-medium text-[#172030] font-sans">Pilote</Label>
-                <Input
-                  value={form.owner || ""}
-                  onChange={(e) => updateField("owner", e.target.value)}
-                  placeholder="Nom du responsable"
-                  className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
-                />
+                <Input value={form.owner || ""} onChange={(e) => updateField("owner", e.target.value)} placeholder="Nom du responsable" className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]" />
               </div>
             </div>
 
-            {/* Probabilité */}
             <div>
-              <div className="flex justify-between items-center">
-                <Label className="text-sm font-medium text-[#172030] font-sans">Probabilité</Label>
-                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.probabilite || 3}/5</span>
-              </div>
+              <div className="flex justify-between items-center"><Label className="text-sm font-medium text-[#172030] font-sans">Probabilité</Label><span className="text-sm font-bold text-[#2A5141] font-sans">{form.probabilite || 3}/5</span></div>
               <div className="flex gap-1 mt-1.5">
                 {[1, 2, 3, 4, 5].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => updateField("probabilite", v)}
-                    className={cn(
-                      "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans",
-                      (form.probabilite || 3) === v
-                        ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm"
-                        : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]"
-                    )}
-                  >
-                    {v}
-                  </button>
+                  <button key={v} onClick={() => updateField("probabilite", v)} className={cn("flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans", (form.probabilite || 3) === v ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm" : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]")}>{v}</button>
                 ))}
               </div>
             </div>
 
-            {/* Impact */}
             <div>
-              <div className="flex justify-between items-center">
-                <Label className="text-sm font-medium text-[#172030] font-sans">Impact</Label>
-                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.impact || 3}/5</span>
-              </div>
+              <div className="flex justify-between items-center"><Label className="text-sm font-medium text-[#172030] font-sans">Impact</Label><span className="text-sm font-bold text-[#2A5141] font-sans">{form.impact || 3}/5</span></div>
               <div className="flex gap-1 mt-1.5">
                 {[1, 2, 3, 4, 5].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => updateField("impact", v)}
-                    className={cn(
-                      "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans",
-                      (form.impact || 3) === v
-                        ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm"
-                        : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]"
-                    )}
-                  >
-                    {v}
-                  </button>
+                  <button key={v} onClick={() => updateField("impact", v)} className={cn("flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans", (form.impact || 3) === v ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm" : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]")}>{v}</button>
                 ))}
               </div>
             </div>
 
-            {/* Maîtrise */}
             <div>
-              <div className="flex justify-between items-center">
-                <Label className="text-sm font-medium text-[#172030] font-sans">Niveau de maîtrise</Label>
-                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.maitrise || 1}/5</span>
-              </div>
+              <div className="flex justify-between items-center"><Label className="text-sm font-medium text-[#172030] font-sans">Niveau de maîtrise</Label><span className="text-sm font-bold text-[#2A5141] font-sans">{form.maitrise || 1}/5</span></div>
               <div className="flex gap-1 mt-1.5">
                 {[1, 2, 3, 4, 5].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => updateField("maitrise", v)}
-                    className={cn(
-                      "flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans",
-                      (form.maitrise || 1) === v
-                        ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm"
-                        : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]"
-                    )}
-                  >
-                    {v}
-                  </button>
+                  <button key={v} onClick={() => updateField("maitrise", v)} className={cn("flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans", (form.maitrise || 1) === v ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm" : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]")}>{v}</button>
                 ))}
               </div>
             </div>
 
-            {/* Mesures existantes */}
             <div>
-              <Label className="text-sm font-medium text-[#172030] font-sans">Mesures existantes</Label>
-              <Textarea
-                value={form.mesures_existantes || ""}
-                onChange={(e) => updateField("mesures_existantes", e.target.value)}
-                rows={2}
-                placeholder="Mesures déjà en place…"
-                className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]"
-              />
+              <div className="flex justify-between items-end mb-1">
+                <Label className="text-sm font-medium text-[#172030] font-sans">Mesures existantes</Label>
+                <Button variant="outline" size="sm" className="border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2] gap-2" onClick={handleAIAnalyze} disabled={isAnalyzing || !form.title?.trim()}>
+                  {isAnalyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {isAnalyzing ? "Analyse..." : "Suggérer avec l'IA"}
+                </Button>
+              </div>
+              <Textarea value={form.mesures_existantes || ""} onChange={(e) => updateField("mesures_existantes", e.target.value)} rows={2} placeholder="Mesures déjà en place…" className="mt-1.5 border-[#E5E2DD] focus-visible:ring-[#2A5141]" />
             </div>
 
-            {/* Scores */}
             <div className="grid grid-cols-2 gap-4 pt-3 border-t border-[#E5E2DD]">
               <div className="bg-[#F8F6F2] rounded-xl p-3 text-center">
                 <p className="text-[10px] text-[#172030]/40 font-sans uppercase tracking-wider">Score brut</p>
@@ -539,65 +402,37 @@ export const RegistreTab = ({ data }: Props) => {
               <div className="bg-[#F8F6F2] rounded-xl p-3 text-center">
                 <p className="text-[10px] text-[#172030]/40 font-sans uppercase tracking-wider">Score résiduel</p>
                 <p className="text-xl font-bold text-[#172030] font-serif">{form.score_residuel || 0}/25</p>
-                <Badge className={cn(
-                  "mt-1 text-[9px] font-medium border-0 rounded-full px-2 py-0.5",
-                  NIVEAU_STYLE[(form.niveau || "Faible") as keyof typeof NIVEAU_STYLE]?.badge
-                )}>
+                <Badge className={cn("mt-1 text-[9px] font-medium border-0 rounded-full px-2 py-0.5", NIVEAU_STYLE[(form.niveau || "Faible") as keyof typeof NIVEAU_STYLE]?.badge)}>
                   {form.niveau || "Faible"}
                 </Badge>
               </div>
             </div>
 
-            {/* Statut */}
             <div>
               <Label className="text-sm font-medium text-[#172030] font-sans">Statut</Label>
-              <Select
-                value={form.status || "À analyser"}
-                onValueChange={(v) => updateField("status", v)}
-              >
-                <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]">
-                  <SelectValue placeholder="Statut" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUTS_RISQUE.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
+              <Select value={form.status || "À analyser"} onValueChange={(v) => updateField("status", v)}>
+                <SelectTrigger className="mt-1.5 border-[#E5E2DD] focus:ring-[#2A5141]"><SelectValue placeholder="Statut" /></SelectTrigger>
+                <SelectContent>{STATUTS_RISQUE.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
 
           <DialogFooter className="gap-2 pt-4 border-t border-[#E5E2DD]">
-            <Button variant="outline" className="border-[#E5E2DD] text-[#172030]/60 hover:bg-[#F8F6F2]" onClick={() => setDialogOpen(false)}>
-              Annuler
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm"
-            >
-              {saving ? "Enregistrement…" : editing ? "Mettre à jour" : "Créer"}
-            </Button>
+            <Button variant="outline" className="border-[#E5E2DD] text-[#172030]/60 hover:bg-[#F8F6F2]" onClick={() => setDialogOpen(false)}>Annuler</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm">{saving ? "Enregistrement…" : editing ? "Mettre à jour" : "Créer"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ==========================================================
-          ALERTE SUPPRESSION
-          ========================================================== */}
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent className="bg-white border-[#E5E2DD] shadow-xl rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-serif text-[#172030] text-lg">Supprimer ce risque ?</AlertDialogTitle>
-            <AlertDialogDescription className="text-[#172030]/60 font-sans text-sm">
-              Cette action est irréversible. Le risque « <span className="font-medium text-[#172030]">{toDelete?.title}</span> » et toutes ses données associées seront définitivement supprimés.
-            </AlertDialogDescription>
+            <AlertDialogDescription className="text-[#172030]/60 font-sans text-sm">Cette action est irréversible. Le risque « <span className="font-medium text-[#172030]">{toDelete?.title}</span> » et toutes ses données associées seront définitivement supprimés.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="border-[#E5E2DD] text-[#172030]/60 hover:bg-[#F8F6F2]">Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-[#A52A2A] hover:bg-[#8B2323] text-white">
-              Supprimer
-            </AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete} className="bg-[#A52A2A] hover:bg-[#8B2323] text-white">Supprimer</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -10,7 +10,8 @@ import { RoleProvider } from "@/contexts/RoleContext";
 import { StrategyProvider } from "@/contexts/StrategyContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
-import { BcmCopilot } from "./components/chatbot/BcmCopilot";
+// 🔥 IMPORT DU CHATBOT WIDGET
+import { ChatbotWidget } from "./components/chatbot/ChatbotWidget";
 
 const queryClient = new QueryClient();
 
@@ -52,13 +53,16 @@ function App() {
                         <Route path="/form" element={<Index />} />
                         <Route path="/ai" element={<Index />} />
                         
-                        {/* ⬇️ AJOUTEZ LA ROUTE STRATÉGIES ICI */}
+                        {/* Route Stratégies */}
                         <Route path="/strategies" element={<Index />} />
                         
                         {/* 404 */}
                         <Route path="*" element={<NotFound />} />
                       </Routes>
-                      <BcmCopilot />
+                      
+                      {/* 🔥 LE WIDGET EST ICI, VISIBLE SUR TOUTES LES PAGES */}
+                      <ChatbotWidget />
+                      
                     </BrowserRouter>
                   </RoleProvider>
                 </StrategyProvider>
