@@ -1,5 +1,5 @@
 // src/components/strategy/tabs/CatalogueTab.tsx
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Popover,
   PopoverContent,
@@ -15,14 +16,19 @@ import {
 } from "@/components/ui/popover";
 import { Plus, Trash2, Pencil, Home, Building, Users, AlertTriangle, Database, ArrowRight, Shield, Lightbulb } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+// 🔥 AJOUT DE L'IMPORT CN ICI
+import { cn } from "@/lib/utils"; 
+import { supabase } from "@/integrations/resillia/client";
 import { StrategyData } from "../useStrategyData";
 
-// Map des icônes (utilisée juste pour l'affichage des cartes existantes)
+// Map des icônes
 const ICON_MAP: Record<string, any> = {
   Home, Building, Users, AlertTriangle, Database, ArrowRight,
 };
+const ICON_LIST = ["Home", "Building", "Users", "AlertTriangle", "Database", "ArrowRight"];
 
 export const CatalogueTab = ({ data }: { data: StrategyData }) => {
+  // 🔥 On récupère risques via data (passé par StrategyModule), ou on fait un fetch local si pas présent
   const { 
     catalogue, 
     associations, 
@@ -30,7 +36,7 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     deleteStrategie,
     actionPlans = [],
     loadingActions = false,
-    risques = [], // 🔥 On récupère les risques pour afficher leurs noms (passé depuis StrategyModule)
+    risques: externalRisks = []
   } = data;
   
   const [open, setOpen] = useState(false);
@@ -39,18 +45,47 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
   // Formulaire d'ajout
   const [nom, setNom] = useState("");
   const [description, setDescription] = useState("");
+  const [iconName, setIconName] = useState<string>("Home");
   const [saving, setSaving] = useState(false);
 
   // Formulaire d'édition
   const [editId, setEditId] = useState<string | null>(null);
   const [editNom, setEditNom] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editIconName, setEditIconName] = useState<string>("Home");
+
+  // 🔥 ÉTAT LOCAL POUR LES RISQUES (au cas où data.risques ne soit pas passé)
+  const [localRisks, setLocalRisks] = useState<any[]>(externalRisks);
+  
+  useEffect(() => {
+    if (externalRisks.length === 0) {
+      // Si le parent n'a pas passé les risques, on les charge ici
+      const fetchRisks = async () => {
+        const { data, error } = await supabase
+          .from("risques")
+          .select("id, title");
+        if (error) {
+          console.error("Erreur chargement risques:", error);
+        } else {
+          setLocalRisks(data || []);
+        }
+      };
+      fetchRisks();
+    } else {
+      setLocalRisks(externalRisks);
+    }
+  }, [externalRisks]);
+
+  // 🔥 MAP POUR RÉSOUDRE LES TITRES DES RISQUES
+  const riskById = useMemo(() => {
+    return Object.fromEntries(localRisks.map((r) => [r.id, r]));
+  }, [localRisks]);
 
   // ============================================================
-  // LOGIQUE DE COMPTAGE ET SUGGESTIONS
+  // LOGIQUE DE COMPTAGE
   // ============================================================
   
-  // 1. Comptage des processus liés à chaque stratégie
+  // 1. Comptage des processus
   const processCounts = useMemo(() => {
     const m: Record<string, Set<string>> = {};
     associations.forEach((a) => {
@@ -60,7 +95,7 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     return m;
   }, [associations]);
 
-  // 2. Comptage des Actions liées à la stratégie via la chaîne Stratégie -> Association -> Risque -> Action
+  // 2. Comptage des Actions
   const actionCounts = useMemo(() => {
     const m: Record<string, Set<string>> = {};
     const risksByStrategy: Record<string, Set<string>> = {};
@@ -80,24 +115,16 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     return m;
   }, [associations, actionPlans]);
 
-  // 🔥 NOUVEAU : Calcul des actions "orphelines" (sans stratégie)
+  // 🔥 Calcul des actions orphelines (pour la section Suggestions)
   const unsuggestedActions = useMemo(() => {
-    // 1. On récupère tous les IDs des actions qui sont DÉJÀ liées à au moins une stratégie
     const linkedActionIds = new Set<string>();
     Object.values(actionCounts).forEach((actionSet) => {
       actionSet.forEach((id) => linkedActionIds.add(id));
     });
-
-    // 2. On filtre actionPlans pour garder uniquement ceux qui ne sont PAS dans le Set
     return actionPlans.filter(action => !linkedActionIds.has(action.id));
   }, [actionPlans, actionCounts]);
 
-  // Map pour résoudre le nom du risque à partir de son ID
-  const riskMap = useMemo(() => {
-    return Object.fromEntries(risques.map((r: any) => [r.id, r]));
-  }, [risques]);
-
-  // Gestion de l'état d'expansion de la liste des suggestions
+  // Gestion de l'expansion
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const MAX_SUGGESTIONS = 4;
   const displayedSuggestions = showAllSuggestions 
@@ -106,35 +133,30 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
   const remainingCount = unsuggestedActions.length - MAX_SUGGESTIONS;
 
   // ============================================================
-  // FONCTIONS CRUD
+  // CRUD
   // ============================================================
   const submitAdd = async () => {
     if (!nom.trim()) return;
     setSaving(true);
     const ok = await addStrategie({ 
       nom: nom.trim(), 
-      description: description.trim() || null
+      description: description.trim() || null,
+      type: iconName
     });
     setSaving(false);
     if (ok) {
       setOpen(false);
       setNom("");
       setDescription("");
+      setIconName("Home");
     }
-  };
-
-  // 🔥 Fonction pour pré-remplir le formulaire d'ajout depuis une suggestion
-  const openCreateFromSuggestion = (action: any) => {
-    // On met le nom et la description en se basant sur la mesure
-    setNom(`Stratégie pour : ${action.mesure}`);
-    setDescription(`Créée à partir de l'action du plan de traitement : "${action.mesure}"`);
-    setOpen(true);
   };
 
   const openEditDialog = (s: any) => {
     setEditId(s.id);
     setEditNom(s.nom);
     setEditDescription(s.description || "");
+    setEditIconName(s.type || "Home");
     setOpenEdit(true);
   };
 
@@ -144,7 +166,8 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     const ok = await addStrategie({ 
       id: editId,
       nom: editNom.trim(), 
-      description: editDescription.trim() || null
+      description: editDescription.trim() || null,
+      type: editIconName
     });
     setSaving(false);
     if (ok) {
@@ -155,10 +178,10 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Voulez-vous vraiment supprimer la stratégie "${name}" ?`)) return;
+    if (!confirm(`Voulez-vous vraiment supprimer l'option "${name}" ?`)) return;
     const ok = await deleteStrategie(id);
     if (ok) {
-      toast({ title: "Stratégie supprimée", description: `"${name}" a été retirée.` });
+      toast({ title: "Option supprimée", description: `"${name}" a été retirée.` });
     }
   };
 
@@ -166,68 +189,87 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-serif text-xl font-bold text-[#172030]">Catalogue de stratégies</h3>
-          <p className="text-sm text-[#172030]/60">Stratégies génériques et personnalisées disponibles.</p>
+          {/* 🔥 RENOMMAGE EN "Catalogue des options" */}
+          <h3 className="font-serif text-xl font-bold text-[#172030]">Catalogue des options</h3>
+          <p className="text-sm text-[#172030]/60">Options de stratégie génériques et personnalisées disponibles.</p>
         </div>
         <Button onClick={() => setOpen(true)} className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm">
-          <Plus className="h-4 w-4 mr-2" /> Nouvelle stratégie
+          <Plus className="h-4 w-4 mr-2" /> Nouvelle option
         </Button>
       </div>
 
       {/* ============================================================
-          NOUVELLE SECTION : SUGGESTIONS
+          SECTION SUGGESTIONS (REDESIGNÉE)
           ============================================================ */}
       {!loadingActions && unsuggestedActions.length > 0 && (
-        <Card className="border-0 shadow-sm bg-[#F8F6F2] border-l-4 border-l-[#2A5141] rounded-xl overflow-hidden">
+        <Card className="border-0 shadow-sm bg-[#F8F6F2] rounded-xl overflow-hidden border-l-4 border-l-[#2A5141]">
           <CardContent className="p-5">
             <div className="flex items-start gap-4 mb-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F0EC] flex-shrink-0">
                 <Lightbulb className="h-5 w-5 text-[#2A5141]" />
               </div>
               <div className="space-y-1">
-                <h4 className="font-serif text-[#172030] font-bold">Suggestions — actions sans stratégie associée</h4>
+                <h4 className="font-serif text-[#172030] font-bold">Suggestions — actions sans option associée</h4>
                 <p className="text-sm text-[#172030]/60">
-                  Ces actions de traitement des risques n'ont pas encore de stratégie de continuité associée. Créez-en une pour formaliser votre plan de réponse.
+                  Ces actions de traitement des risques n'ont pas encore d'option de continuité associée. Créez-en une pour formaliser votre plan de réponse.
                 </p>
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               {displayedSuggestions.map((act) => {
-                const risk = riskMap[act.risque_id];
+                // 🔥 RÉSOLUTION DU NOM DU RISQUE
+                const risk = riskById[act.risque_id];
+                const riskTitle = risk?.title || "—";
+
+                // 🔥 STYLE DU BADGE D'AVANCEMENT
+                const badgeStyle = act.avancement === 100 
+                  ? { bg: "#E8F5E9", text: "#2E7D32" } 
+                  : act.avancement > 0 
+                  ? { bg: "#FFF8E1", text: "#A38730" } 
+                  : { bg: "#F1EFEA", text: "#6C7A8A" };
+
                 return (
                   <div key={act.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white rounded-lg border border-[#E5E2DD] gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm text-[#172030] truncate">{act.mesure}</span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                          act.avancement === 100 ? "bg-[#E5F0EB] text-[#1F4E39]" :
-                          act.avancement > 0 ? "bg-[#FDF3D6] text-[#A38730]" :
-                          "bg-[#F8F6F2] text-[#6C7A8A]"
-                        }`}>
-                          {act.avancement || 0}%
-                        </span>
-                        <span className="text-[10px] text-[#172030]/50 font-medium">
+                      <span className="font-medium text-sm text-[#172030] block">{act.mesure}</span>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-xs text-[#172030]/60">
+                        {/* Badge Statut */}
+                        <span className="bg-[#F1EFEA] text-[#444441] px-2 py-0.5 rounded-full">
                           {act.statut || "À faire"}
                         </span>
-                      </div>
-                      <div className="text-xs text-[#172030]/40 mt-1">
-                        Risque associé : <strong>{risk?.title || act.risque_id || "Inconnu"}</strong>
+                        <span className="text-[#E5E2DD]">·</span>
+                        {/* Badge Avancement */}
+                        <span className={cn("px-2 py-0.5 rounded-full", badgeStyle.bg, `text-[${badgeStyle.text}]`)}>
+                          {act.avancement || 0}%
+                        </span>
+                        <span className="text-[#E5E2DD]">·</span>
+                        {/* Risque associé */}
+                        <span className="text-[#172030]/60">
+                          Risque : <span className="font-medium text-[#172030]">{riskTitle}</span>
+                        </span>
                       </div>
                     </div>
+                    
+                    {/* 🔥 BOUTON DISCRET (Outline) */}
                     <Button 
+                      variant="outline" 
                       size="sm" 
-                      className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm flex-shrink-0 h-8"
-                      onClick={() => openCreateFromSuggestion(act)}
+                      className="border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2] flex-shrink-0 h-8"
+                      onClick={() => {
+                        setNom(`Option pour : ${act.mesure}`);
+                        setDescription(`Créée à partir de l'action du plan de traitement : "${act.mesure}"`);
+                        setOpen(true);
+                      }}
                     >
-                      <Plus className="h-3.5 w-3.5 mr-1.5" /> Créer une stratégie
+                      <Plus className="h-3.5 w-3.5 mr-1.5" /> Créer une option
                     </Button>
                   </div>
                 );
               })}
             </div>
 
-            {/* Bouton pour voir plus de suggestions */}
+            {/* Bouton pour voir plus */}
             {unsuggestedActions.length > MAX_SUGGESTIONS && (
               <Button 
                 variant="ghost" 
@@ -237,7 +279,7 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
               >
                 {showAllSuggestions 
                   ? "Réduire la liste" 
-                  : `+ ${remainingCount} autre${remainingCount > 1 ? 's' : ''} action${remainingCount > 1 ? 's' : ''} sans stratégie`
+                  : `+ ${remainingCount} autre${remainingCount > 1 ? 's' : ''} action${remainingCount > 1 ? 's' : ''} sans option`
                 }
               </Button>
             )}
@@ -246,11 +288,11 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
       )}
 
       {/* ============================================================
-          GRILLE DES STRATÉGIES
+          GRILLE DES OPTIONS (CARTES REDESIGNÉES)
           ============================================================ */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {catalogue.map((s) => {
-          // Si 's.type' existe (ancienne donnée), on affiche son icône. Sinon, icône par défaut "Home".
+          // 🔥 Si 's.type' existe, on affiche son icône. Sinon, icône par défaut "Home".
           const Icon = ICON_MAP[s.type as string] || Home; 
           const processCount = processCounts[s.id]?.size ?? 0;
           const actionCount = actionCounts[s.id]?.size ?? 0;
@@ -261,7 +303,11 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
           const actionsForPopover = actionPlans.filter(p => linkedRiskIds.includes(p.risque_id));
           
           return (
-            <Card key={s.id} className="border-0 shadow-sm bg-white rounded-xl relative group">
+            <Card 
+              key={s.id} 
+              // 🔥 EFFET DE SURVOL AVEC BORDURE ET OMBRE
+              className="border border-[#E5E2DD] shadow-sm bg-white rounded-xl relative group transition-all duration-200 hover:shadow-md hover:border-[#2A5141]"
+            >
               <CardContent className="p-5 flex flex-col h-full gap-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
@@ -270,7 +316,8 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
                     </span>
                     <div>
                       <p className="font-serif font-bold text-[#172030] leading-tight">{s.nom}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-[#172030]/40 mt-0.5">{s.type || "Générique"}</p>
+                      {/* 🔥 SOUS-TITRE PLUS DISCRET */}
+                      <p className="text-[10px] uppercase tracking-wider text-[#172030]/30 mt-0.5">{s.type || "Générique"}</p>
                     </div>
                   </div>
                   
@@ -287,10 +334,12 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
                 <p className="text-sm text-[#172030]/60 flex-1">{s.description}</p>
                 
                 <div className="flex flex-wrap items-center gap-2 mt-auto">
+                  {/* 🔥 BADGE PROCESSUS (Harmonisé) */}
                   <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-[#F1EFEA] text-[#172030]">
                     {processCount} processus lié{processCount > 1 ? "s" : ""}
                   </span>
                   
+                  {/* Badge Actions liées (existant) */}
                   {loadingActions ? (
                     <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-[#F8F6F2] text-[#172030]/30 animate-pulse">
                       Chargement...
@@ -309,13 +358,11 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
                       <PopoverContent className="w-80 p-0 border-[#E5E2DD] bg-white shadow-lg rounded-xl overflow-hidden">
                         <div className="p-3 border-b border-[#E5E2DD] bg-[#F8F6F2]">
                           <p className="text-xs font-semibold text-[#172030] font-sans uppercase tracking-wider">Actions du plan de traitement</p>
-                          <p className="text-[10px] text-[#172030]/40 mt-0.5">Liées aux risques de cette stratégie</p>
+                          <p className="text-[10px] text-[#172030]/40 mt-0.5">Liées aux risques de cette option</p>
                         </div>
                         <div className="max-h-[200px] overflow-y-auto p-2 space-y-1.5">
                           {actionsForPopover.length === 0 ? (
-                            <div className="p-3 text-center text-xs text-[#172030]/40">
-                              Aucune action trouvée.
-                            </div>
+                            <div className="p-3 text-center text-xs text-[#172030]/40">Aucune action trouvée.</div>
                           ) : (
                             actionsForPopover.map((act) => (
                               <div key={act.id} className="flex flex-col p-2.5 rounded-lg hover:bg-[#F8F6F2] border border-transparent hover:border-[#E5E2DD] transition-colors">
@@ -323,22 +370,18 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
                                   <span className="text-sm font-medium text-[#172030] flex-1 leading-tight">{act.mesure}</span>
                                   <div className="flex items-center gap-1 flex-shrink-0">
                                     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                                      act.avancement === 100 ? "bg-[#E5F0EB] text-[#1F4E39]" :
-                                      act.avancement > 0 ? "bg-[#FDF3D6] text-[#A38730]" :
-                                      "bg-[#F8F6F2] text-[#6C7A8A]"
+                                      act.avancement === 100 ? "bg-[#E8F5E9] text-[#2E7D32]" :
+                                      act.avancement > 0 ? "bg-[#FFF8E1] text-[#A38730]" :
+                                      "bg-[#F1EFEA] text-[#6C7A8A]"
                                     }`}>
                                       {act.avancement || 0}%
                                     </span>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2 mt-1 text-[10px] text-[#172030]/50">
-                                  <span className="flex items-center gap-1">
-                                    {act.responsable || "—"}
-                                  </span>
+                                  <span className="flex items-center gap-1">{act.responsable || "—"}</span>
                                   <span className="w-1 h-1 rounded-full bg-[#E5E2DD]" />
-                                  <span className="flex items-center gap-1">
-                                    {act.statut || "À faire"}
-                                  </span>
+                                  <span className="flex items-center gap-1">{act.statut || "À faire"}</span>
                                 </div>
                               </div>
                             ))
@@ -358,12 +401,23 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-serif text-[#172030]">Nouvelle stratégie</DialogTitle>
+            <DialogTitle className="font-serif text-[#172030]">Nouvelle option</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>Nom</Label>
               <Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex : Cellule de crise délocalisée" />
+            </div>
+            <div>
+              <Label>Icône</Label>
+              <Select value={iconName} onValueChange={setIconName}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ICON_LIST.map((icon) => (
+                    <SelectItem key={icon} value={icon}>{icon}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Description</Label>
@@ -383,12 +437,23 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-serif text-[#172030]">Modifier la stratégie</DialogTitle>
+            <DialogTitle className="font-serif text-[#172030]">Modifier l'option</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>Nom</Label>
               <Input value={editNom} onChange={(e) => setEditNom(e.target.value)} />
+            </div>
+            <div>
+              <Label>Icône</Label>
+              <Select value={editIconName} onValueChange={setEditIconName}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ICON_LIST.map((icon) => (
+                    <SelectItem key={icon} value={icon}>{icon}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Description</Label>

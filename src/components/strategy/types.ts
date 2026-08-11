@@ -4,15 +4,18 @@ export const RESILLIA = {
   creme: "#F8F6F2",
   vert: "#2A5141",
   vertPale: "#E8F0EC",
-  rouge: "#B91C1C",
-  rosePale: "#FCE9E9",
-  ambre: "#A16207",
-  ambrePale: "#FBF3D9",
-  neutre: "#F1EFEA",
+  rouge: "#C62828", // Changé pour matcher la charte
+  rosePale: "#FFEBEE", // Changé pour matcher la charte
+  ambre: "#A38730", // Changé pour matcher la charte
+  ambrePale: "#FFF8E1", // Changé pour matcher la charte
+  violet: "#5C4EA3", // Nouveau (pour À valider)
+  violetPale: "#EAE6F7", // Nouveau
+  neutre: "#F1EFE8", // Légèrement ajusté
   bordure: "#E5E2DD",
 };
 
-export const STATUTS_STRATEGIE = ["Proposée", "Validée", "En test", "Opérationnelle", "Rejetée"] as const;
+// 🔥 NOUVEAU : Les 5 statuts du workflow de validation
+export const STATUTS_STRATEGIE = ["Brouillon", "En revue", "À valider", "Validée", "À revoir"] as const;
 export type StatutStrategie = (typeof STATUTS_STRATEGIE)[number];
 
 export const FAISABILITES = ["Faible", "Moyenne", "Élevée"] as const;
@@ -24,12 +27,13 @@ export const FAISABILITE_SCORE: Record<string, number> = {
   Faible: 1,
 };
 
+// 🔥 NOUVEAU MAPPING DES STYLES POUR LES 5 STATUTS
 export const STATUT_STYLE: Record<string, { bg: string; text: string }> = {
-  Proposée: { bg: "#F1EFEA", text: "#172030" },
-  Validée: { bg: "#E8F0EC", text: "#2A5141" },
-  "En test": { bg: "#FBF3D9", text: "#A16207" },
-  Opérationnelle: { bg: "#E8F0EC", text: "#2A5141" },
-  Rejetée: { bg: "#FCE9E9", text: "#B91C1C" },
+  "Brouillon": { bg: "#F1EFE8", text: "#444441" },
+  "En revue": { bg: "#FFF8E1", text: "#A38730" },
+  "À valider": { bg: "#EAE6F7", text: "#5C4EA3" },
+  "Validée": { bg: "#E8F5E9", text: "#2E7D32" },
+  "À revoir": { bg: "#FBE9E7", text: "#C62828" },
 };
 
 export const FAISABILITE_STYLE: Record<string, { bg: string; text: string }> = {
@@ -48,7 +52,6 @@ export const SCENARIOS_TYPES = [
   "Sinistre majeur (incendie, inondation)",
 ];
 
-// ⬇️ MODIFIÉ : Correspond exactement à ta table
 export type ProcessusLite = {
   id: string;
   name: string;
@@ -56,7 +59,7 @@ export type ProcessusLite = {
   owner?: string | null;
   description?: string | null;
   criticality_level?: string | null;
-  rto_hours?: number | null;   // ⬅️ Pour la vérification RTO
+  rto_hours?: number | null;
   rpo_hours?: number | null;
   status?: string | null;
   is_critical?: boolean | null;
@@ -98,6 +101,7 @@ export const checkRto = (delai?: number | null, rto?: number | null) => {
   return { known: true, ok: Number(delai) <= Number(rto), ecart: Number(delai) - Number(rto) };
 };
 
+// 🔥 VALEUR PAR DÉFAUT MISE À JOUR : "Brouillon" au lieu de "Proposée"
 export const emptyAssociation = (): Partial<StrategieAssociation> => ({
   strategie_id: "",
   processus_id: "",
@@ -111,6 +115,6 @@ export const emptyAssociation = (): Partial<StrategieAssociation> => ({
   tiers_critique: false,
   contrat_reference: "",
   sla_reference: "",
-  statut: "Proposée",
+  statut: "Brouillon", // 🔥 ICI
   lien_pca_id: "",
 });
