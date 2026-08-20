@@ -1,3 +1,4 @@
+// src/components/pca/risk/RiskModule.tsx
 import { useState } from "react";
 import { AlertTriangle, BarChart3, Boxes, KanbanSquare, Grid3x3, Loader2, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -22,18 +23,18 @@ const TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
 ];
 
 export const RiskModule = () => {
-  const [tab, setTab] = useState<Tab>("comex"); // ✅ Dashboard COMEX par défaut
+  const [tab, setTab] = useState<Tab>("comex");
   const data = useRiskData();
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="font-serif text-3xl text-[#172030]">Analyse des Risques</h1>
-        <p className="text-sm text-[#172030]/60 mt-1">
-          Démarche ISO 31000 / 27005 : contexte, référentiels, évaluation, traitement et pilotage.
-        </p>
-      </header>
+      {/* ==========================================================
+          HEADER SUPPRIMÉ - Plus de titre "Analyse des Risques" ni sous-titre
+          ========================================================== */}
 
+      {/* ==========================================================
+          TABS - Navigation
+          ========================================================== */}
       <div className="flex flex-wrap gap-1.5 border-b border-[#172030]/10 pb-1">
         {TABS.map((t) => {
           const Icon = t.icon;
@@ -56,6 +57,9 @@ export const RiskModule = () => {
         })}
       </div>
 
+      {/* ==========================================================
+          ALERTE SCHÉMA INCOMPLET
+          ========================================================== */}
       {!data.schemaReady && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
           <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
@@ -68,6 +72,9 @@ export const RiskModule = () => {
         </div>
       )}
 
+      {/* ==========================================================
+          CONTENU
+          ========================================================== */}
       {data.loading ? (
         <div className="flex items-center gap-2 text-[#172030]/60 py-16 justify-center">
           <Loader2 className="h-5 w-5 animate-spin" /> Chargement des données…

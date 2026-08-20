@@ -1,104 +1,237 @@
+// src/components/pca/risk/tabs/ComexTab.tsx
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  AlertTriangle, Activity, ShieldCheck, TrendingDown,
-  Sparkles, Clock, Download, RefreshCw, ChevronRight, Grid3x3, PieChart as PieIcon,
+import { 
+  AlertTriangle, Activity, ShieldCheck, TrendingUp, 
+  Zap, PieChart, Grid3x3, Sparkles, Circle, Clock,
+  Users, FileText, Download, ChevronRight, Target, Info,
+  Eye, ArrowUpRight, RefreshCw, User, Building2,
+  Gauge, BarChart3, Shield, AlertOctagon, CheckCircle,
+  ArrowDown, ArrowUp, Minus, Layers, Fingerprint,
+  ListChecks, ClipboardCheck, AlertCircle
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/db";
+import { supabase } from "@/integrations/supabase/client";
 import type { RiskData } from "../useRiskData";
 import { scoreToNiveau } from "../riskModel";
+// Import Recharts pour un rendu PRO
+import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
-type Props = { data: RiskData };
+type Props = {
+  data: RiskData;
+};
 
-type Measure = { id: string; risque_id: string; mesure: string };
+type Measure = {
+  id: string;
+  risque_id: string;
+  mesure: string;
+  avancement?: number;
+};
 
 // ============================================================
-// PALETTE RESILLIA
+// CHARTE GRAPHIQUE RESILLIA PREMIUM (Pastel & PRO)
 // ============================================================
-const C = {
+const COLORS = {
   navy: "#172030",
   cream: "#F8F6F2",
   forest: "#2A5141",
-  border: "#E8E4DC",
-  white: "#FFFFFF",
+  text: "#172030",
+  muted: "#6C7A8A",
+  border: "#E5E2DD",
+  cardBg: "#FFFFFF",
+  
+  risk: {
+    Critique: { bg: "#FDE8E8", text: "#C62828", border: "#EBC5C5", dot: "#C62828", light: "#FFF5F5" },
+    Élevé: { bg: "#FDEAD6", text: "#B2572A", border: "#F0D1B8", dot: "#B2572A", light: "#FFFAF5" },
+    Modéré: { bg: "#FDF3D6", text: "#A38730", border: "#F0E3B8", dot: "#A38730", light: "#FFFDF5" },
+    Faible: { bg: "#E5F0EB", text: "#1F4E39", border: "#C0D8CF", dot: "#1F4E39", light: "#F5FFF5" },
+  },
+  badge: {
+    Critique: { bg: "#FDE8E8", text: "#C62828" },
+    Élevé: { bg: "#FDEAD6", text: "#B2572A" },
+    Modéré: { bg: "#FDF3D6", text: "#A38730" },
+    Faible: { bg: "#E5F0EB", text: "#1F4E39" },
+  },
+  matrix: {
+    Faible: "#E8F5E9",
+    Modéré: "#FFF8E1",
+    Élevé: "#FFE0B2",
+    Critique: "#FFCDD2",
+  },
+  kpi: {
+    light: { bg: "#FFFFFF", text: "#172030", iconBg: "#F0EDE8", border: "border-[#E5E2DD]" },
+    green: { bg: "#FFFFFF", text: "#2E7D32", iconBg: "#E8F5E9", border: "border-emerald-200" },
+    red: { bg: "#FFFFFF", text: "#C62828", iconBg: "#FFEBEE", border: "border-rose-200" },
+    amber: { bg: "#FFFFFF", text: "#F57F17", iconBg: "#FFF8E1", border: "border-amber-200" },
+    blue: { bg: "#FFFFFF", text: "#1A56DB", iconBg: "#EBF5FF", border: "border-blue-200" },
+  }
 };
 
-const LEVELS = {
-  Critique: { bg: "#FFEBEE", text: "#C62828", chip: "bg-[#FFEBEE] text-[#C62828]" },
-  "Élevé": { bg: "#FBE9E7", text: "#D84315", chip: "bg-[#FBE9E7] text-[#D84315]" },
-  "Modéré": { bg: "#FFF8E1", text: "#F57F17", chip: "bg-[#FFF8E1] text-[#F57F17]" },
-  Faible: { bg: "#E8F5E9", text: "#2E7D32", chip: "bg-[#E8F5E9] text-[#2E7D32]" },
-} as const;
-
-type LevelKey = keyof typeof LEVELS;
-
-const lvl = (l?: string) => LEVELS[(l as LevelKey)] ?? LEVELS.Faible;
-
-const CARD = "bg-white rounded-xl border border-[#E8E4DC] shadow-[0_1px_3px_rgba(23,32,48,0.06)]";
-
 // ============================================================
-// SOUS-COMPOSANTS
+// COMPOSANT: KPI CARD
 // ============================================================
+const KpiCard = ({ 
+  label, 
+  value, 
+  subValue, 
+  description,
+  icon: Icon, 
+  color = "light",
+  badge,
+  className
+}: { 
+  label: string;
+  value: string | number;
+  subValue?: string;
+  description?: string;
+  icon: any;
+  color?: "light" | "green" | "red" | "amber" | "blue";
+  badge?: { label: string; color?: string };
+  className?: string;
+}) => {
+  const colorStyles = {
+    light: { bg: "#FFFFFF", text: "#172030", iconBg: "#F0EDE8", border: "border-[#E5E2DD]" },
+    green: { bg: "#FFFFFF", text: "#2E7D32", iconBg: "#E8F5E9", border: "border-emerald-200" },
+    red: { bg: "#FFFFFF", text: "#C62828", iconBg: "#FFEBEE", border: "border-rose-200" },
+    amber: { bg: "#FFFFFF", text: "#F57F17", iconBg: "#FFF8E1", border: "border-amber-200" },
+    blue: { bg: "#FFFFFF", text: "#1A56DB", iconBg: "#EBF5FF", border: "border-blue-200" },
+  };
 
-const SectionTitle = ({ icon: Icon, children, right }: any) => (
-  <div className="flex items-center justify-between mb-3">
-    <div className="flex items-center gap-2">
-      {Icon && <Icon className="h-3.5 w-3.5 text-[#2A5141]" />}
-      <h2 className="font-serif text-[13px] font-semibold text-[#172030]">{children}</h2>
-    </div>
-    {right}
-  </div>
-);
+  const style = colorStyles[color] || colorStyles.light;
 
-const KpiCard = ({ label, value, sub, icon: Icon, tone, trend }: {
-  label: string; value: string | number; sub: string; icon: any;
-  tone: { bg: string; text: string }; trend?: string;
-}) => (
-  <div className={cn(CARD, "h-[135px] p-5 flex items-start justify-between")}>
-    <div className="flex flex-col justify-between h-full min-w-0">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#172030]/45">{label}</p>
-      <p className="font-serif text-[32px] leading-none font-bold text-[#172030]">{value}</p>
-      <div className="flex items-center gap-1.5 min-w-0">
-        <p className="text-[11px] text-[#172030]/50 truncate">{sub}</p>
-        {trend && (
-          <span
-            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
-            style={{ backgroundColor: tone.bg, color: tone.text }}
-          >
-            {trend}
-          </span>
-        )}
-      </div>
-    </div>
-    <div
-      className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0"
-      style={{ backgroundColor: tone.bg }}
-    >
-      <Icon className="h-5 w-5" style={{ color: tone.text }} />
-    </div>
-  </div>
-);
-
-const Gauge = ({ value }: { value: number }) => {
-  const r = 40;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (Math.min(100, Math.max(0, value)) / 100) * circ;
   return (
-    <div className="relative h-[96px] w-[96px] shrink-0">
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-        <circle cx="50" cy="50" r={r} fill="none" stroke="#EFEBE4" strokeWidth="10" />
-        <circle
-          cx="50" cy="50" r={r} fill="none" stroke={C.forest} strokeWidth="10"
-          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
-          className="transition-all duration-500"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-serif text-[20px] font-bold text-[#172030] leading-none">{value}%</span>
-        <span className="text-[8px] uppercase tracking-wider text-[#172030]/40 mt-0.5">couvert</span>
+    <Card className={cn(
+      "border shadow-sm rounded-xl transition-all hover:shadow-md bg-white",
+      style.border,
+      className
+    )}>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-[#172030]/40 font-sans">
+                {label}
+              </p>
+              {badge && (
+                <span className={cn(
+                  "text-[8px] font-medium px-2 py-0.5 rounded-full",
+                  badge.color || "bg-[#F8F6F2] text-[#172030]/50"
+                )}>
+                  {badge.label}
+                </span>
+              )}
+            </div>
+            <p className="font-serif text-2xl font-bold mt-0.5" style={{ color: style.text }}>
+              {value}
+            </p>
+            {subValue && (
+              <p className="text-[11px] text-[#172030]/50 mt-0.5 font-sans font-medium">
+                {subValue}
+              </p>
+            )}
+            {description && (
+              <p className="text-[10px] text-[#172030]/40 mt-0.5 font-sans">
+                {description}
+              </p>
+            )}
+          </div>
+          <div className={cn("h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0")} style={{ backgroundColor: style.iconBg }}>
+            <Icon className={cn("h-4.5 w-4.5")} style={{ color: style.text }} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ============================================================
+// COMPOSANT: Badge de niveau
+// ============================================================
+const RiskLevelBadge = ({ level, className }: { level: string; className?: string }) => {
+  const style = COLORS.badge[level as keyof typeof COLORS.badge] || COLORS.badge.Faible;
+  return (
+    <span 
+      className={cn(
+        "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium",
+        className
+      )} 
+      style={{ backgroundColor: style.bg, color: style.text }}
+    >
+      {level.toLowerCase()}
+    </span>
+  );
+};
+
+// ============================================================
+// COMPOSANT: ModernPieChart (RECHARTS - DESIGN DONUT PRO)
+// ============================================================
+const ModernPieChart = ({ 
+  data, 
+  total, 
+  onSliceClick,
+  activeLabel
+}: { 
+  data: { label: string; value: number; color: string; borderColor: string }[];
+  total: number;
+  onSliceClick: (label: string) => void;
+  activeLabel: string | null;
+}) => {
+  
+  const filteredData = data.filter(d => d.value > 0);
+  
+  if (filteredData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full w-full">
+        <div className="text-center">
+          <p className="text-lg font-bold text-[#172030] font-sans">0</p>
+          <p className="text-[8px] text-[#172030]/40 font-sans uppercase tracking-wider">Total</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative h-28 w-28 shrink-0 cursor-pointer">
+      {/* Le graphique Donut avec Recharts */}
+      <ResponsiveContainer width="100%" height="100%">
+        <RePieChart>
+          <Pie
+            data={filteredData}
+            cx="50%"
+            cy="50%"
+            innerRadius={38} // Le grand trou au centre
+            outerRadius={52} // Épaisseur de l'anneau
+            dataKey="value"
+            stroke="none" // On gère la bordure via Cell
+            onClick={(e) => onSliceClick(activeLabel === e.label ? "all" : e.label)}
+          >
+            {filteredData.map((entry, index) => (
+              <Cell 
+                key={`cell-${index}`} 
+                fill={entry.color}
+                // Bordure fine et colorée pour le style de votre image
+                stroke={entry.borderColor} 
+                strokeWidth={1.5}
+                // Effet de survol et de sélection
+                className="transition-all duration-200 hover:opacity-90 hover:drop-shadow-sm"
+              />
+            ))}
+          </Pie>
+          {/* Texte Tooltip personnalisé ou suppression */}
+          <Tooltip content={<div className="hidden"/>} />
+        </RePieChart>
+      </ResponsiveContainer>
+
+      {/* Texte centré dans le trou de l'anneau */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span className="text-base font-bold font-sans text-[#172030] tracking-tight leading-none">
+          {total}
+        </span>
+        <span className="text-[7px] font-medium text-[#172030]/40 font-sans uppercase tracking-wider mt-1">
+          Total
+        </span>
       </div>
     </div>
   );
@@ -108,525 +241,735 @@ const Gauge = ({ value }: { value: number }) => {
 // COMPOSANT PRINCIPAL
 // ============================================================
 export const ComexTab = ({ data }: Props) => {
-  const { risques, reload } = data;
+  const { risques } = data;
   const exportRef = useRef<HTMLDivElement>(null);
 
-  const [selectedCell, setSelectedCell] = useState<{ p: number; i: number } | null>(null);
-  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+  // ============================
+  // ÉTATS INTERACTIFS & FILTRES
+  // ============================
+  const [filterLevel, setFilterLevel] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [selectedCell, setSelectedCell] = useState<{p: number, i: number} | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<{p: number, i: number} | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // ---- Mesures réelles (plans_traitement)
-  const [allMeasures, setAllMeasures] = useState<Measure[]>([]);
-  const [loadingMeasures, setLoadingMeasures] = useState(false);
-
-  useEffect(() => {
-    const loadMeasures = async () => {
-      setLoadingMeasures(true);
-      try {
-        const { data: measuresData, error } = await supabase
-          .from("plans_traitement")
-          .select("id, risque_id, mesure");
-        if (error) throw error;
-        setAllMeasures(measuresData || []);
-      } catch (error) {
-        console.error("Erreur chargement mesures pour le dashboard:", error);
-      } finally {
-        setLoadingMeasures(false);
-      }
-    };
-    loadMeasures();
-  }, []);
-
-  // ---- Logique métier (inchangée)
+  // ============================
+  // LOGIQUE MÉTIER
+  // ============================
   const enriched = useMemo(
-    () => risques.map((r) => ({ ...r, niveauCalc: r.niveau || scoreToNiveau(r.score_residuel || 1) })),
+    () => risques.map((r) => ({ 
+      ...r, 
+      niveauCalc: r.niveau || scoreToNiveau(r.score_residuel || 1) 
+    })),
     [risques]
   );
 
   const filteredRisks = useMemo(() => {
-    return enriched.filter((r) => {
-      const matchCell = !selectedCell || (r.probabilite === selectedCell.p && r.impact === selectedCell.i);
-      const matchLevel = !selectedLevel || r.niveauCalc === selectedLevel;
-      return matchCell && matchLevel;
+    return enriched.filter(r => {
+      const matchLevel = filterLevel === "all" || r.niveauCalc === filterLevel;
+      const matchStatus = filterStatus === "all" || (filterStatus === "owner" && r.owner && r.owner.trim() !== "") || (filterStatus === "no_owner" && (!r.owner || r.owner.trim() === ""));
+      let matchCell = true;
+      if (selectedCell) {
+        matchCell = r.probabilite === selectedCell.p && r.impact === selectedCell.i;
+      }
+      return matchLevel && matchStatus && matchCell;
     });
-  }, [enriched, selectedCell, selectedLevel]);
+  }, [enriched, filterLevel, filterStatus, selectedCell]);
 
   const total = filteredRisks.length;
   const critiques = filteredRisks.filter((r) => r.niveauCalc === "Critique").length;
   const eleves = filteredRisks.filter((r) => r.niveauCalc === "Élevé").length;
   const moderes = filteredRisks.filter((r) => r.niveauCalc === "Modéré").length;
   const faibles = filteredRisks.filter((r) => r.niveauCalc === "Faible").length;
-
-  const scoreMoyen = total ? filteredRisks.reduce((s, r) => s + (r.score_residuel || 0), 0) / total : 0;
+  
+  const scoreMoyen = total ? (filteredRisks.reduce((s, r) => s + (r.score_residuel || 0), 0) / total) : 0;
   const reduction = (() => {
     const brut = filteredRisks.reduce((s, r) => s + (r.score_brut || 0), 0);
     const res = filteredRisks.reduce((s, r) => s + (r.score_residuel || 0), 0);
     return brut ? Math.round(((brut - res) / brut) * 100) : 0;
   })();
 
-  const risqueIdsAvecMesures = useMemo(() => new Set(allMeasures.map((m) => m.risque_id)), [allMeasures]);
-  const withMesures = filteredRisks.filter((r) => risqueIdsAvecMesures.has(r.id)).length;
-  const sansMesures = total - withMesures;
+  // ==========================================================
+  // CORRECTION : LOGIQUE DE COUVERTURE (Utilisation des données Risques)
+  // ==========================================================
+  
+  // On vérifie le champ 'mesures_existantes' directement dans l'objet risque
+  const withMesures = filteredRisks.filter(r => {
+    if (!r.mesures_existantes) return false;
+    if (Array.isArray(r.mesures_existantes) && r.mesures_existantes.length === 0) return false;
+    if (typeof r.mesures_existantes === 'string' && r.mesures_existantes.trim() === '') return false;
+    return true;
+  }).length;
+  
   const couvertureMesures = total > 0 ? Math.round((withMesures / total) * 100) : 0;
-  const sansResponsable = filteredRisks.filter((r) => !r.owner || r.owner.trim() === "").length;
+  
+  const sansResponsable = filteredRisks.filter(r => !r.owner || r.owner.trim() === "").length;
+
+  const risquesCritiquesSansMesures = filteredRisks.filter(r => 
+    (r.niveauCalc === "Critique" || r.niveauCalc === "Élevé") && 
+    !(r.mesures_existantes && r.mesures_existantes.length > 0)
+  ).length;
 
   const lastUpdateDate = useMemo(() => {
     if (risques.length === 0) return null;
-    const dates = risques
-      .map((r) => {
-        if (r.updated_at) return new Date(r.updated_at);
-        if (r.date_identification) return new Date(r.date_identification);
-        return null;
-      })
-      .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
+    const dates = risques.map(r => {
+      if (r.updated_at) return new Date(r.updated_at);
+      if (r.date_identification) return new Date(r.date_identification);
+      return null;
+    }).filter((d): d is Date => d !== null && !isNaN(d.getTime()));
+
     if (dates.length === 0) return null;
-    const latest = new Date(Math.max(...dates.map((d) => d.getTime())));
-    return latest.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+    const latest = new Date(Math.max(...dates.map(d => d.getTime())));
+    return latest.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }, [risques]);
 
-  const topRisks = useMemo(
-    () => [...filteredRisks].sort((a, b) => (b.score_residuel || 0) - (a.score_residuel || 0)).slice(0, 5),
-    [filteredRisks]
-  );
+  // ============================
+  // TOP RISQUES - LIMITÉ À 5
+  // ============================
+  const topRisks = [...filteredRisks]
+    .sort((a, b) => (b.score_residuel || 0) - (a.score_residuel || 0))
+    .slice(0, 5);
 
+  // ============================
+  // DONNÉES MATRICE
+  // ============================
   const matrix = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const r of enriched) {
-      if (selectedLevel && r.niveauCalc !== selectedLevel) continue;
+    const map: Record<string, { count: number; risks: any[] }> = {};
+    for (const r of filteredRisks) {
       const key = `${r.probabilite}-${r.impact}`;
-      map[key] = (map[key] || 0) + 1;
+      if (!map[key]) {
+        map[key] = { count: 0, risks: [] };
+      }
+      map[key].count++;
+      map[key].risks.push(r);
     }
     return map;
-  }, [enriched, selectedLevel]);
+  }, [filteredRisks]);
 
-  const cellTone = (score: number, count: number) => {
-    if (count === 0) return { bg: "#FAF9F6", text: "#C9C4BA" };
-    if (score <= 6) return LEVELS.Faible;
-    if (score <= 12) return LEVELS["Modéré"];
-    if (score <= 18) return LEVELS["Élevé"];
-    return LEVELS.Critique;
+  const getCellStyle = (p: number, i: number) => {
+    const score = p * i;
+    const cell = matrix[`${p}-${i}`];
+    const count = cell?.count || 0;
+    
+    if (count === 0) {
+      return { bg: "#F8F6F2", text: "#D1D5DB", border: "#F0EDE8" };
+    }
+    
+    if (score <= 6) {
+      return { bg: COLORS.matrix.Faible, text: "#1F4E39", border: "#C8E6C9" };
+    } else if (score <= 12) {
+      return { bg: COLORS.matrix.Modéré, text: "#A38730", border: "#FFE082" };
+    } else if (score <= 18) {
+      return { bg: COLORS.matrix.Élevé, text: "#B2572A", border: "#FFCC80" };
+    } else {
+      return { bg: COLORS.matrix.Critique, text: "#C62828", border: "#EF9A9A" };
+    }
   };
 
-  const donut = useMemo(
-    () => [
-      { name: "Critique", value: critiques, color: LEVELS.Critique.text, bg: LEVELS.Critique.bg },
-      { name: "Élevé", value: eleves, color: LEVELS["Élevé"].text, bg: LEVELS["Élevé"].bg },
-      { name: "Modéré", value: moderes, color: LEVELS["Modéré"].text, bg: LEVELS["Modéré"].bg },
-      { name: "Faible", value: faibles, color: LEVELS.Faible.text, bg: LEVELS.Faible.bg },
-    ],
-    [critiques, eleves, moderes, faibles]
-  );
-  const donutData = donut.filter((d) => d.value > 0);
+  const getRisksInCell = (p: number, i: number) => {
+    const cell = matrix[`${p}-${i}`];
+    return cell?.risks || [];
+  };
 
-  const impactBars = useMemo(
-    () =>
-      [...filteredRisks]
-        .sort((a, b) => (b.score_brut || 0) - (a.score_brut || 0))
-        .slice(0, 5)
-        .map((r) => {
-          const brut = r.score_brut || 0;
-          const res = r.score_residuel || 0;
-          return {
-            id: r.id,
-            title: r.title,
-            brut,
-            res,
-            gain: brut ? Math.round(((brut - res) / brut) * 100) : 0,
-          };
-        }),
-    [filteredRisks]
-  );
+  // ============================
+  // DONNÉES POUR LE PIE CHART (PASTEL AVEC BORDURE)
+  // ============================
+  const pieData = [
+    { label: "Critique", value: critiques, color: "#FDE8E8", borderColor: "#EBC5C5" },
+    { label: "Élevé", value: eleves, color: "#FDEAD6", borderColor: "#F0D1B8" },
+    { label: "Modéré", value: moderes, color: "#FDF3D6", borderColor: "#F0E3B8" },
+    { label: "Faible", value: faibles, color: "#E5F0EB", borderColor: "#C0D8CF" },
+  ];
 
-  // ---- Synthèse IA dynamique
-  const synthese = useMemo(() => {
-    if (total === 0) return "Aucun risque ne correspond à la sélection en cours. Réinitialisez les filtres pour afficher l'ensemble du portefeuille.";
-    const partCritique = Math.round(((critiques + eleves) / total) * 100);
-    const phrases: string[] = [];
-    phrases.push(
-      `Le portefeuille compte ${total} risque${total > 1 ? "s" : ""} actif${total > 1 ? "s" : ""}, dont ${critiques + eleves} en zone d'attention (${partCritique} % du portefeuille), pour un score résiduel moyen de ${scoreMoyen.toFixed(1)}/25.`
-    );
-    phrases.push(
-      couvertureMesures >= 75
-        ? `La couverture par des mesures de traitement atteint ${couvertureMesures} %, un niveau conforme aux attentes de maîtrise.`
-        : `La couverture par des mesures de traitement s'établit à ${couvertureMesures} % : ${sansMesures} risque${sansMesures > 1 ? "s restent" : " reste"} sans plan de traitement formalisé.`
-    );
-    phrases.push(
-      `Les dispositifs en place génèrent une réduction de ${reduction} % entre exposition brute et résiduelle.` +
-        (sansResponsable > 0 ? ` ${sansResponsable} risque${sansResponsable > 1 ? "s n'ont" : " n'a"} pas de pilote désigné — point d'arbitrage à porter au COMEX.` : " L'ensemble des risques dispose d'un pilote désigné.")
-    );
-    return phrases.join(" ");
-  }, [total, critiques, eleves, scoreMoyen, couvertureMesures, sansMesures, reduction, sansResponsable]);
-
-  // ---- Export PDF (inchangé)
+  // ============================
+  // EXPORT PDF
+  // ============================
   const handleExportPDF = async () => {
+    setIsExporting(true);
     try {
-      const html2canvas = (await import("html2canvas")).default;
-      const jsPDF = (await import("jspdf")).default;
+      const html2canvas = (await import('html2canvas')).default;
+      const jsPDF = (await import('jspdf')).default;
+      
       if (exportRef.current) {
-        const canvas = await html2canvas(exportRef.current, { scale: 2, backgroundColor: C.cream, logging: false });
-        const imgData = canvas.toDataURL("image/png");
-        const pdf = new jsPDF("l", "mm", "a3");
+        const canvas = await html2canvas(exportRef.current, {
+          scale: 2,
+          backgroundColor: "#F8F6F2",
+          logging: false,
+        });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('l', 'mm', 'a3');
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-        pdf.save("Resillia_Risques_Dashboard.pdf");
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save('Resillia_Risques_Dashboard.pdf');
       }
     } catch (error) {
       console.error("Erreur lors de l'export PDF:", error);
+    } finally {
+      setIsExporting(false);
     }
   };
 
-  if (loadingMeasures) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <div className="flex flex-col items-center text-[#172030]/50">
-          <Clock className="h-7 w-7 mb-2 animate-pulse" />
-          <p className="text-sm">Chargement des actions de traitement…</p>
-        </div>
-      </div>
-    );
-  }
+  const resetFilters = () => {
+    setFilterLevel("all");
+    setFilterStatus("all");
+    setSelectedCell(null);
+  };
 
-  const hasFilter = !!selectedCell || !!selectedLevel;
+  const hasActiveFilters = filterLevel !== "all" || filterStatus !== "all" || selectedCell !== null;
 
+  // ============================================================
+  // RENDU PRINCIPAL
+  // ============================================================
   return (
-    <div ref={exportRef} className="bg-[#F8F6F2] max-w-[1440px] mx-auto space-y-4">
-      {/* ============ HEADER ============ */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-[26px] leading-tight font-bold text-[#172030]">Analyse des Risques</h1>
-          <p className="text-[12px] text-[#172030]/55 mt-0.5 flex items-center gap-2 flex-wrap">
-            <span>
-              Portefeuille actif · <span className="font-semibold text-[#2A5141]">{risques.length} risques</span> identifiés
-            </span>
-            {lastUpdateDate && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-[#172030]/40 bg-white border border-[#E8E4DC] rounded-full px-2 py-0.5">
-                <Clock className="h-2.5 w-2.5" /> MAJ {lastUpdateDate}
-              </span>
-            )}
-          </p>
-        </div>
+    <div className="space-y-6" ref={exportRef}>
+      
+      {/* ==========================================================
+          FILTRES - Style BIA Dashboard
+          ========================================================== */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          {hasFilter && (
-            <button
-              onClick={() => { setSelectedCell(null); setSelectedLevel(null); }}
-              className="text-[11px] text-[#2A5141] underline underline-offset-2 hover:opacity-70 transition-opacity"
-            >
-              Réinitialiser la sélection
-            </button>
+          <span className="text-xs text-[#172030]/40 font-sans">
+            {risques.length} risque{risques.length > 1 ? 's' : ''} identifié{risques.length > 1 ? 's' : ''}
+          </span>
+          {lastUpdateDate && (
+            <span className="text-xs text-[#172030]/40 flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border border-[#E5E2DD]">
+              <Clock className="h-3 w-3" /> MAJ {lastUpdateDate}
+            </span>
           )}
-          <Button
-            onClick={handleExportPDF}
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 bg-white border-[#E8E4DC] text-[#172030] hover:bg-[#F8F6F2] hover:text-[#2A5141] text-xs"
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 bg-white rounded-lg border border-[#E5E2DD] p-1 shadow-sm">
+            <select 
+              className="text-xs border-0 bg-transparent px-3 py-1.5 text-[#172030] focus:outline-none focus:ring-0"
+              value={filterLevel}
+              onChange={(e) => { setFilterLevel(e.target.value); setSelectedCell(null); }}
+            >
+              <option value="all">Niveau</option>
+              <option value="Critique">Critique</option>
+              <option value="Élevé">Élevé</option>
+              <option value="Modéré">Modéré</option>
+              <option value="Faible">Faible</option>
+            </select>
+            <div className="w-px h-5 bg-[#E5E2DD]" />
+            <select 
+              className="text-xs border-0 bg-transparent px-3 py-1.5 text-[#172030] focus:outline-none focus:ring-0"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="all">Statut</option>
+              <option value="owner">Avec pilote</option>
+              <option value="no_owner">Sans pilote</option>
+            </select>
+          </div>
+
+          <Button 
+            onClick={handleExportPDF} 
+            variant="outline" 
+            size="sm" 
+            className="border-[#E5E2DD] text-[#172030]/60 hover:text-[#172030] hover:bg-[#F8F6F2] gap-1.5 bg-white shadow-sm"
+            disabled={isExporting}
           >
-            <Download className="h-3.5 w-3.5" /> Exporter
-          </Button>
-          <Button
-            onClick={() => reload()}
-            size="sm"
-            className="h-8 gap-1.5 bg-[#2A5141] hover:bg-[#2A5141]/90 text-white text-xs"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Actualiser
+            <Download className="h-4 w-4" />
+            {isExporting ? "Export..." : "Exporter"}
           </Button>
         </div>
       </div>
 
-      {/* ============ KPI ============ */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard
-          label="Risques actifs"
-          value={total}
-          sub={`Score moyen ${scoreMoyen.toFixed(1)}/25`}
-          icon={Activity}
-          tone={{ bg: "#EFEDE7", text: C.navy }}
-          trend={hasFilter ? "filtré" : undefined}
+      {/* ==========================================================
+          LIGNE 1 : KPIs
+          ========================================================== */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard 
+          label="Couverture plans"
+          value={`${couvertureMesures}%`}
+          subValue={`${withMesures} sur ${total} risques traités`}
+          icon={ClipboardCheck}
+          color="green"
+          badge={{ label: "✅ Bonne", color: "bg-emerald-100 text-emerald-700" }}
         />
-        <KpiCard
+
+        <KpiCard 
+          label="Sans plan d'action"
+          value={total - withMesures}
+          subValue={`dont ${risquesCritiquesSansMesures} critique${risquesCritiquesSansMesures > 1 ? 's' : ''}`}
+          icon={AlertCircle}
+          color="red"
+          badge={{ label: "✅ OK", color: "bg-emerald-100 text-emerald-700" }}
+        />
+
+        <KpiCard 
+          label="Risques suivis"
+          value={total}
+          subValue={`${withMesures} associé${withMesures > 1 ? 's' : ''} à une stratégie`}
+          icon={ListChecks}
+          color="blue"
+        />
+
+        <KpiCard 
           label="Risques critiques"
           value={critiques + eleves}
-          sub={`${total > 0 ? Math.round(((critiques + eleves) / total) * 100) : 0}% du portefeuille`}
+          subValue={`${couvertureMesures}% de couverture`}
           icon={AlertTriangle}
-          tone={{ bg: LEVELS.Critique.bg, text: LEVELS.Critique.text }}
-          trend={critiques > 0 ? `${critiques} critique${critiques > 1 ? "s" : ""}` : undefined}
-        />
-        <KpiCard
-          label="Couverture mesures"
-          value={`${couvertureMesures}%`}
-          sub={`${withMesures}/${total} risques couverts`}
-          icon={ShieldCheck}
-          tone={{ bg: LEVELS.Faible.bg, text: C.forest }}
-          trend={sansMesures > 0 ? `${sansMesures} sans plan` : "complet"}
-        />
-        <KpiCard
-          label="Réduction du risque"
-          value={`${reduction}%`}
-          sub="Écart brut → résiduel"
-          icon={TrendingDown}
-          tone={{ bg: "#EAF0ED", text: C.forest }}
-          trend={sansResponsable > 0 ? `${sansResponsable} sans pilote` : undefined}
+          color="red"
+          badge={{ label: "⚠️ Attention", color: "bg-rose-100 text-rose-700" }}
         />
       </div>
 
-      {/* ============ TOP RISQUES + MATRICE ============ */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      {/* ==========================================================
+          LIGNE 2 : TOP RISQUES + MATRICE
+          ========================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        
         {/* TOP RISQUES */}
-        <div className={cn(CARD, "lg:col-span-3 p-5")}>
-          <SectionTitle
-            icon={AlertTriangle}
-            right={<span className="text-[10px] text-[#172030]/35">Cliquez pour filtrer la matrice</span>}
-          >
-            Top risques à traiter
-          </SectionTitle>
-          <div className="space-y-1">
+        <Card className="border-0 shadow-sm bg-white rounded-xl lg:col-span-7 flex flex-col h-[320px]">
+          <CardHeader className="p-5 pb-2 border-b border-[#F8F6F2] flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-[#2A5141]/10 flex items-center justify-center">
+                  <Zap className="h-4 w-4 text-[#2A5141]" />
+                </div>
+                <CardTitle className="font-serif text-[#172030] text-base">
+                  Top risques à traiter
+                </CardTitle>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/40 font-sans">
+                  {topRisks.length} affichés
+                </Badge>
+                <span className="text-[9px] text-[#172030]/30">Cliquez pour filtrer</span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 flex-1 overflow-y-auto">
             {topRisks.length === 0 ? (
-              <div className="py-10 text-center text-sm text-[#172030]/35">Aucun risque ne correspond à la sélection</div>
+              <div className="flex items-center justify-center h-full text-[#172030]/30 font-sans text-sm">
+                {hasActiveFilters ? "Aucun risque ne correspond aux critères" : "Aucun risque identifié"}
+              </div>
             ) : (
-              topRisks.map((risk, idx) => {
-                const s = lvl(risk.niveauCalc);
-                const active = selectedCell?.p === risk.probabilite && selectedCell?.i === risk.impact;
-                const couvert = risqueIdsAvecMesures.has(risk.id);
-                return (
-                  <button
-                    key={risk.id}
-                    onClick={() =>
-                      setSelectedCell(active ? null : { p: risk.probabilite, i: risk.impact })
-                    }
-                    className={cn(
-                      "w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all duration-150",
-                      active
-                        ? "bg-[#F8F6F2] border-[#2A5141]"
-                        : "bg-white border-transparent hover:bg-[#FAF9F6] hover:border-[#E8E4DC]"
-                    )}
-                  >
-                    <span className="font-serif text-[11px] font-bold text-[#172030]/25 w-4 shrink-0">
-                      {idx + 1}
-                    </span>
-                    <span
-                      className="h-2 w-2 rounded-full shrink-0"
-                      style={{ backgroundColor: s.text }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-medium text-[#172030] truncate" title={risk.title}>
-                        {risk.title}
-                      </p>
-                      <p className="text-[10px] text-[#172030]/45 truncate">
-                        {risk.owner?.trim() || "Sans pilote"} · P{risk.probabilite} × I{risk.impact}
-                        {risk.category ? ` · ${risk.category}` : ""}
-                      </p>
-                    </div>
-                    {!couvert && (
-                      <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-[#FFEBEE] text-[#C62828] shrink-0">
-                        Non couvert
-                      </span>
-                    )}
-                    <span
-                      className={cn("text-[9px] font-semibold px-2 py-0.5 rounded-full shrink-0", s.chip)}
+              <div className="space-y-2">
+                {topRisks.map((risk, index) => {
+                  const style = COLORS.risk[risk.niveauCalc as keyof typeof COLORS.risk] || COLORS.risk.Faible;
+                  const isActiveCell = selectedCell && risk.probabilite === selectedCell.p && risk.impact === selectedCell.i;
+
+                  return (
+                    <div 
+                      key={risk.id} 
+                      onClick={() => setSelectedCell(isActiveCell ? null : {p: risk.probabilite, i: risk.impact})}
+                      className={cn(
+                        "flex items-start gap-3 p-3 rounded-xl border transition-all duration-200 cursor-pointer group",
+                        isActiveCell 
+                          ? "bg-[#F8F6F2] border-[#2A5141] shadow-[0_2px_8px_rgba(42,81,65,0.12)]" 
+                          : "bg-white border-[#F0EDE8] hover:border-[#2A5141]/30 hover:shadow-sm hover:-translate-y-0.5"
+                      )}
                     >
-                      {risk.niveauCalc}
-                    </span>
-                    <span className="font-serif text-[15px] font-bold text-[#172030] w-7 text-right shrink-0">
-                      {risk.score_residuel || 0}
-                    </span>
-                  </button>
-                );
-              })
+                      <div className="flex items-center justify-center h-6 w-6 rounded-full bg-[#F8F6F2] text-[10px] font-medium text-[#172030]/40 flex-shrink-0">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-[#172030] truncate">{risk.title}</p>
+                          <RiskLevelBadge level={risk.niveauCalc} />
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-[10px] text-[#172030]/40">
+                          <span className="flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {risk.owner || "Non assigné"}
+                          </span>
+                          <span className="text-[#172030]/20">·</span>
+                          <span className="font-mono">P{risk.probabilite}×I{risk.impact}</span>
+                          <span className="text-[#172030]/20">·</span>
+                          <span>{risk.categorie || "Non catégorisé"}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="font-mono font-bold text-sm" style={{ color: style.text }}>
+                          {risk.score_residuel}
+                        </span>
+                        <ChevronRight className={cn(
+                          "h-4 w-4 transition-all",
+                          isActiveCell ? "text-[#2A5141]" : "text-[#172030]/20 group-hover:text-[#172030]/50"
+                        )} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* MATRICE */}
-        <div className={cn(CARD, "lg:col-span-2 p-5")}>
-          <SectionTitle icon={Grid3x3}>Matrice probabilité / impact</SectionTitle>
-          <div className="max-w-[400px] mx-auto">
-            <div className="flex">
-              <div className="flex flex-col justify-center pr-1.5">
-                <span className="text-[8px] uppercase tracking-wider text-[#172030]/40 [writing-mode:vertical-rl] rotate-180 text-center">
-                  Probabilité
-                </span>
-              </div>
-              <div className="flex-1">
-                <div className="grid grid-cols-[14px_repeat(5,1fr)] gap-1">
-                  {[5, 4, 3, 2, 1].map((p) => (
-                    <>
-                      <div key={`l-${p}`} className="flex items-center justify-center text-[9px] text-[#172030]/35 font-medium">
-                        {p}
-                      </div>
-                      {[1, 2, 3, 4, 5].map((i) => {
-                        const count = matrix[`${p}-${i}`] || 0;
-                        const tone = cellTone(p * i, count);
-                        const active = selectedCell?.p === p && selectedCell?.i === i;
-                        return (
-                          <button
-                            key={`${p}-${i}`}
-                            disabled={count === 0}
-                            onClick={() => setSelectedCell(active ? null : { p, i })}
-                            title={`P${p} × I${i} — ${count} risque(s)`}
-                            className={cn(
-                              "aspect-square rounded-md flex items-center justify-center font-serif text-[13px] font-bold transition-transform duration-150 border",
-                              count > 0 && "hover:scale-105 cursor-pointer",
-                              active ? "border-[#2A5141] border-2" : "border-transparent"
-                            )}
-                            style={{ backgroundColor: tone.bg, color: tone.text }}
-                          >
-                            {count || ""}
-                          </button>
-                        );
-                      })}
-                    </>
-                  ))}
-                  <div />
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <div key={`b-${i}`} className="text-center text-[9px] text-[#172030]/35 font-medium pt-0.5">
-                      {i}
-                    </div>
-                  ))}
+        <Card className="border-0 shadow-sm bg-white rounded-xl lg:col-span-5 flex flex-col h-[320px]">
+          <CardHeader className="p-5 pb-2 border-b border-[#F8F6F2] shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-[#2A5141]/10 flex items-center justify-center">
+                  <Grid3x3 className="h-4 w-4 text-[#2A5141]" />
                 </div>
-                <p className="text-center text-[8px] uppercase tracking-wider text-[#172030]/40 mt-1">Impact</p>
+                <CardTitle className="font-serif text-[#172030] text-base">
+                  Matrice des risques
+                </CardTitle>
               </div>
+              <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/40 font-sans">
+                {total} risques
+              </Badge>
             </div>
-            <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-[#E8E4DC]">
-              {(Object.keys(LEVELS) as LevelKey[]).map((k) => (
-                <span key={k} className="flex items-center gap-1 text-[9px] text-[#172030]/55">
-                  <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: LEVELS[k].bg, border: `1px solid ${LEVELS[k].text}33` }} />
-                  {k}
-                </span>
+          </CardHeader>
+          <CardContent className="p-4 flex-1 flex flex-col items-center justify-center">
+            <div className="w-full max-w-[280px]">
+              <div className="flex gap-0.5 pl-6 mb-0.5">
+                <div className="w-5 flex-shrink-0"></div>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex-1 text-center text-[8px] font-medium text-[#172030]/30 font-sans">I{i}</div>
+                ))}
+              </div>
+              
+              {[5, 4, 3, 2, 1].map((p) => (
+                <div key={p} className="flex gap-0.5 items-center h-8 md:h-9 relative group">
+                  <span className="w-5 text-[8px] font-medium text-[#172030]/30 text-right pr-1 font-sans flex-shrink-0">P{p}</span>
+                  {[1, 2, 3, 4, 5].map((i) => {
+                    const cell = matrix[`${p}-${i}`];
+                    const count = cell?.count || 0;
+                    const isSelected = selectedCell?.p === p && selectedCell?.i === i;
+                    const style = getCellStyle(p, i);
+                    const hasRisks = count > 0;
+                    const risksInCell = hasRisks ? getRisksInCell(p, i) : [];
+                    
+                    return (
+                      <div 
+                        key={i} 
+                        onClick={hasRisks ? () => setSelectedCell(isSelected ? null : {p, i}) : undefined}
+                        onMouseEnter={() => hasRisks && setHoveredCell({p, i})}
+                        onMouseLeave={() => setHoveredCell(null)}
+                        className={cn(
+                          "flex-1 h-full rounded-md flex items-center justify-center transition-all duration-200 relative",
+                          hasRisks ? "cursor-pointer hover:scale-105 hover:shadow-md" : "cursor-not-allowed opacity-30",
+                          isSelected && "ring-2 ring-[#2A5141] ring-offset-1 shadow-[0_2px_8px_rgba(42,81,65,0.20)]"
+                        )}
+                        style={{ 
+                          backgroundColor: hasRisks ? style.bg : "#F8F6F2",
+                          border: hasRisks ? `1px solid ${style.border}` : "1px solid transparent"
+                        }}
+                      >
+                        {count > 0 ? (
+                          <span className="text-xs font-bold" style={{ color: style.text }}>{count}</span>
+                        ) : (
+                          <span className="text-[10px] text-[#E5E2DD]">·</span>
+                        )}
+
+                        {hasRisks && hoveredCell?.p === p && hoveredCell?.i === i && (
+                          <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full z-50 bg-[#172030] text-white text-[9px] px-2 py-1 rounded shadow-lg whitespace-nowrap pointer-events-none min-w-[100px]">
+                            {risksInCell.map(r => (
+                              <div key={r.id} className="truncate max-w-[150px]">{r.title}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               ))}
             </div>
-          </div>
-        </div>
+
+            <div className="flex gap-3 pt-2 border-t border-[#F8F6F2] w-full justify-center text-[9px] font-medium text-[#172030]/50 font-sans flex-wrap">
+              {[
+                { label: "Faible", key: "Faible", color: COLORS.matrix.Faible },
+                { label: "Modéré", key: "Modéré", color: COLORS.matrix.Modéré },
+                { label: "Élevé", key: "Élevé", color: COLORS.matrix.Élevé },
+                { label: "Critique", key: "Critique", color: COLORS.matrix.Critique },
+              ].map((item) => (
+                <button 
+                  key={item.key}
+                  onClick={() => {
+                    setFilterLevel(filterLevel === item.key ? "all" : item.key);
+                    setSelectedCell(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-colors hover:bg-[#F8F6F2]",
+                    filterLevel === item.key && "ring-1 ring-[#2A5141] bg-[#F8F6F2]"
+                  )}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className={filterLevel === item.key ? "text-[#2A5141]" : ""}>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* ============ RÉPARTITION + COUVERTURE + IMPACT ============ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* RÉPARTITION */}
-        <div className={cn(CARD, "p-5")}>
-          <SectionTitle icon={PieIcon}>Répartition par niveau</SectionTitle>
-          <div className="flex items-center gap-4">
-            <div className="h-[100px] w-[100px] shrink-0">
-              {donutData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={donutData}
-                      dataKey="value"
-                      innerRadius={32}
-                      outerRadius={48}
-                      paddingAngle={2}
-                      stroke="none"
-                    >
-                      {donutData.map((d) => (
-                        <Cell key={d.name} fill={d.bg} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full w-full rounded-full border-[10px] border-[#EFEDE7]" />
-              )}
+      {/* ==========================================================
+          LIGNE 3 : RÉPARTITION + COUVERTURE + IMPACT
+          ========================================================== */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        
+        {/* RÉPARTITION - ModernPieChart avec Recharts (Design Anneau) */}
+        <Card className="border-0 shadow-sm bg-white rounded-xl col-span-12 md:col-span-3">
+          <CardHeader className="p-4 pb-2 border-b border-[#F8F6F2]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-[#2A5141]/10 flex items-center justify-center">
+                  <PieChart className="h-3.5 w-3.5 text-[#2A5141]" />
+                </div>
+                <CardTitle className="font-serif text-[#172030] text-sm">
+                  Répartition
+                </CardTitle>
+              </div>
+              <span className="text-[10px] text-[#172030]/40 font-sans">{total} total</span>
             </div>
-            <div className="flex-1 space-y-1">
-              {donut.map((d) => {
-                const active = selectedLevel === d.name;
+          </CardHeader>
+          <CardContent className="p-4 pt-3 flex items-center gap-3">
+            {/* Le graphique DONUT PRO */}
+            <ModernPieChart 
+              data={pieData}
+              total={total}
+              onSliceClick={(label) => {
+                if (label === "all") {
+                  setFilterLevel("all");
+                  setSelectedCell(null);
+                } else {
+                  setFilterLevel(filterLevel === label ? "all" : label);
+                  setSelectedCell(null);
+                }
+              }}
+              activeLabel={filterLevel !== "all" ? filterLevel : null}
+            />
+            
+            {/* La liste des risques à côté */}
+            <div className="flex-1 flex flex-col justify-center space-y-1.5">
+              {pieData.map((item) => {
+                const isActive = filterLevel === item.label;
                 return (
-                  <button
-                    key={d.name}
-                    onClick={() => { setSelectedLevel(active ? null : d.name); setSelectedCell(null); }}
+                  <div 
+                    key={item.label} 
+                    onClick={() => {
+                      setFilterLevel(isActive ? "all" : item.label);
+                      setSelectedCell(null);
+                    }} 
                     className={cn(
-                      "w-full flex items-center gap-2 px-2 py-1 rounded-md transition-colors text-left",
-                      active ? "bg-[#F8F6F2] ring-1 ring-[#2A5141]" : "hover:bg-[#FAF9F6]"
+                      "flex items-center justify-between px-2 py-1 rounded-md cursor-pointer transition-all duration-200",
+                      isActive ? "bg-[#F8F6F2] ring-1 ring-[#2A5141]" : "hover:bg-[#F8F6F2]"
                     )}
                   >
-                    <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ backgroundColor: d.bg, border: `1px solid ${d.color}33` }} />
-                    <span className="text-[11px] text-[#172030]/70 flex-1">{d.name}</span>
-                    <span className="font-serif text-[13px] font-bold text-[#172030]">{d.value}</span>
-                    <span className="text-[9px] text-[#172030]/35 w-8 text-right">
-                      {total ? Math.round((d.value / total) * 100) : 0}%
-                    </span>
-                  </button>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-[11px] text-[#172030]/60 font-sans font-medium">{item.label}</span>
+                    </div>
+                    <span className="text-xs font-bold text-[#172030] font-sans">{item.value}</span>
+                  </div>
                 );
               })}
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* COUVERTURE */}
-        <div className={cn(CARD, "p-5")}>
-          <SectionTitle icon={ShieldCheck}>Couverture par les mesures</SectionTitle>
-          <div className="flex items-center gap-5">
-            <Gauge value={couvertureMesures} />
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between px-2.5 py-2 rounded-lg bg-[#E8F5E9]">
-                <span className="text-[11px] text-[#2E7D32]">Avec mesures</span>
-                <span className="font-serif text-[15px] font-bold text-[#2E7D32]">{withMesures}</span>
+        {/* COUVERTURE - CORRIGÉ POUR AFFICHER 0% CORRECTEMENT */}
+        <Card className="border-0 shadow-sm bg-white rounded-xl col-span-12 md:col-span-6">
+          <CardHeader className="p-4 pb-2 border-b border-[#F8F6F2]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-[#2A5141]/10 flex items-center justify-center">
+                  <ShieldCheck className="h-3.5 w-3.5 text-[#2A5141]" />
+                </div>
+                <CardTitle className="font-serif text-[#172030] text-sm">
+                  Couverture des plans d'action
+                </CardTitle>
               </div>
-              <div className="flex items-center justify-between px-2.5 py-2 rounded-lg bg-[#FFEBEE]">
-                <span className="text-[11px] text-[#C62828]">Sans mesures</span>
-                <span className="font-serif text-[15px] font-bold text-[#C62828]">{sansMesures}</span>
-              </div>
-              <div className="flex items-center justify-between px-2.5 py-2 rounded-lg bg-[#F8F6F2]">
-                <span className="text-[11px] text-[#172030]/60">Sans pilote</span>
-                <span className="font-serif text-[15px] font-bold text-[#172030]">{sansResponsable}</span>
+              <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/40 font-sans rounded-full px-2.5 py-0.5">
+                {couvertureMesures}% couvert
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 flex items-center justify-between">
+            
+            {/* GRAPHIQUE CIRCULAIRE CORRIGÉ */}
+            <div className="relative h-28 w-28 shrink-0 group">
+              <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90 transition-all duration-1000 group-hover:scale-105">
+                {/* Le fond gris clair (seulement si on a au moins 1% de couverture pour éviter le bug "cercle invisible") */}
+                {couvertureMesures > 0 && (
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#F8F6F2" strokeWidth="7" />
+                )}
+                
+                {/* La barre de progression verte */}
+                {couvertureMesures > 0 && (
+                  <circle 
+                    cx="50" cy="50" r="40" fill="none" stroke="#2A5141" strokeWidth="7" 
+                    strokeLinecap="round" 
+                    strokeDasharray={`${2 * Math.PI * 40}`} 
+                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - couvertureMesures / 100)}`} 
+                    className="transition-all duration-1000 ease-out"
+                  />
+                )}
+              </svg>
+              
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className={cn(
+                  "text-xl font-bold font-sans transition-all duration-300 group-hover:scale-110",
+                  couvertureMesures > 0 ? "text-[#172030]" : "text-[#172030]" // Reste noir même à 0%
+                )}>
+                  {couvertureMesures}%
+                </span>
+                <span className="text-[8px] text-[#172030]/40 font-sans">couvert</span>
               </div>
             </div>
-          </div>
-        </div>
+
+            <div className="flex-1 flex flex-col gap-2 pl-4">
+              <div className="flex items-center justify-between border-b border-[#F8F6F2] pb-1.5">
+                <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
+                  <CheckCircle className="h-3.5 w-3.5 text-[#2A5141]" />
+                  Avec mesures
+                </span>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{withMesures}</span>
+              </div>
+              <div className="flex items-center justify-between border-b border-[#F8F6F2] pb-1.5">
+                <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
+                  <AlertOctagon className="h-3.5 w-3.5 text-[#C62828]" />
+                  Sans mesures
+                </span>
+                <span className="text-sm font-bold text-[#C62828] font-sans">{total - withMesures}</span>
+              </div>
+              <div className="flex items-center justify-between pt-0.5">
+                <span className="text-xs font-medium text-[#172030]/80 font-sans">Total</span>
+                <span className="text-sm font-bold text-[#172030] font-sans">{total}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* IMPACT */}
-        <div className={cn(CARD, "p-5")}>
-          <SectionTitle icon={TrendingDown}>Impact des mesures</SectionTitle>
-          <div className="space-y-2.5">
-            {impactBars.length === 0 ? (
-              <div className="py-8 text-center text-sm text-[#172030]/35">Aucune donnée</div>
-            ) : (
-              impactBars.map((b) => (
-                <div key={b.id}>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[11px] text-[#172030]/70 truncate" title={b.title}>{b.title}</span>
-                    <span className="text-[9px] font-semibold text-[#2E7D32] bg-[#E8F5E9] px-1.5 py-0.5 rounded-full shrink-0">
-                      −{b.gain}%
+        <Card className="border-0 shadow-sm bg-white rounded-xl col-span-12 md:col-span-3">
+          <CardHeader className="p-4 pb-2 border-b border-[#F8F6F2]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-[#2A5141]/10 flex items-center justify-center">
+                  <Target className="h-3.5 w-3.5 text-[#2A5141]" />
+                </div>
+                <CardTitle className="font-serif text-[#172030] text-sm">
+                  Impact
+                </CardTitle>
+              </div>
+              <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/40 font-sans rounded-full px-2.5 py-0.5">
+                {reduction}% réduction
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 flex flex-col justify-center gap-2">
+            {topRisks.slice(0, 5).map((risk) => {
+              const brut = risk.score_brut || 0;
+              const residuel = risk.score_residuel || 0;
+              const reductionVal = brut > 0 ? Math.round(((brut - residuel) / brut) * 100) : 0;
+              const maxVal = Math.max(...topRisks.map(r => r.score_brut || 0), 1);
+              const style = COLORS.risk[risk.niveauCalc as keyof typeof COLORS.risk] || COLORS.risk.Faible;
+
+              return (
+                <div key={risk.id} className="flex flex-col gap-0.5 group">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-[#172030] font-sans font-medium truncate max-w-[90px] group-hover:text-[#2A5141] transition-colors" title={risk.title}>
+                      {risk.title}
                     </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] text-[#172030]/30 line-through font-mono">{brut}</span>
+                      <span className="text-[10px] font-bold font-mono transition-colors group-hover:scale-110" style={{ color: style.text }}>{residuel}</span>
+                    </div>
                   </div>
-                  <div className="relative h-2 rounded-full bg-[#EFEDE7] overflow-hidden">
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-[#D9D4CA]"
-                      style={{ width: `${(b.brut / 25) * 100}%` }}
-                    />
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-[#2A5141] transition-all duration-500"
-                      style={{ width: `${(b.res / 25) * 100}%` }}
-                    />
+                  <div className="flex items-center gap-2">
+                     <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-[#F8F6F2] relative group-hover:h-2 transition-all">
+                        <div className="absolute inset-y-0 left-0 bg-[#E5E2DD] rounded-full transition-all" style={{ width: `${(brut / maxVal) * 100}%` }} />
+                        <div className="absolute inset-y-0 left-0 bg-[#2A5141] rounded-full transition-all group-hover:opacity-100" style={{ width: `${(residuel / maxVal) * 100}%`, opacity: 0.7 }} />
+                     </div>
+                     {reductionVal > 0 && (
+                       <span className="text-[8px] font-medium text-[#2A5141]/80 font-sans w-8 text-right transition-all group-hover:font-bold">
+                         -{reductionVal}%
+                       </span>
+                     )}
                   </div>
                 </div>
-              ))
-            )}
-            <div className="flex items-center gap-3 pt-1.5 border-t border-[#E8E4DC]">
-              <span className="flex items-center gap-1 text-[9px] text-[#172030]/50">
-                <span className="h-2 w-2 rounded-sm bg-[#D9D4CA]" /> Brut
-              </span>
-              <span className="flex items-center gap-1 text-[9px] text-[#172030]/50">
-                <span className="h-2 w-2 rounded-sm bg-[#2A5141]" /> Résiduel
-              </span>
-            </div>
-          </div>
-        </div>
+              );
+            })}
+          </CardContent>
+        </Card>
       </div>
 
-      {/* ============ SYNTHÈSE IA ============ */}
-      <div className={cn(CARD, "border-l-[3px] border-l-[#2A5141] p-5 flex items-start gap-4")}>
-        <div className="h-9 w-9 rounded-xl bg-[#EAF0ED] flex items-center justify-center shrink-0">
-          <Sparkles className="h-4 w-4 text-[#2A5141]" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#2A5141] mb-1">
-            Synthèse executive
-          </p>
-          <p className="text-[12.5px] leading-relaxed text-[#172030]/75">{synthese}</p>
-        </div>
-        <button className="flex items-center gap-1 text-[11px] text-[#2A5141] hover:opacity-70 transition-opacity shrink-0 whitespace-nowrap self-center">
-          Voir le registre <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {/* ==========================================================
+          LIGNE 4 : SYNTHÈSE IA
+          ========================================================== */}
+      <Card className="border-0 shadow-sm bg-white rounded-xl border-l-4 border-l-[#2A5141] overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-[#2A5141]/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+        <CardContent className="p-5 flex flex-col md:flex-row md:items-center gap-4 relative">
+          <div className="h-10 w-10 rounded-xl bg-[#2A5141]/10 flex items-center justify-center shrink-0 transition-all group-hover:scale-105">
+            <Sparkles className="h-5 w-5 text-[#2A5141]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-[10px] font-medium text-[#172030]/50 uppercase tracking-wider font-sans flex items-center gap-2">
+              <span>Synthèse IA</span>
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#2A5141] animate-pulse" />
+            </p>
+            <p className="text-sm text-[#172030] mt-0.5 font-sans leading-relaxed">
+              {total === 0 ? (
+                "Aucun risque ne correspond aux filtres actuels."
+              ) : critiques + eleves === 0 ? (
+                `✅ Le portefeuille est globalement maîtrisé. Aucun risque Critique ou Élevé parmi les ${total} éléments actifs. Le score résiduel moyen est de ${scoreMoyen.toFixed(1)}/25.`
+              ) : reduction > 30 ? (
+                `⚠️ ${critiques + eleves} risque(s) critique(s) ou élevé(s) nécessite(nt) une attention immédiate. Le score résiduel moyen est de ${scoreMoyen.toFixed(1)}/25. Les mesures en place ont permis une réduction de ${reduction}% du risque.`
+              ) : (
+                `⚠️ Portefeuille à surveiller. ${critiques + eleves} risques critiques/élevés identifiés. Action recommandée. Taux de couverture des mesures à ${couvertureMesures}%.`
+              )}
+              {sansResponsable > 0 && ` ${sansResponsable} risque(s) n'ont pas de pilote assigné.`}
+            </p>
+          </div>
+          <Button variant="outline" className="shrink-0 border-[#2A5141] text-[#2A5141] hover:bg-[#2A5141] hover:text-white transition-colors rounded-full px-5 font-sans text-xs group">
+            Voir le registre 
+            <ChevronRight className="h-3 w-3 ml-1 transition-transform group-hover:translate-x-0.5" />
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* ==========================================================
+          LIGNE 5 : Widget d'activité
+          ========================================================== */}
+      <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl">
+        <CardContent className="p-3 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <div className="absolute inset-0 h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping opacity-75" />
+              </div>
+              <span className="text-xs text-[#172030]/50 font-medium">Opérationnel</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[#172030]/40">
+              <Clock className="h-3.5 w-3.5" />
+              {new Date().toLocaleTimeString('fr-FR')}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[#172030]/40">
+              <Activity className="h-3.5 w-3.5" />
+              <span className="font-medium text-[#172030]">{total}</span> actifs
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[#172030]/40">
+              <AlertTriangle className="h-3.5 w-3.5 text-[#C62828]" />
+              <span className="font-medium text-[#C62828]">{critiques + eleves}</span> critiques/élevés
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[#172030]/40">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+              <span className="font-medium text-emerald-600">{couvertureMesures}%</span> couvert
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" className="text-[10px] text-[#2A5141] hover:text-[#1a3329] hover:bg-[#F8F6F2] h-7 px-3" onClick={resetFilters}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                Réinitialiser
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" className="text-[10px] text-[#172030]/40 hover:text-[#172030] h-7 px-3" onClick={() => window.location.reload()}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              Actualiser
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

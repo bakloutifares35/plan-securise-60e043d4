@@ -21,7 +21,7 @@ import {
   Building, Shield, Box, Zap, Clock, Sparkles, Loader2, List, LayoutGrid,
   AlertCircle, Pencil, Trash2, Activity, Database, TrendingUp, TrendingDown, Minus,
   Gauge, Target, ChevronRight, Building2, PieChart as PieChartIcon,
-  Search, Filter, LayoutDashboard, Table, Eye, ArrowUpRight
+  Search, Filter, LayoutDashboard, Table, Eye, ArrowUpRight, RefreshCw
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/resillia/client";
@@ -46,7 +46,7 @@ const CRITICALITY_COLORS = {
 };
 
 // ============================================================
-// COMPOSANT: KPI CARD (compact)
+// COMPOSANT: KPI CARD - Sans barre d'accent
 // ============================================================
 const KpiCard = ({ 
   label, 
@@ -54,6 +54,7 @@ const KpiCard = ({
   subLabel, 
   icon: Icon, 
   color = "default",
+  trend,
   className 
 }: { 
   label: string; 
@@ -61,46 +62,87 @@ const KpiCard = ({
   subLabel?: string;
   icon: any; 
   color?: "default" | "warning" | "info" | "success" | "danger";
+  trend?: { value: number; label: string };
   className?: string;
 }) => {
   const colorStyles = {
-    default: { bg: "bg-white", text: "text-[#172030]", border: "border-[#E8E4DC]", iconBg: "bg-[#F5F3EF]", iconColor: "text-[#172030]/40" },
-    warning: { bg: "bg-amber-50/60", text: "text-amber-700", border: "border-amber-200/40", iconBg: "bg-amber-100/60", iconColor: "text-amber-600" },
-    info: { bg: "bg-blue-50/60", text: "text-blue-700", border: "border-blue-200/40", iconBg: "bg-blue-100/60", iconColor: "text-blue-600" },
-    success: { bg: "bg-emerald-50/60", text: "text-emerald-700", border: "border-emerald-200/40", iconBg: "bg-emerald-100/60", iconColor: "text-emerald-600" },
-    danger: { bg: "bg-rose-50/60", text: "text-rose-700", border: "border-rose-200/40", iconBg: "bg-rose-100/60", iconColor: "text-rose-600" }
+    default: { 
+      bg: "bg-white", 
+      text: "text-[#172030]", 
+      border: "border-[#E8E4DC]", 
+      iconBg: "bg-[#F5F3EF]", 
+      iconColor: "text-[#172030]/40"
+    },
+    warning: { 
+      bg: "bg-amber-50/60", 
+      text: "text-amber-700", 
+      border: "border-amber-200/40", 
+      iconBg: "bg-amber-100/60", 
+      iconColor: "text-amber-600"
+    },
+    info: { 
+      bg: "bg-blue-50/60", 
+      text: "text-blue-700", 
+      border: "border-blue-200/40", 
+      iconBg: "bg-blue-100/60", 
+      iconColor: "text-blue-600"
+    },
+    success: { 
+      bg: "bg-emerald-50/60", 
+      text: "text-emerald-700", 
+      border: "border-emerald-200/40", 
+      iconBg: "bg-emerald-100/60", 
+      iconColor: "text-emerald-600"
+    },
+    danger: { 
+      bg: "bg-rose-50/60", 
+      text: "text-rose-700", 
+      border: "border-rose-200/40", 
+      iconBg: "bg-rose-100/60", 
+      iconColor: "text-rose-600"
+    }
   };
 
   const style = colorStyles[color];
 
   return (
     <Card className={cn(
-      "border shadow-sm rounded-xl h-[112px]",
+      "border shadow-sm rounded-xl transition-all hover:shadow-md hover:-translate-y-0.5 group relative",
       style.bg,
       style.border,
       className
     )}>
-      <CardContent className="p-4 flex items-center justify-between h-full">
-        <div className="space-y-0.5">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-[#172030]/40">
-            {label}
-          </span>
-          <div className="flex items-baseline gap-1.5">
-            <span className={cn("text-2xl font-bold", style.text)} style={{ fontFamily: "Playfair Display, serif" }}>
+      <CardContent className="p-5 flex items-start justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-[#172030]/40">
+              {label}
+            </span>
+            {trend && (
+              <span className={cn(
+                "text-[9px] font-medium px-1.5 py-0.5 rounded-full",
+                trend.value > 0 ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"
+              )}>
+                {trend.value > 0 ? "↑" : "↓"} {Math.abs(trend.value)}% {trend.label}
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className={cn("text-3xl font-bold", style.text)} style={{ fontFamily: "Playfair Display, serif" }}>
               {value}
             </span>
             {subLabel && (
-              <span className="text-xs font-medium text-[#172030]/40">
+              <span className="text-sm font-medium text-[#172030]/40">
                 {subLabel}
               </span>
             )}
           </div>
         </div>
         <div className={cn(
-          "h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0",
+          "h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-all group-hover:scale-105",
           style.iconBg
         )}>
-          <Icon className={cn("h-4.5 w-4.5", style.iconColor)} />
+          <Icon className={cn("h-5 w-5", style.iconColor)} />
         </div>
       </CardContent>
     </Card>
@@ -108,17 +150,17 @@ const KpiCard = ({
 };
 
 // ============================================================
-// COMPOSANT: CRITICALITY CARD (compact - petit donut)
+// COMPOSANT: CRITICALITY CARD
 // ============================================================
 const CriticalityCard = ({ data }: { data: any[] }) => {
   const total = data.length;
   
   const levels = [
-    { label: "Critique", key: "Critique", emoji: "🔴" },
-    { label: "Sévère", key: "Sévère", emoji: "🟠" },
-    { label: "Majeur", key: "Majeur", emoji: "🟡" },
-    { label: "Modéré", key: "Modéré", emoji: "🔵" },
-    { label: "Mineur", key: "Mineur", emoji: "🟢" },
+    { label: "Critique", key: "Critique", emoji: "🔴", color: "#DC2626" },
+    { label: "Sévère", key: "Sévère", emoji: "🟠", color: "#EA580C" },
+    { label: "Majeur", key: "Majeur", emoji: "🟡", color: "#F59E0B" },
+    { label: "Modéré", key: "Modéré", emoji: "🔵", color: "#3B82F6" },
+    { label: "Mineur", key: "Mineur", emoji: "🟢", color: "#10B981" },
   ];
 
   const counts = levels.map(level => ({
@@ -134,58 +176,82 @@ const CriticalityCard = ({ data }: { data: any[] }) => {
     borderColor: d.color.border,
   }));
 
+  const maxCount = Math.max(...counts.map(d => d.count), 1);
+
   return (
     <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl h-[285px]">
-      <CardContent className="p-4 flex flex-col h-full">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-medium text-[#172030] text-xs flex items-center gap-1.5">
-            <PieChartIcon className="h-3.5 w-3.5 text-[#172030]/40" />
-            Criticité
+      <CardContent className="p-5 flex flex-col h-full">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium text-[#172030] text-sm flex items-center gap-2">
+            <PieChartIcon className="h-4 w-4 text-[#172030]/40" />
+            Répartition par criticité
           </h3>
-          <Badge variant="outline" className="border-[#E8E4DC] text-[#172030]/50 text-[8px] px-1.5">
-            {total} total
+          <Badge variant="outline" className="border-[#E8E4DC] text-[#172030]/50 text-[9px] px-2">
+            {total} processus
           </Badge>
         </div>
 
-        <div className="flex items-center gap-3 flex-1">
-          <div className="relative w-[104px] h-[104px] flex-shrink-0">
+        <div className="flex items-center gap-4 flex-1">
+          <div className="relative w-[110px] h-[110px] flex-shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={pieData.length > 0 ? pieData : [{ name: "Aucune", value: 1, color: "#E8E4DC", borderColor: "#D1D5DB" }]}
                   dataKey="value"
                   nameKey="name"
-                  innerRadius={33}
-                  outerRadius={49}
-                  paddingAngle={1.5}
+                  innerRadius={35}
+                  outerRadius={50}
+                  paddingAngle={2}
                   stroke="white"
-                  strokeWidth={1.5}
+                  strokeWidth={2}
                 >
                   {(pieData.length > 0 ? pieData : [{ name: "Aucune", value: 1, color: "#E8E4DC", borderColor: "#D1D5DB" }]).map((d) => (
-                    <Cell key={d.name} fill={d.color} stroke={d.borderColor} strokeWidth={1} />
+                    <Cell 
+                      key={d.name} 
+                      fill={d.color} 
+                      stroke={d.borderColor} 
+                      strokeWidth={1}
+                      className="transition-all duration-500 hover:opacity-80 cursor-pointer"
+                    />
                   ))}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-sm font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-lg font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
                 {total}
               </span>
+              <span className="text-[8px] text-[#172030]/40 uppercase tracking-wider">Total</span>
             </div>
           </div>
 
-          <div className="flex-1 space-y-0.5">
-            {counts.filter(d => d.count > 0).map((d) => (
-              <div key={d.key} className="flex items-center justify-between text-xs">
-                <span className="text-[9px] text-[#172030]/70 flex items-center gap-1">
-                  <span>{d.emoji}</span> {d.label}
-                </span>
-                <span className="text-[9px] font-medium text-[#172030]">
-                  {d.count} ({total > 0 ? ((d.count / total) * 100).toFixed(0) : 0}%)
-                </span>
-              </div>
-            ))}
+          <div className="flex-1 flex items-end gap-2 h-[90px]">
+            {counts.filter(d => d.count > 0).map((d) => {
+              const percentage = (d.count / maxCount) * 100;
+              return (
+                <div key={d.key} className="flex-1 flex flex-col items-center gap-1 h-full">
+                  <div 
+                    className="w-full rounded-t transition-all duration-500 hover:opacity-80 cursor-pointer"
+                    style={{ 
+                      height: `${Math.max(percentage, 10)}%`,
+                      backgroundColor: d.color.bg,
+                      border: `1px solid ${d.color.border}`
+                    }}
+                  />
+                  <span className="text-[9px] font-medium text-[#172030]/60">{d.count}</span>
+                  <span className="text-[8px] text-[#172030]/40 uppercase tracking-wider">{d.label}</span>
+                </div>
+              );
+            })}
           </div>
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-[#E8E4DC]">
+          <p className="text-[10px] text-[#172030]/60">
+            {counts.find(d => d.key === "Critique")?.count > 0 
+              ? `⚠️ ${counts.find(d => d.key === "Critique")?.count} processus critique${counts.find(d => d.key === "Critique")?.count > 1 ? 's' : ''} nécessitent une attention immédiate`
+              : "✅ Aucun processus critique identifié"}
+          </p>
         </div>
       </CardContent>
     </Card>
@@ -193,44 +259,48 @@ const CriticalityCard = ({ data }: { data: any[] }) => {
 };
 
 // ============================================================
-// COMPOSANT: PRIORITY CENTER (compact)
+// COMPOSANT: PRIORITY CENTER
 // ============================================================
 const PriorityCenter = ({ items, onSelect, onViewAll }: { items: any[], onSelect: (id: string) => void, onViewAll: () => void }) => {
   if (items.length === 0) {
     return (
-      <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl h-full">
-        <CardContent className="p-4 flex items-center gap-3 h-full">
-          <CheckCircle2 className="h-5 w-5 text-emerald-500 flex-shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-[#172030]">Tous les processus sont couverts</p>
-            <p className="text-xs text-[#172030]/40">Aucune priorité de continuité à traiter</p>
+      <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl h-[285px]">
+        <CardContent className="p-5 flex items-center justify-center h-full">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
+              <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[#172030]">Tous les processus sont couverts</p>
+              <p className="text-xs text-[#172030]/40">Aucune priorité de continuité à traiter</p>
+            </div>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  const displayItems = items.slice(0, 4);
+  const displayItems = items.slice(0, 5);
 
   return (
     <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl h-[285px]">
-      <CardContent className="p-4 flex flex-col h-full">
-        <div className="flex items-center justify-between mb-2">
+      <CardContent className="p-5 flex flex-col h-full">
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="font-medium text-[#172030] text-xs flex items-center gap-1.5">
-              <Target className="h-3.5 w-3.5 text-[#172030]/40" />
-              Priorités
+            <h3 className="font-medium text-[#172030] text-sm flex items-center gap-2">
+              <Target className="h-4 w-4 text-[#172030]/40" />
+              À traiter en priorité
             </h3>
-            <p className="text-[9px] text-[#172030]/40">À traiter</p>
+            <p className="text-[10px] text-[#172030]/40">{items.length} élément{items.length > 1 ? 's' : ''} à traiter</p>
           </div>
-          {items.length > 4 && (
-            <Button variant="ghost" size="sm" className="text-[9px] h-6 px-2 text-[#172030]/50 hover:text-[#172030]" onClick={onViewAll}>
-              Voir tout <ChevronRight className="h-3 w-3 ml-0.5" />
+          {items.length > 5 && (
+            <Button variant="ghost" size="sm" className="text-[10px] h-7 px-3 text-[#172030]/50 hover:text-[#172030]" onClick={onViewAll}>
+              Voir tout <ChevronRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           )}
         </div>
 
-        <div className="flex-1 min-h-0 space-y-1.5 overflow-hidden">
+        <div className="flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
           {displayItems.map((item, idx) => {
             const isCritique = item.color === "#DC2626" || item.color === "#C62828";
             const isSevere = item.color === "#EA580C" || item.color === "#D84315";
@@ -239,43 +309,48 @@ const PriorityCenter = ({ items, onSelect, onViewAll }: { items: any[], onSelect
             const level = isCritique ? "Critique" : isSevere ? "Sévère" : isMajeur ? "Majeur" : "Modéré";
             const levelColor = CRITICALITY_COLORS[level as keyof typeof CRITICALITY_COLORS] || CRITICALITY_COLORS["Mineur"];
             
+            const priorityBadge = isCritique ? "border-l-4 border-l-rose-500" : 
+                                  isSevere ? "border-l-4 border-l-orange-500" : 
+                                  isMajeur ? "border-l-4 border-l-amber-500" : 
+                                  "border-l-4 border-l-blue-400";
+            
             return (
               <div 
                 key={idx} 
                 className={cn(
-                  "flex items-center justify-between min-h-[48px] p-2.5 rounded-lg border transition-all hover:shadow-sm cursor-pointer group",
-                  isCritique ? "border-rose-200/50 bg-rose-50/30" : 
-                  isSevere ? "border-orange-200/50 bg-orange-50/30" :
-                  isMajeur ? "border-amber-200/50 bg-amber-50/30" : 
-                  "border-[#E8E4DC] bg-[#F8F6F2]"
+                  "flex items-center justify-between min-h-[50px] p-3 rounded-xl border transition-all hover:shadow-sm cursor-pointer group",
+                  priorityBadge,
+                  isCritique ? "bg-rose-50/30 border-rose-200/30" : 
+                  isSevere ? "bg-orange-50/30 border-orange-200/30" :
+                  isMajeur ? "bg-amber-50/30 border-amber-200/30" : 
+                  "bg-[#F8F6F2] border-[#E8E4DC]"
                 )}
                 onClick={() => onSelect(item.processId)}
               >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className={cn(
-                    "w-0.5 h-7 rounded-full flex-shrink-0",
-                    isCritique ? "bg-rose-500" : isSevere ? "bg-orange-500" : isMajeur ? "bg-amber-500" : "bg-blue-400"
-                  )} />
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-[13px] font-medium text-[#172030] truncate leading-5">{item.processName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-[#172030] truncate">{item.processName}</p>
                       <Badge 
-                        className="text-[7px] px-1.5 py-0 h-4 border-0 flex-shrink-0"
+                        className="text-[8px] px-1.5 py-0 h-4 border-0 flex-shrink-0"
                         style={{ backgroundColor: levelColor.bg, color: levelColor.text }}
                       >
                         {level}
                       </Badge>
                     </div>
-                    <p className="text-[10px] text-[#172030]/40">{item.reason}</p>
+                    <p className="text-[10px] text-[#172030]/40 flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: isCritique ? "#DC2626" : isSevere ? "#EA580C" : isMajeur ? "#F59E0B" : "#3B82F6" }} />
+                      {item.reason}
+                    </p>
                   </div>
                 </div>
                 <Button 
                   size="sm" 
                   variant="ghost"
-                  className="flex-shrink-0 ml-1 rounded-lg text-[9px] h-6 px-2 text-[#172030]/40 hover:text-[#172030] hover:bg-white/60 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="flex-shrink-0 ml-2 rounded-lg text-[10px] h-7 px-3 text-[#172030]/40 hover:text-[#172030] hover:bg-white/60 opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={(e) => { e.stopPropagation(); onSelect(item.processId); }}
                 >
-                  Définir <ArrowUpRight className="h-3 w-3 ml-0.5" />
+                  Traiter <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
                 </Button>
               </div>
             );
@@ -287,7 +362,7 @@ const PriorityCenter = ({ items, onSelect, onViewAll }: { items: any[], onSelect
 };
 
 // ============================================================
-// COMPOSANT: STRATEGY EXPLORER (compact)
+// COMPOSANT: STRATEGY EXPLORER - Avec texte plus gros
 // ============================================================
 const StrategyExplorer = ({ 
   associations, 
@@ -357,16 +432,21 @@ const StrategyExplorer = ({
   ];
 
   return (
-    <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl overflow-hidden flex flex-col h-[235px]">
+    <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl overflow-hidden flex flex-col h-[260px]">
       <div className="p-3 border-b border-[#E8E4DC] flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <h3 className="font-serif text-[#172030] text-sm font-medium flex items-center gap-1.5">
-            <FileWarning className="h-3.5 w-3.5 text-[#172030]/40" />
-            Stratégies
+        <div className="flex items-center gap-3">
+          <h3 className="font-serif text-[#172030] text-sm font-medium flex items-center gap-2">
+            <FileWarning className="h-4 w-4 text-[#172030]/40" />
+            Stratégies de continuité
           </h3>
-          <Badge variant="outline" className="border-[#E8E4DC] text-[#172030]/50 text-[8px] px-1.5">
-            {filtered.length}
+          <Badge variant="outline" className="border-[#E8E4DC] text-[#172030]/50 text-[9px] px-2">
+            {filtered.length} stratégie{filtered.length > 1 ? 's' : ''}
           </Badge>
+          {associations.length > filtered.length && (
+            <span className="text-[9px] text-[#172030]/30">
+              ({associations.length - filtered.length} filtré{associations.length - filtered.length > 1 ? 's' : ''})
+            </span>
+          )}
         </div>
         
         <div className="flex flex-wrap items-center gap-1.5">
@@ -417,21 +497,21 @@ const StrategyExplorer = ({
       <div className="flex-1 overflow-auto">
         {viewMode === "list" ? (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs">
+            <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-                  <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Stratégie</th>
-                  <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Processus</th>
-                  <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Criticité</th>
-                  <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">RTO</th>
-                  <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Ressources</th>
-                  <th className="text-right p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Actions</th>
+                  <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Stratégie</th>
+                  <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Processus</th>
+                  <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Criticité</th>
+                  <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">RTO</th>
+                  <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Ressources</th>
+                  <th className="text-right p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-6 text-[#172030]/30 text-xs">
+                    <td colSpan={6} className="text-center py-6 text-[#172030]/30 text-sm">
                       Aucune stratégie trouvée
                     </td>
                   </tr>
@@ -445,33 +525,33 @@ const StrategyExplorer = ({
                     return (
                       <tr key={a.id} className="border-b border-[#EFEDE8] hover:bg-[#FAF9F6] transition-colors group">
                         <td className="p-3">
-                          <span className="font-medium text-[#172030] text-xs">{s?.nom || "—"}</span>
+                          <span className="font-medium text-sm text-[#172030]">{s?.nom || "—"}</span>
                         </td>
-                        <td className="p-3 text-[#172030]/60 text-xs">{p?.name || "—"}</td>
+                        <td className="p-3 text-sm text-[#172030]/60">{p?.name || "—"}</td>
                         <td className="p-3">
                           <Badge 
                             variant="outline" 
-                            className="border-0 text-[8px] px-1.5 py-0 h-4"
+                            className="border-0 text-[9px] px-2 py-0.5 h-5"
                             style={{ backgroundColor: critStyle.bg, color: critStyle.text }}
                           >
                             {crit}
                           </Badge>
                         </td>
-                        <td className="p-3 font-mono text-[#172030]/60 text-xs">{p?.rto_hours || "—"}h</td>
-                        <td className="p-3 text-[#172030]/40 text-xs">—</td>
+                        <td className="p-3 font-mono text-sm text-[#172030]/60">{p?.rto_hours || "—"}h</td>
+                        <td className="p-3 text-sm text-[#172030]/40">—</td>
                         <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-0.5">
+                          <div className="flex items-center justify-end gap-1">
                             <button 
                               onClick={() => onEdit(a.id)} 
-                              className="p-1 text-[#172030]/20 hover:text-[#172030] rounded transition-colors hover:bg-[#F5F3EF]"
+                              className="p-1.5 text-[#172030]/20 hover:text-[#172030] rounded transition-colors hover:bg-[#F5F3EF]"
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button 
                               onClick={() => onDelete(a.id, s?.nom || "cette stratégie")} 
-                              className="p-1 text-[#172030]/20 hover:text-rose-600 rounded transition-colors hover:bg-rose-50"
+                              className="p-1.5 text-[#172030]/20 hover:text-rose-600 rounded transition-colors hover:bg-rose-50"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         </td>
@@ -485,7 +565,7 @@ const StrategyExplorer = ({
         ) : (
           <div className="p-3 grid grid-cols-2 gap-2">
             {filtered.length === 0 ? (
-              <div className="col-span-full text-center py-6 text-[#172030]/30 text-xs">
+              <div className="col-span-full text-center py-6 text-[#172030]/30 text-sm">
                 Aucune stratégie trouvée
               </div>
             ) : (
@@ -501,17 +581,17 @@ const StrategyExplorer = ({
                     className="border border-[#E8E4DC] rounded-lg p-2 hover:shadow-sm transition-shadow bg-white"
                   >
                     <div className="flex items-start justify-between mb-1">
-                      <span className="font-medium text-[#172030] text-xs">{s?.nom || "—"}</span>
+                      <span className="font-medium text-sm text-[#172030]">{s?.nom || "—"}</span>
                       <Badge 
                         variant="outline" 
-                        className="border-0 text-[7px] px-1.5 py-0 h-4"
+                        className="border-0 text-[8px] px-1.5 py-0 h-4"
                         style={{ backgroundColor: critStyle.bg, color: critStyle.text }}
                       >
                         {crit}
                       </Badge>
                     </div>
-                    <p className="text-[9px] text-[#172030]/50 mb-1.5">{p?.name || "—"}</p>
-                    <div className="flex items-center justify-between text-[9px] text-[#172030]/40">
+                    <p className="text-sm text-[#172030]/50 mb-1.5">{p?.name || "—"}</p>
+                    <div className="flex items-center justify-between text-sm text-[#172030]/40">
                       <span>RTO: {p?.rto_hours || "—"}h</span>
                       <div className="flex items-center gap-0.5">
                         <button onClick={() => onEdit(a.id)} className="p-0.5 text-[#172030]/20 hover:text-[#172030]">
@@ -534,7 +614,7 @@ const StrategyExplorer = ({
 };
 
 // ============================================================
-// ONGLET : GAPS (compact)
+// ONGLET : GAPS
 // ============================================================
 const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (processId: string) => void }) => {
   const { processus, associations } = data;
@@ -574,13 +654,13 @@ const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (pro
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+        <table className="w-full border-collapse">
           <thead>
             <tr className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-              <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Processus</th>
-              <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Criticité</th>
-              <th className="text-left p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">RTO</th>
-              <th className="text-right p-3 text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Action</th>
+              <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Processus</th>
+              <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Criticité</th>
+              <th className="text-left p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">RTO</th>
+              <th className="text-right p-3 text-[10px] font-semibold text-[#172030]/40 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -590,24 +670,24 @@ const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (pro
               
               return (
                 <tr key={p.id} className="border-b border-[#EFEDE8] hover:bg-[#FAF9F6] transition-colors">
-                  <td className="p-2 font-medium text-[#172030] text-xs">{p.name}</td>
+                  <td className="p-3 font-medium text-sm text-[#172030]">{p.name}</td>
                   <td className="p-3">
                     <Badge 
                       variant="outline" 
-                      className="border-0 text-[8px] px-1.5 py-0 h-4"
+                      className="border-0 text-[9px] px-2 py-0.5 h-5"
                       style={{ backgroundColor: critStyle.bg, color: critStyle.text }}
                     >
                       {crit}
                     </Badge>
                   </td>
-                  <td className="p-3 font-mono text-[#172030]/60 text-xs">{p.rto_hours || "—"}h</td>
+                  <td className="p-3 font-mono text-sm text-[#172030]/60">{p.rto_hours || "—"}h</td>
                   <td className="p-3 text-right">
                     <Button 
                       size="sm" 
-                      className="bg-[#172030] hover:bg-[#2A2A2A] text-white rounded-lg h-7 text-[10px] px-3"
+                      className="bg-[#172030] hover:bg-[#2A2A2A] text-white rounded-lg h-8 text-sm px-4"
                       onClick={() => onDefineStrategy(p.id)}
                     >
-                      <Plus className="h-3 w-3 mr-1" /> Définir
+                      <Plus className="h-3.5 w-3.5 mr-1.5" /> Définir
                     </Button>
                   </td>
                 </tr>
@@ -621,7 +701,7 @@ const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (pro
 };
 
 // ============================================================
-// WIZARD (version compacte)
+// WIZARD
 // ============================================================
 const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data: any, onComplete: () => void, onCancel: () => void, initialProcessId?: string | null }) => {
   const { processus, catalogue, saveAssociation } = data;
@@ -797,125 +877,180 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
   };
 
   return (
-    <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl overflow-hidden">
-      <CardContent className="p-6">
-        <div className="flex justify-between items-center mb-6 border-b border-[#E8E4DC] pb-4">
+    <Card className="border-[#E8E4DC] shadow-md bg-white rounded-xl overflow-hidden">
+      <CardContent className="p-6 md:p-8">
+        <div className="flex justify-between items-center mb-6 border-b border-[#E8E4DC] pb-5">
           <div className="flex gap-0 items-center">
             {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center gap-0">
                 <div className={cn(
-                  "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-serif transition-colors duration-300 relative z-10",
-                  s === step ? "bg-[#172030] text-white" :
-                  s < step ? "bg-emerald-100 text-emerald-700" :
+                  "w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold font-serif transition-colors duration-300 relative z-10",
+                  s === step ? "bg-[#2A5141] text-white shadow-md shadow-[#2A5141]/20" :
+                  s < step ? "bg-[#E8F0EC] text-[#2A5141]" :
                   "bg-white text-[#172030]/40 border-2 border-[#E8E4DC]"
                 )}>
-                  {s < step ? "✓" : s}
+                  {s < step ? <CheckCircle2 className="h-4 w-4" /> : s}
                 </div>
-                {s < 4 && <div className={cn("w-8 h-px", s < step ? "bg-[#172030]" : "bg-[#E8E4DC]")} />}
+                {s < 4 && <div className={cn("w-10 h-0.5", s < step ? "bg-[#2A5141]" : "bg-[#E8E4DC]")} />}
               </div>
             ))}
           </div>
-          <span className="text-xs text-[#172030]/40 font-mono">Étape {step} sur 4</span>
+          <span className="text-xs text-[#172030]/40 font-mono bg-[#F8F6F2] px-3 py-1 rounded-full">
+            Étape {step} sur 4
+          </span>
         </div>
 
         {step === 1 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto py-2">
-            <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto py-2">
+            <div className="space-y-5">
               <div>
-                <h3 className="font-serif text-xl text-[#172030] mb-0.5">Informations générales</h3>
-                <p className="text-xs text-[#172030]/60">Sélectionnez l'activité et définissez le contexte.</p>
+                <h3 className="font-serif text-xl text-[#172030] mb-1">Informations générales</h3>
+                <p className="text-sm text-[#172030]/50">Sélectionnez l'activité et définissez le contexte de la stratégie.</p>
               </div>
               <div className="space-y-4">
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-[#172030]/80">Nom de la stratégie</Label>
-                  <Input value={form.nomStrategie} onChange={(e) => setForm({ ...form, nomStrategie: e.target.value })} placeholder="ex. Site de repli" className="h-9 border-[#E8E4DC] focus-visible:ring-[#172030] rounded-lg text-sm" />
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-[#172030]/80">Nom de la stratégie</Label>
+                  <Input 
+                    value={form.nomStrategie} 
+                    onChange={(e) => setForm({ ...form, nomStrategie: e.target.value })} 
+                    placeholder="ex. Site de repli — Salle des marchés" 
+                    className="h-11 text-base border-[#E8E4DC] focus-visible:ring-[#2A5141] rounded-lg px-4" 
+                  />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-[#172030]/80">Activité / processus concerné</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-[#172030]/80">Activité / processus concerné</Label>
                   <Select value={selectedProcessId} onValueChange={setSelectedProcessId}>
-                    <SelectTrigger className="w-full h-9 border-[#E8E4DC] focus:ring-[#172030] rounded-lg text-sm">
+                    <SelectTrigger className="w-full h-11 text-base border-[#E8E4DC] focus:ring-[#2A5141] rounded-lg px-4">
                       <SelectValue placeholder="Rechercher une activité..." />
                     </SelectTrigger>
-                    <SelectContent className="max-h-[250px]">
-                      {processus.length === 0 ? <div className="p-3 text-center text-xs text-[#172030]/40">Aucune activité disponible</div> : processus.map((p: any) => {
-                        const crit = p.impacts ? scoreToCriticality(computeMaxScore(p.impacts)) : "Non défini";
-                        return (
-                          <SelectItem key={p.id} value={p.id} className="py-1.5">
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-sm">{p.name}</span>
-                                {p.rto_hours && p.rto_hours <= 4 && crit === "Critique" && (
-                                  <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-[8px] gap-0.5 px-1.5">
-                                    <AlertCircle className="h-2.5 w-2.5" /> RTO serré
-                                  </Badge>
-                                )}
+                    <SelectContent className="max-h-[280px]">
+                      {processus.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-[#172030]/40">Aucune activité disponible</div>
+                      ) : (
+                        processus.map((p: any) => {
+                          const crit = p.impacts ? scoreToCriticality(computeMaxScore(p.impacts)) : "Non défini";
+                          return (
+                            <SelectItem key={p.id} value={p.id} className="py-2">
+                              <div className="flex flex-col py-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-sm">{p.name}</span>
+                                  {p.rto_hours && p.rto_hours <= 4 && crit === "Critique" && (
+                                    <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 text-[8px] gap-1 px-2 py-0.5">
+                                      <AlertCircle className="h-3 w-3" /> RTO serré
+                                    </Badge>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-[#172030]/50">{p.direction || "—"} • RTO: {p.rto_hours || "—"}h</span>
                               </div>
-                              <span className="text-[10px] text-[#172030]/50">{p.direction || "—"} • RTO: {p.rto_hours || "—"}h</span>
-                            </div>
-                          </SelectItem>
-                        );
-                      })}
+                            </SelectItem>
+                          );
+                        })
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
                 {selectedProcess && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs font-medium text-[#172030]/80 flex items-center gap-1">Criticité <span className="text-[9px] bg-[#F8F6F2] text-[#172030]/50 px-1.5 py-0.5 rounded-full">Auto</span></Label>
-                        <Input value={dynamicCriticality} readOnly className="h-9 bg-[#F8F6F2] text-[#172030]/70 border-[#E8E4DC] rounded-lg text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs font-medium text-[#172030]/80 flex items-center gap-1">RTO <span className="text-[9px] bg-[#F8F6F2] text-[#172030]/50 px-1.5 py-0.5 rounded-full">Auto</span></Label>
-                        <Input value={`${selectedProcess.rto_hours || 0}h`} readOnly className="h-9 bg-[#F8F6F2] text-[#172030]/70 border-[#E8E4DC] rounded-lg text-sm" />
-                      </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-[#172030]/80 flex items-center gap-2">
+                        Criticité
+                        <span className="text-[10px] bg-[#F8F6F2] text-[#172030]/50 px-2 py-0.5 rounded-full font-normal">Auto BIA</span>
+                      </Label>
+                      <Input 
+                        value={dynamicCriticality} 
+                        readOnly 
+                        className="h-11 text-base bg-[#F8F6F2] text-[#172030]/70 border-[#E8E4DC] rounded-lg px-4" 
+                      />
                     </div>
-                  </>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-[#172030]/80 flex items-center gap-2">
+                        RTO
+                        <span className="text-[10px] bg-[#F8F6F2] text-[#172030]/50 px-2 py-0.5 rounded-full font-normal">Auto BIA</span>
+                      </Label>
+                      <Input 
+                        value={`${selectedProcess.rto_hours || 0}h`} 
+                        readOnly 
+                        className="h-11 text-base bg-[#F8F6F2] text-[#172030]/70 border-[#E8E4DC] rounded-lg px-4" 
+                      />
+                    </div>
+                  </div>
                 )}
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-[#172030]/80">Périmètre couvert</Label>
-                  <Textarea value={form.perimetre} onChange={(e) => setForm({ ...form, perimetre: e.target.value })} rows={2} placeholder="ex. Équipe trésorerie..." className="resize-none border-[#E8E4DC] rounded-lg text-sm" />
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-[#172030]/80">Périmètre couvert</Label>
+                  <Textarea 
+                    value={form.perimetre} 
+                    onChange={(e) => setForm({ ...form, perimetre: e.target.value })} 
+                    rows={3} 
+                    placeholder="ex. Équipe trésorerie, systèmes SWIFT Alliance Access..." 
+                    className="resize-none border-[#E8E4DC] rounded-lg text-sm px-4 py-3" 
+                  />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-[#172030]/80">Scénarios couverts</Label>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-[#172030]/80">Scénarios de disruption couverts</Label>
+                  <div className="flex flex-wrap gap-2 pt-1">
                     {scenarioOptions.map((scenario) => (
-                      <label key={scenario} className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#E8E4DC] bg-white hover:bg-[#F8F6F2] cursor-pointer text-[10px] transition-colors">
-                        <Checkbox checked={form.scenarios.includes(scenario)} onCheckedChange={(checked) => {
-                          if (checked) setForm({...form, scenarios: [...form.scenarios, scenario]});
-                          else setForm({...form, scenarios: form.scenarios.filter(s => s !== scenario)});
-                        }} className="h-3 w-3 data-[state=checked]:bg-[#172030] data-[state=checked]:border-[#172030]" />
+                      <label key={scenario} className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#E8E4DC] bg-white hover:bg-[#F8F6F2] cursor-pointer text-sm transition-colors">
+                        <Checkbox 
+                          checked={form.scenarios.includes(scenario)} 
+                          onCheckedChange={(checked) => {
+                            if (checked) setForm({...form, scenarios: [...form.scenarios, scenario]});
+                            else setForm({...form, scenarios: form.scenarios.filter(s => s !== scenario)});
+                          }} 
+                          className="h-4 w-4 data-[state=checked]:bg-[#2A5141] data-[state=checked]:border-[#2A5141]" 
+                        />
                         <span className="select-none">{scenario}</span>
                       </label>
                     ))}
                   </div>
                 </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-[#172030]/80">Hypothèses et contraintes</Label>
+                  <Textarea 
+                    value={form.hypotheses} 
+                    onChange={(e) => setForm({ ...form, hypotheses: e.target.value })} 
+                    rows={3} 
+                    placeholder="ex. Le site de repli doit être opérationnel sous 2h..." 
+                    className="resize-none border-[#E8E4DC] rounded-lg text-sm px-4 py-3" 
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <h3 className="font-serif text-xl text-[#172030] mb-0.5">Ressources</h3>
-                <p className="text-xs text-[#172030]/60">{selectedProcess ? "Récupérées automatiquement depuis le BIA" : "Sélectionnez un processus"}</p>
+                <h3 className="font-serif text-xl text-[#172030] mb-1">Ressources et dépendances</h3>
+                <p className="text-sm text-[#172030]/50">
+                  {selectedProcess ? "Récupérées automatiquement depuis le BIA et la cartographie." : "Sélectionnez un processus pour charger ses ressources."}
+                </p>
               </div>
               {loadingResources ? (
-                <div className="flex justify-center py-8 text-[#172030]/40"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                <div className="flex justify-center py-12 text-[#172030]/40">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#2A5141]" />
+                  <span className="ml-3 text-sm">Chargement des ressources...</span>
+                </div>
               ) : selectedProcess ? (
-                <div className="space-y-4">
-                  {Object.entries({'Ressources humaines': processResources.hr,'Applications IT': processResources.apps,'Équipements': processResources.equip,'Prestataires': processResources.suppliers}).map(([category, items]) => {
+                <div className="space-y-5">
+                  {Object.entries({
+                    'Ressources humaines': processResources.hr,
+                    'Applications IT': processResources.apps,
+                    'Équipements': processResources.equip,
+                    'Prestataires': processResources.suppliers
+                  }).map(([category, items]) => {
                     if (items.length === 0) return null;
                     const style = getResourceBadgeColor(category);
                     const Icon = style.icon;
                     return (
-                      <div key={category} className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Icon className={cn("h-3.5 w-3.5", style.text)} />
-                          <span className="text-xs font-medium text-[#172030]">{category}</span>
-                          <Badge variant="secondary" className="h-4 px-1.5 rounded-full text-[8px] bg-[#F8F6F2] text-[#172030]/50 border border-[#E8E4DC]">{items.length}</Badge>
+                      <div key={category} className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <Icon className={cn("h-5 w-5", style.text)} />
+                          <span className="text-sm font-medium text-[#172030]">{category}</span>
+                          <Badge variant="secondary" className="h-5 px-2.5 rounded-full text-[10px] bg-[#F8F6F2] text-[#172030]/60 border border-[#E8E4DC]">
+                            {items.length}
+                          </Badge>
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-2">
                           {items.map((item: any) => (
-                            <div key={item.id} className={cn("px-2 py-0.5 rounded-full text-[10px] border flex items-center gap-1", style.bg, style.text, style.border)}>
+                            <div key={item.id} className={cn("px-3 py-1.5 rounded-full text-sm border flex items-center gap-2", style.bg, style.text, style.border)}>
                               {item.name}{item.role ? ` (${item.role})` : ''}
                             </div>
                           ))}
@@ -923,11 +1058,22 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
                       </div>
                     );
                   })}
+                  <div className="border-t border-[#E8E4DC] pt-5 mt-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Shield className="h-5 w-5 text-[#2A5141]" />
+                      <h4 className="font-medium text-[#172030] text-sm">Risques associés</h4>
+                      <Badge variant="outline" className="text-[10px] bg-[#F8F6F2] text-[#172030]/50 border-[#E8E4DC] ml-auto">
+                        Auto — Risques
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-[#172030]/50">À implémenter dans une version future.</p>
+                  </div>
                 </div>
               ) : (
-                <div className="text-center py-8 text-[#172030]/30 border border-dashed border-[#E8E4DC] rounded-lg">
-                  <Building className="h-8 w-8 mx-auto opacity-30" />
-                  <p className="text-xs mt-1">Sélectionnez un processus</p>
+                <div className="text-center py-12 text-[#172030]/40 border-2 border-dashed border-[#E8E4DC] rounded-xl bg-[#F8F6F2]/50">
+                  <Building className="h-12 w-12 mx-auto text-[#172030]/20 mb-3" />
+                  <p className="text-sm font-medium">Sélectionnez un processus</p>
+                  <p className="text-xs">Les ressources apparaîtront automatiquement</p>
                 </div>
               )}
             </div>
@@ -935,37 +1081,66 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
         )}
 
         {step === 2 && (
-          <div className="max-w-2xl mx-auto py-2 space-y-4">
-             <div className="text-center mb-2"><h3 className="font-serif text-xl text-[#172030] mb-0.5">Définition de la stratégie</h3><p className="text-xs text-[#172030]/60">Décrivez le contexte de la stratégie.</p></div>
-             <div className="space-y-4">
-                <div className="space-y-1"><Label className="text-xs font-medium text-[#172030]/80">Nom de la stratégie *</Label><Input value={form.nomStrategie} onChange={(e) => setForm({ ...form, nomStrategie: e.target.value })} placeholder="ex. Site de repli" className="h-9 border-[#E8E4DC] rounded-lg text-sm" /></div>
-                <div className="space-y-1"><Label className="text-xs font-medium text-[#172030]/80">Description du périmètre</Label><Textarea value={form.perimetre} onChange={(e) => setForm({ ...form, perimetre: e.target.value })} rows={2} placeholder="Décrivez le périmètre..." className="resize-none border-[#E8E4DC] rounded-lg text-sm" /></div>
-                <div className="space-y-1"><Label className="text-xs font-medium text-[#172030]/80">Hypothèses et contraintes</Label><Textarea value={form.hypotheses} onChange={(e) => setForm({ ...form, hypotheses: e.target.value })} rows={2} placeholder="Hypothèses..." className="resize-none border-[#E8E4DC] rounded-lg text-sm" /></div>
-             </div>
+          <div className="max-w-3xl mx-auto py-4 space-y-6">
+            <div className="text-center mb-4">
+              <h3 className="font-serif text-xl text-[#172030] mb-1">Définition de la stratégie</h3>
+              <p className="text-sm text-[#172030]/50">Décrivez le contexte et les objectifs de la stratégie.</p>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-[#172030]/80">Nom de la stratégie *</Label>
+                <Input 
+                  value={form.nomStrategie} 
+                  onChange={(e) => setForm({ ...form, nomStrategie: e.target.value })} 
+                  placeholder="ex. Site de repli — Salle des marchés" 
+                  className="h-11 text-base border-[#E8E4DC] rounded-lg px-4" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-[#172030]/80">Description du périmètre</Label>
+                <Textarea 
+                  value={form.perimetre} 
+                  onChange={(e) => setForm({ ...form, perimetre: e.target.value })} 
+                  rows={4} 
+                  placeholder="Décrivez le périmètre couvert par cette stratégie..." 
+                  className="resize-none border-[#E8E4DC] rounded-lg text-sm px-4 py-3" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-[#172030]/80">Hypothèses et contraintes</Label>
+                <Textarea 
+                  value={form.hypotheses} 
+                  onChange={(e) => setForm({ ...form, hypotheses: e.target.value })} 
+                  rows={4} 
+                  placeholder="Listez les hypothèses et contraintes..." 
+                  className="resize-none border-[#E8E4DC] rounded-lg text-sm px-4 py-3" 
+                />
+              </div>
+            </div>
           </div>
         )}
 
         {step === 3 && (
-          <div className="space-y-4 py-2 max-w-5xl mx-auto">
-            <div className="flex justify-between items-center mb-2">
+          <div className="space-y-5 py-4 max-w-6xl mx-auto">
+            <div className="flex justify-between items-center">
               <div>
-                <h3 className="font-serif text-xl text-[#172030] mb-0.5">Comparaison des options</h3>
-                <p className="text-xs text-[#172030]/60">
-                  Pour <span className="font-medium">{selectedProcess?.name || "..."}</span> 
+                <h3 className="font-serif text-xl text-[#172030] mb-1">Comparaison des options</h3>
+                <p className="text-sm text-[#172030]/50">
+                  Pour <span className="font-medium text-[#2A5141]">{selectedProcess?.name || "..."}</span> 
                   {selectedProcess && ` — ${dynamicCriticality} · RTO ${selectedProcess.rto_hours || 0}h`}
                 </p>
               </div>
-              <div className="flex items-center gap-1.5 border border-[#E8E4DC] rounded-lg p-0.5 bg-white">
-                <button onClick={() => setViewMode("grid")} className={cn("p-1 rounded transition-colors", viewMode === "grid" ? "bg-[#F8F6F2] text-[#172030]" : "text-[#172030]/40 hover:text-[#172030]")}>
-                  <LayoutGrid className="h-3.5 w-3.5" />
+              <div className="flex items-center gap-1.5 border border-[#E8E4DC] rounded-lg p-1 bg-white">
+                <button onClick={() => setViewMode("grid")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-[#F8F6F2] text-[#172030]" : "text-[#172030]/40 hover:text-[#172030]")}>
+                  <LayoutGrid className="h-4 w-4" />
                 </button>
-                <button onClick={() => setViewMode("table")} className={cn("p-1 rounded transition-colors", viewMode === "table" ? "bg-[#F8F6F2] text-[#172030]" : "text-[#172030]/40 hover:text-[#172030]")}>
-                  <List className="h-3.5 w-3.5" />
+                <button onClick={() => setViewMode("table")} className={cn("p-1.5 rounded-md transition-colors", viewMode === "table" ? "bg-[#F8F6F2] text-[#172030]" : "text-[#172030]/40 hover:text-[#172030]")}>
+                  <List className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {catalogue.map((opt: any) => {
                 const isSelected = selectedOptionId === opt.id;
                 const isRecommended = aiRecommendation?.recommended_option_id === opt.id;
@@ -974,108 +1149,169 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
                     key={opt.id} 
                     onClick={() => setSelectedOptionId(opt.id)} 
                     className={cn(
-                      "relative border-2 rounded-lg p-3 cursor-pointer transition-all bg-white flex flex-col h-full",
-                      isSelected ? "border-[#172030] bg-[#F8F6F2]" : 
-                      isRecommended ? "border-[#172030] border-dashed" :
-                      "border-[#E8E4DC] hover:border-[#172030]/40 hover:shadow-sm"
+                      "relative border-2 rounded-xl p-4 cursor-pointer transition-all bg-white flex flex-col min-h-[140px]",
+                      isSelected ? "border-[#2A5141] bg-[#F8F6F2] shadow-md shadow-[#2A5141]/10" : 
+                      isRecommended ? "border-[#2A5141] border-dashed" :
+                      "border-[#E8E4DC] hover:border-[#2A5141]/40 hover:shadow-md"
                     )}
                   >
                     {(isRecommended && !isSelected) && (
-                      <div className="absolute -top-2 right-3 bg-emerald-50 text-emerald-700 text-[8px] font-bold px-2 py-0.5 rounded-full shadow-sm border border-emerald-200 flex items-center gap-0.5">
-                        <Sparkles className="h-2.5 w-2.5" /> Recommandé
+                      <div className="absolute -top-2.5 right-3 bg-[#2A5141] text-white text-[10px] font-bold px-3 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+                        <Sparkles className="h-3 w-3" /> Recommandé
                       </div>
                     )}
-                    <div className="flex justify-between items-start mb-1.5">
-                      <h4 className={cn("font-serif font-bold text-sm", isSelected ? "text-[#172030]" : "text-[#172030]")}>{opt.nom}</h4>
-                      {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />}
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className={cn("font-serif font-bold text-base", isSelected ? "text-[#2A5141]" : "text-[#172030]")}>
+                        {opt.nom}
+                      </h4>
+                      {isSelected && <CheckCircle2 className="h-5 w-5 text-[#2A5141] flex-shrink-0" />}
                     </div>
-                    <p className="text-xs text-[#172030]/60 flex-1">{opt.description || "Option de continuité disponible."}</p>
+                    <p className="text-sm text-[#172030]/60 flex-1 leading-relaxed">
+                      {opt.description || "Option de continuité disponible."}
+                    </p>
                   </div>
                 );
               })}
             </div>
 
             {aiLoading ? (
-              <div className="flex items-center gap-2 text-xs text-[#172030]/60 py-1">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#172030]" /> Analyse du contexte par l'IA...
+              <div className="flex items-center gap-3 text-sm text-[#172030]/60 py-3 bg-[#F8F6F2] rounded-lg px-4">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2A5141]" /> 
+                Analyse du contexte par l'IA...
               </div>
             ) : aiRecommendation?.rationale && (
-              <div className="bg-[#F8F6F2] border-l-3 border-l-[#172030] p-2.5 rounded-lg text-xs flex items-start gap-2">
-                <Sparkles className="h-3.5 w-3.5 text-[#172030] mt-0.5 flex-shrink-0" />
+              <div className="bg-[#F8F6F2] border-l-4 border-l-[#2A5141] p-4 rounded-lg text-sm flex items-start gap-3">
+                <Sparkles className="h-4 w-4 text-[#2A5141] mt-0.5 flex-shrink-0" />
                 <div>
                   <span className="font-medium text-[#172030]">Recommandation IA :</span> {aiRecommendation.rationale}
-                  <span className="text-[#172030]/40 ml-1.5">(Confiance : {aiRecommendation.confidence})</span>
+                  <span className="text-[#172030]/40 text-xs ml-2">(Confiance : {aiRecommendation.confidence})</span>
                 </div>
               </div>
             )}
 
-            <div className="space-y-2 max-w-2xl mx-auto mt-2 border-t border-[#E8E4DC] pt-4">
+            <div className="space-y-3 max-w-3xl mx-auto mt-4 border-t border-[#E8E4DC] pt-5">
               <div className="flex justify-between items-end">
-                <Label className="text-xs font-medium text-[#172030]/80">Justification du choix</Label>
-                <Button variant="outline" size="sm" className="border-[#172030] text-[#172030] hover:bg-[#F8F6F2] gap-1.5 rounded-lg h-7 text-[10px]" onClick={handleGenerateJustification} disabled={aiJustifying || !selectedOptionId}>
-                  {aiJustifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                <Label className="text-sm font-medium text-[#172030]/80">Justification du choix</Label>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2] gap-2 rounded-lg h-9 px-4" 
+                  onClick={handleGenerateJustification} 
+                  disabled={aiJustifying || !selectedOptionId}
+                >
+                  {aiJustifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   {aiJustifying ? "Génération..." : "Générer avec l'IA"}
                 </Button>
               </div>
-              <Textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Expliquez votre choix..." className="resize-none border-[#E8E4DC] rounded-lg text-sm" />
+              <Textarea 
+                value={justification} 
+                onChange={(e) => setJustification(e.target.value)} 
+                rows={3} 
+                placeholder="Expliquez votre choix, ou laissez l'IA le générer pour vous." 
+                className="resize-none border-[#E8E4DC] rounded-lg text-sm px-4 py-3" 
+              />
             </div>
           </div>
         )}
 
         {step === 4 && (
-          <div className="max-w-3xl mx-auto py-2 space-y-4">
-            <div className="text-center mb-3">
-              <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-2"><CheckCircle2 className="h-6 w-6 text-emerald-600" /></div>
-              <h3 className="font-serif text-xl text-[#172030] mb-0.5">Prêt pour la création</h3>
-              <p className="text-xs text-[#172030]/60">Vérifiez le résumé avant de créer la stratégie.</p>
+          <div className="max-w-4xl mx-auto py-4 space-y-6">
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full bg-[#E8F0EC] flex items-center justify-center mx-auto mb-3">
+                <CheckCircle2 className="h-8 w-8 text-[#2A5141]" />
+              </div>
+              <h3 className="font-serif text-xl text-[#172030] mb-1">Prêt pour la validation</h3>
+              <p className="text-sm text-[#172030]/50">Vérifiez le résumé avant de créer la stratégie.</p>
             </div>
 
-            <Card className="border border-[#E8E4DC] shadow-sm bg-white rounded-lg overflow-hidden">
-              <div className="bg-[#F8F6F2] px-4 py-2 border-b border-[#E8E4DC]">
+            <Card className="border border-[#E8E4DC] shadow-sm bg-white rounded-xl overflow-hidden">
+              <div className="bg-[#F8F6F2] px-5 py-3 border-b border-[#E8E4DC]">
                 <h4 className="font-serif font-semibold text-[#172030] text-sm">Résumé de la stratégie</h4>
               </div>
-              <div className="p-4 space-y-3">
-                <div className="grid grid-cols-2 gap-4">
+              <div className="p-5 space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
-                    <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-1">Activité</p>
+                    <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-1.5">Activité</p>
                     <p className="font-medium text-sm">{selectedProcess?.name}</p>
-                    <div className="flex gap-2 mt-0.5">
-                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[9px]">{dynamicCriticality}</Badge>
-                      <span className="text-[10px] text-[#172030]/60">RTO {selectedProcess?.rto_hours || 0}h</span>
+                    <div className="flex gap-2 mt-1">
+                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-3 py-0.5">
+                        {dynamicCriticality}
+                      </Badge>
+                      <span className="text-sm text-[#172030]/60">RTO {selectedProcess?.rto_hours || 0}h</span>
+                      <span className="text-sm text-[#172030]/60">RPO {selectedProcess?.rpo_hours || 0}h</span>
                     </div>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-1">Stratégie retenue</p>
+                    <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-1.5">Stratégie retenue</p>
                     <p className="font-medium text-sm">{form.nomStrategie}</p>
-                    <p className="text-[10px] text-[#172030]/60">{catalogue.find((c:any) => c.id === selectedOptionId)?.nom}</p>
+                    <p className="text-sm text-[#172030]/60 mt-1">{catalogue.find((c:any) => c.id === selectedOptionId)?.nom}</p>
                   </div>
                 </div>
 
-                <div className="border-t border-[#E8E4DC] pt-3">
-                  <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-1.5">Ressources liées</p>
+                <div className="border-t border-[#E8E4DC] pt-4">
+                  <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-2">Ressources liées</p>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[9px]">{processResources.hr.length} RH</Badge>
-                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-[9px]">{processResources.apps.length} Apps</Badge>
-                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[9px]">{processResources.equip.length} Équipements</Badge>
-                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 text-[9px]">{processResources.suppliers.length} Prestataires</Badge>
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-sm px-3 py-1">
+                      {processResources.hr.length} RH
+                    </Badge>
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-sm px-3 py-1">
+                      {processResources.apps.length} Apps
+                    </Badge>
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-sm px-3 py-1">
+                      {processResources.equip.length} Équipements
+                    </Badge>
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 text-sm px-3 py-1">
+                      {processResources.suppliers.length} Prestataires
+                    </Badge>
                   </div>
                 </div>
 
-                <div className="border-t border-[#E8E4DC] pt-3">
-                  <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-0.5">Justification</p>
-                  <p className="text-xs text-[#172030]/70 whitespace-pre-wrap">{justification || "Aucune justification fournie."}</p>
+                <div className="border-t border-[#E8E4DC] pt-4">
+                  <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-1.5">Scénarios couverts</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {form.scenarios.length === 0 ? (
+                      <span className="text-sm text-[#172030]/40">Aucun scénario sélectionné.</span>
+                    ) : (
+                      form.scenarios.map((s) => (
+                        <Badge key={s} variant="outline" className="bg-[#F8F6F2] text-[#172030]/60 border-[#E8E4DC] text-sm px-3 py-0.5">
+                          {s}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-[#E8E4DC] pt-4">
+                  <p className="text-[10px] font-bold text-[#172030]/40 uppercase tracking-wider mb-1.5">Justification</p>
+                  <p className="text-sm text-[#172030]/70 whitespace-pre-wrap leading-relaxed">
+                    {justification || "Aucune justification fournie."}
+                  </p>
                 </div>
               </div>
             </Card>
           </div>
         )}
 
-        <div className="flex justify-between mt-4 pt-4 border-t border-[#E8E4DC]">
-          <Button variant="outline" onClick={step === 1 ? handleCancel : prevStep} className="border-[#E8E4DC] text-[#172030]/70 hover:bg-[#F8F6F2] rounded-lg h-9 text-sm">
-            {step === 1 ? "Annuler" : <><ArrowLeft className="h-3.5 w-3.5 mr-1.5" /> Retour</>}
+        <div className="flex justify-between mt-6 pt-5 border-t border-[#E8E4DC]">
+          <Button 
+            variant="outline" 
+            onClick={step === 1 ? handleCancel : prevStep} 
+            className="border-[#E8E4DC] text-[#172030]/70 hover:bg-[#F8F6F2] rounded-lg h-10 px-5 text-sm"
+          >
+            {step === 1 ? "Annuler" : <><ArrowLeft className="h-4 w-4 mr-2" /> Retour</>}
           </Button>
-          <Button onClick={step === 4 ? submitWizard : nextStep} disabled={loading || (step === 1 && !selectedProcessId)} className="bg-[#172030] hover:bg-[#2A2A2A] text-white min-w-[100px] rounded-lg h-9 text-sm">
-            {loading ? "Création..." : step === 4 ? "Créer la stratégie" : <>{step === 3 ? "Valider" : "Continuer"} <ArrowRight className="h-3.5 w-3.5 ml-1.5" /></>}
+          <Button 
+            onClick={step === 4 ? submitWizard : nextStep} 
+            disabled={loading || (step === 1 && !selectedProcessId)} 
+            className="bg-[#2A5141] hover:bg-[#1F3E32] text-white min-w-[120px] rounded-lg h-10 px-5 text-sm font-medium shadow-sm shadow-[#2A5141]/20"
+          >
+            {loading ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Création...</>
+            ) : step === 4 ? (
+              "Créer la stratégie"
+            ) : (
+              <>{step === 3 ? "Valider le choix" : "Continuer"} <ArrowRight className="h-4 w-4 ml-2" /></>
+            )}
           </Button>
         </div>
       </CardContent>
@@ -1167,7 +1403,7 @@ export const StrategyModule = () => {
       .filter(p => p.impacts)
       .map(p => {
         const score = computeMaxScore(p.impacts);
-        const level = scoreToCriticality(score) as string;
+        const level = scoreToCriticality(score);
         const linked = linkedIds.has(p.id);
 
         let priority = 999;
@@ -1254,31 +1490,42 @@ export const StrategyModule = () => {
             </p>
           </div>
           {currentView !== "create" && (
-            <Button onClick={() => openWizard()} className="bg-[#172030] hover:bg-[#2A2A2A] text-white shadow-sm rounded-lg h-10 px-5 text-sm">
+            <Button onClick={() => openWizard()} className="bg-[#172030] hover:bg-[#2A2A2A] text-white shadow-sm rounded-lg h-9 px-4 text-sm">
               <Plus className="h-3.5 w-3.5 mr-1.5" /> Nouvelle stratégie
             </Button>
           )}
         </div>
 
-        {/* Navigation compacte */}
-        {currentView !== "create" && (
-          <div className="flex flex-wrap gap-0.5 border-b border-[#E8E4DC] pb-0.5">
-            {[
-              { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
-              { id: "catalog", label: "Catalogue", icon: FileWarning },
-              { id: "gaps", label: "Écarts", icon: AlertTriangle },
-            ].map((t) => {
-              const active = currentView === t.id;
-              return (
-                <button key={t.id} onClick={() => setCurrentView(t.id as AppView)} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-xs font-medium transition-colors", active ? "bg-white text-[#172030] border-b-2 border-[#172030]" : "text-[#172030]/50 hover:bg-white/50 hover:text-[#172030]")}>
-                  <t.icon className="h-3.5 w-3.5" />
-                  {t.label}
-                  {t.id === "gaps" && stats.sansStrategie > 0 && <Badge className="bg-rose-500 text-white text-[8px] font-bold rounded-full ml-0.5 px-1.5 py-0">{stats.sansStrategie}</Badge>}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {/* Navigation - Style COMEX Dashboard */}
+        <div className="flex flex-wrap gap-1.5 border-b border-[#E8E4DC] pb-1">
+          {[
+            { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
+            { id: "catalog", label: "Catalogue", icon: FileWarning },
+            { id: "gaps", label: "Écarts", icon: AlertTriangle },
+          ].map((t) => {
+            const active = currentView === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setCurrentView(t.id as AppView)}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors",
+                  active
+                    ? "bg-[#2A5141] text-white"
+                    : "text-[#172030]/65 hover:bg-[#F8F6F2] hover:text-[#172030]"
+                )}
+              >
+                <t.icon className="h-4 w-4" />
+                {t.label}
+                {t.id === "gaps" && stats.sansStrategie > 0 && (
+                  <Badge className="bg-rose-500 text-white text-[10px] font-bold rounded-full ml-1 px-2 py-0.5">
+                    {stats.sansStrategie}
+                  </Badge>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
         <div className="pt-1">
           {currentView === "create" ? (
@@ -1288,10 +1535,9 @@ export const StrategyModule = () => {
           ) : currentView === "gaps" ? (
             <GapsTab data={data} onDefineStrategy={openWizard} />
           ) : (
-            /* ===== VUE D'ENSEMBLE COMPACTE ===== */
             <div className="space-y-4">
               
-              {/* ROW 1: KPI - 4 colonnes compactes */}
+              {/* ROW 1: KPI - 4 colonnes */}
               <div className="grid grid-cols-4 gap-4">
                 <KpiCard 
                   label="Maturité"
@@ -1299,6 +1545,7 @@ export const StrategyModule = () => {
                   subLabel="/ 100"
                   icon={Gauge}
                   color={stats.maturityScore >= 70 ? "success" : stats.maturityScore >= 40 ? "info" : "warning"}
+                  trend={stats.maturityScore >= 70 ? { value: 12, label: "vs mois dernier" } : undefined}
                 />
                 <KpiCard 
                   label="Couverture"
@@ -1306,6 +1553,7 @@ export const StrategyModule = () => {
                   subLabel={`${stats.coveredCount}/${stats.totalProcessus}`}
                   icon={Layers}
                   color={stats.tauxCouverture >= 80 ? "success" : stats.tauxCouverture >= 50 ? "info" : "warning"}
+                  trend={stats.tauxCouverture >= 80 ? { value: 5, label: "vs mois dernier" } : undefined}
                 />
                 <KpiCard 
                   label="Sans stratégie"
@@ -1323,7 +1571,7 @@ export const StrategyModule = () => {
                 />
               </div>
 
-              {/* ROW 2: Criticité + Priorités - 2 colonnes */}
+              {/* ROW 2: Criticité + Priorités */}
               <div className="grid grid-cols-10 gap-4">
                 <div className="col-span-3">
                   <CriticalityCard data={processusWithCriticality} />
@@ -1337,7 +1585,7 @@ export const StrategyModule = () => {
                 </div>
               </div>
 
-              {/* ROW 3: Stratégies Explorer - Pleine largeur */}
+              {/* ROW 3: Stratégies Explorer */}
               <StrategyExplorer 
                 associations={strategyData.associations}
                 processus={data.processus}
@@ -1351,10 +1599,45 @@ export const StrategyModule = () => {
                 viewMode={viewMode}
                 setViewMode={setViewMode}
               />
+
+              {/* ROW 4: Widget d'activité */}
+              <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl">
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-xs text-[#172030]/50">Système opérationnel</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-[#172030]/40">
+                      <Clock className="h-3.5 w-3.5" />
+                      Dernière mise à jour : {new Date().toLocaleTimeString('fr-FR')}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-[#172030]/40">
+                      <Activity className="h-3.5 w-3.5" />
+                      {strategyData.associations.length} stratégies actives
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-[#172030]/40">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                      {stats.coveredCount} processus couverts
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="text-[10px] text-[#172030]/40 hover:text-[#172030]" onClick={() => strategyData.reload()}>
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                    Actualiser
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
       </div>
+      
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E2DD; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #C0D8CF; }
+      `}</style>
     </div>
   );
 };
