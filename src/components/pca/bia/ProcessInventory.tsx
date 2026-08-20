@@ -29,10 +29,11 @@ import {
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
-import { computeMaxScore, scoreToCriticality, criticalityColor, ImpactAxis, TimePeriod, type Criticality } from "@/data/bia";
+import { computeMaxScore, scoreToCriticality, criticalityColor, TimePeriod, type Criticality } from "@/data/bia";
+type ImpactAxis = "Financier" | "Conformité / Légal" | "Opérationnel" | "Réputationnel";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/db";
 import { BiaWizard } from "./BiaWizard";
 import { TableauDeMonteeEnCharge } from "./TableauDeMonteeEnCharge";
 import ContournementsDeCriseIA from './ContournementsDeCriseIA';

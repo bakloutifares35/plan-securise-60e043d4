@@ -13,7 +13,7 @@ import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
 import { computeMaxScore, scoreToCriticality, criticalityColor } from "@/data/bia";
 import { type Entity, type EntityType, defaultMaturity } from "@/data/governance";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/db";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -690,14 +690,14 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
           <Label className="flex items-center gap-2">
             Entité parente <span className="text-destructive">*</span>
             <span className="text-xs font-normal text-muted-foreground">
-              (doit être une {state.type === "DIRECTION" ? "Filiale" : "Direction"})
+              (doit être une {String(state.type) === "DIRECTION" ? "Filiale" : "Direction"})
             </span>
           </Label>
           
           {availableParents.length === 0 ? (
             <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-              ⚠️ Aucune {state.type === "DIRECTION" ? "filiale" : "direction"} disponible. 
-              {state.type === "DIRECTION" 
+              ⚠️ Aucune {String(state.type) === "DIRECTION" ? "filiale" : "direction"} disponible. 
+              {String(state.type) === "DIRECTION" 
                 ? " Créez d'abord une filiale." 
                 : " Créez d'abord une direction."}
             </div>
@@ -843,7 +843,7 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
     // Appliquer le style à la première ligne
     const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0];
     if (headerRow) {
-      for (let col = 0; col < headerRow.length; col++) {
+      for (let col = 0; col < (headerRow as any[]).length; col++) {
         const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
         if (ws[cellRef]) {
           ws[cellRef].s = headerStyle;
