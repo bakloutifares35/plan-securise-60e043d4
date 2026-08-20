@@ -16,6 +16,9 @@ export type StrategyData = {
   saveAssociation: (payload: any) => Promise<boolean>;
   deleteAssociation: (id: string) => Promise<boolean>;
   demoteOthers: (processusId: string, scenarioId: string | null, keepId?: string) => Promise<number>;
+  actionPlans?: any[];
+  loadingActions?: boolean;
+  risques?: any[];
 };
 
 const MISSING_TABLE = "PGRST205";
