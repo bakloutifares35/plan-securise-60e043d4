@@ -68,7 +68,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
       { id: "risk", label: "Risques", icon: AlertTriangle },
       { id: "scenarios", label: "Scénarios", icon: GitBranch },
       { id: "strategies", label: "Stratégies de continuité", icon: Layers },
-      { id: "plan", label: "Plans de continuité", icon: ListChecks },
+      { id: "plan", label: "Gestion des plans", icon: ListChecks },
       { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
       { id: "ressources", label: "Ressources", icon: Users },
       { id: "rapports", label: "Rapports", icon: FileBarChart },
@@ -78,7 +78,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
     label: "Planifier",
     items: [
       { id: "strategies", label: "Stratégies de continuité", icon: Layers },
-      { id: "plan", label: "Plans de continuité", icon: ListChecks },
+      { id: "plan", label: "Gestion des plans", icon: ListChecks },
       { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
     ],
   },
