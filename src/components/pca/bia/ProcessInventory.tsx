@@ -3799,7 +3799,7 @@ const BIAFicheDetail = ({
         const linked = departmentProcesses
           .filter(p => linkedIds.includes(p.id))
           .map(p => {
-            const linkData = data.find((d: any) => d.processus_id === p.id);
+            const linkData = (data as any[]).find((d: any) => d.processus_id === p.id);
             return {
               ...p,
               _linkRto: linkData?.rto_hours || 4,

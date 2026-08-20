@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/db";
 import { 
   Plus, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Euro, Loader2,
   TrendingUp, Zap, Target, Shield
