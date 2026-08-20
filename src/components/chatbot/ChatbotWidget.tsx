@@ -38,7 +38,7 @@ export const ChatbotWidget = () => {
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
-    const newMessages = [...messages, { role: "user", content: text }];
+    const newMessages: Message[] = [...messages, { role: "user" as const, content: text }];
     setMessages(newMessages);
     setInput("");
     setIsLoading(true);
