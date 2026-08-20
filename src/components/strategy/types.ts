@@ -63,6 +63,7 @@ export type ProcessusLite = {
   rpo_hours?: number | null;
   status?: string | null;
   is_critical?: boolean | null;
+  impacts?: any;
 };
 
 export type StrategieCatalogue = {

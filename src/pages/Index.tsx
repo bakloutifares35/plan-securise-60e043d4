@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { Sidebar, type Section } from "@/components/pca/Sidebar";
 import { Dashboard } from "@/components/pca/Dashboard";
 import { RiskForm } from "@/components/pca/RiskForm";
-import { PlanSteps } from "@/components/pca/PlanSteps";
+import PlansModule from "@/components/plans/PlansModule";
 import { Benchmark } from "@/components/pca/Benchmark";
 import { GovernanceModule } from "@/components/pca/GovernanceModule";
 import { BiaModule } from "@/components/pca/bia/BiaModule";
@@ -44,6 +44,8 @@ const Index = () => {
       setSection("tenacia");
     } else if (path === "/strategies") { // ⬅️ AJOUT
       setSection("strategies");
+    } else if (path === "/plan") {
+      setSection("plan");
     }
   }, [location]);
 
@@ -78,7 +80,7 @@ const Index = () => {
                       <SelectItem value="cmdb">Référentiel des ressources</SelectItem>
                       <SelectItem value="risk">Analyse des Risques</SelectItem>
                       <SelectItem value="form">Identification des risques</SelectItem>
-                      <SelectItem value="plan">Plan de continuité</SelectItem>
+                      <SelectItem value="plan">Gestion des plans</SelectItem>
                       <SelectItem value="benchmark">Benchmark</SelectItem>
                       <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem>
                       <SelectItem value="strategies">Stratégies de continuité</SelectItem> {/* ⬅️ AJOUT */}
@@ -89,7 +91,7 @@ const Index = () => {
                   {section === "dashboard" && <Dashboard />}
                   {section === "ai" && <BcmAiConsultant />}
                   {section === "form" && <RiskForm />}
-                  {section === "plan" && <PlanSteps />}
+                  {section === "plan" && <PlansModule />}
                   {section === "benchmark" && <Benchmark />}
                   {section === "governance" && <GovernanceModule onNavigateToSection={handleNavigateToSection} />}
                   {section === "bia" && (

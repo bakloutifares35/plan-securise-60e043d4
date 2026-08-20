@@ -329,9 +329,9 @@ export const AssociationTab = ({ data }: { data: StrategyData }) => {
                           <div className="flex flex-col w-full pr-2 gap-1">
                             <div className="flex justify-between items-center">
                               <span className="font-medium">{r.title}</span>
-                              <Badge className={cn("text-[9px] font-medium border-0 rounded-full px-2 py-0.5", style?.badge)}>
+                              <span className={cn("text-[9px] font-medium border-0 rounded-full px-2 py-0.5", style?.badge)}>
                                 {r.niveau || "Faible"}
-                              </Badge>
+                              </span>
                             </div>
                             {r.category && (
                               <span className="text-[10px] text-[#172030]/60 mt-0.5">

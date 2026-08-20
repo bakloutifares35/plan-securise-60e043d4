@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/db";
 import { toast } from "@/hooks/use-toast";
 import { 
   Actif, ContexteAnalyse, Menace, ParametresRisques, PlanTraitement, 

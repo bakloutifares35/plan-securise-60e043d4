@@ -1167,7 +1167,7 @@ export const StrategyModule = () => {
       .filter(p => p.impacts)
       .map(p => {
         const score = computeMaxScore(p.impacts);
-        const level = scoreToCriticality(score);
+        const level = scoreToCriticality(score) as string;
         const linked = linkedIds.has(p.id);
 
         let priority = 999;

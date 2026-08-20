@@ -8,7 +8,7 @@ import {
   Users, FileText, Download, ChevronRight, Target, Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/db";
 import type { RiskData } from "../useRiskData";
 import { scoreToNiveau } from "../riskModel";
 

@@ -70,6 +70,9 @@ export type Risque = {
   decision: string | null;
   date_identification: string | null;
   date_revue: string | null;
+  updated_at?: string | null;
+  direction?: string | null;
+  [key: string]: any;
 };
 
 export type PlanTraitement = {
@@ -94,7 +97,7 @@ export type ParametresRisques = {
   cle: string;
   echelle_probabilite: EchelonEchelle[];
   echelle_impact: EchelonEchelle[];
-  ponderation_axes: Record<AxeImpact, number>;
+  ponderation_axes: Partial<Record<AxeImpact, number>>;
   seuil_acceptable: number;
   seuil_tolerable: number;
   periodicite_revue_mois: number;
@@ -110,7 +113,7 @@ export type AxeImpact =
   | "humain"
   | "environnemental";
 
-export const AXES_IMPACT: { id: AxeImpact; col: keyof Risque; label: string; icon: string }[] = [
+export const AXES_IMPACT: { id: AxeImpact; col: string; label: string; icon: string }[] = [
   { id: "financier", col: "impact_financier", label: "Financier", icon: "💶" },
   { id: "operationnel", col: "impact_operationnel", label: "Opérationnel", icon: "⚙️" },
   { id: "juridique", col: "impact_juridique", label: "Juridique / Conformité", icon: "⚖️" },
@@ -173,7 +176,7 @@ export const emptyMenace = (): Partial<Menace> => ({
   referentiel: "",
 });
 
-export const scoreToNiveau = (score: number): NiveauRisque => {
+export const scoreToNiveau = (score: number, _params?: any): NiveauRisque => {
   if (score <= 6) return "Faible";
   if (score <= 12) return "Modéré";
   if (score <= 18) return "Élevé";
