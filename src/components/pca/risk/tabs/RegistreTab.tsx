@@ -18,12 +18,14 @@ import {
 import { toast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, ShieldAlert, Search, AlertTriangle, CheckCircle2, Clock, Database,
-  Sparkles, Loader2
+  Sparkles, Loader2, Info // 🔥 Ajout de l'icône Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/resillia/client";
 import { type RiskData } from "../useRiskData";
 import { type Risque, CATEGORIES_RISQUE, STATUTS_RISQUE, recompute, emptyRisque, NIVEAU_STYLE } from "../riskModel";
+// 🔥 Imports pour le Tooltip
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Props = {
   data: RiskData;
@@ -108,7 +110,6 @@ export const RegistreTab = ({ data }: Props) => {
 
       if (error) throw error;
 
-      // 🔥 NOUVELLE LOGIQUE : On construit un objet mis à jour
       const updates: Partial<Risque> = {
         mesures_existantes: data?.mesures_existantes || form.mesures_existantes || "",
       };
@@ -117,11 +118,9 @@ export const RegistreTab = ({ data }: Props) => {
       if (typeof data?.impact === 'number') updates.impact = data.impact;
       if (typeof data?.maitrise === 'number') updates.maitrise = data.maitrise;
 
-      // 🔥 On fait un seul setForm avec le recompute final
       const updatedForm = { ...form, ...updates };
       const recomputed = recompute(updatedForm);
       
-      // On applique tout en une fois
       setForm({
         ...updatedForm,
         score_brut: recomputed.score_brut,
@@ -356,7 +355,32 @@ export const RegistreTab = ({ data }: Props) => {
             </div>
 
             <div>
-              <div className="flex justify-between items-center"><Label className="text-sm font-medium text-[#172030] font-sans">Probabilité</Label><span className="text-sm font-bold text-[#2A5141] font-sans">{form.probabilite || 3}/5</span></div>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-[#172030] font-sans">Probabilité</Label>
+                  {/* 🔥 TOOLTIP PROBABILITÉ */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button className="h-4 w-4 text-[#172030]/40 hover:text-[#2A5141] transition-colors">
+                          <Info className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[250px] text-xs bg-white border-[#E5E2DD] shadow-md p-3 text-[#172030]">
+                        <p className="font-semibold mb-1">Échelle de probabilité :</p>
+                        <ul className="list-none space-y-0.5 text-[#172030]/80">
+                          <li><span className="font-bold text-[#2A5141]">1</span> Très rare</li>
+                          <li><span className="font-bold text-[#2A5141]">2</span> Rare</li>
+                          <li><span className="font-bold text-[#2A5141]">3</span> Possible</li>
+                          <li><span className="font-bold text-[#2A5141]">4</span> Probable</li>
+                          <li><span className="font-bold text-[#2A5141]">5</span> Quasi certain</li>
+                        </ul>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.probabilite || 3}/5</span>
+              </div>
               <div className="flex gap-1 mt-1.5">
                 {[1, 2, 3, 4, 5].map((v) => (
                   <button key={v} onClick={() => updateField("probabilite", v)} className={cn("flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans", (form.probabilite || 3) === v ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm" : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]")}>{v}</button>
@@ -365,7 +389,32 @@ export const RegistreTab = ({ data }: Props) => {
             </div>
 
             <div>
-              <div className="flex justify-between items-center"><Label className="text-sm font-medium text-[#172030] font-sans">Impact</Label><span className="text-sm font-bold text-[#2A5141] font-sans">{form.impact || 3}/5</span></div>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-[#172030] font-sans">Impact</Label>
+                  {/* 🔥 TOOLTIP IMPACT */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button className="h-4 w-4 text-[#172030]/40 hover:text-[#2A5141] transition-colors">
+                          <Info className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[250px] text-xs bg-white border-[#E5E2DD] shadow-md p-3 text-[#172030]">
+                        <p className="font-semibold mb-1">Échelle d'impact :</p>
+                        <ul className="list-none space-y-0.5 text-[#172030]/80">
+                          <li><span className="font-bold text-[#2A5141]">1</span> Négligeable</li>
+                          <li><span className="font-bold text-[#2A5141]">2</span> Mineur</li>
+                          <li><span className="font-bold text-[#2A5141]">3</span> Modéré</li>
+                          <li><span className="font-bold text-[#2A5141]">4</span> Majeur</li>
+                          <li><span className="font-bold text-[#2A5141]">5</span> Critique</li>
+                        </ul>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.impact || 3}/5</span>
+              </div>
               <div className="flex gap-1 mt-1.5">
                 {[1, 2, 3, 4, 5].map((v) => (
                   <button key={v} onClick={() => updateField("impact", v)} className={cn("flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans", (form.impact || 3) === v ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm" : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]")}>{v}</button>
@@ -374,7 +423,32 @@ export const RegistreTab = ({ data }: Props) => {
             </div>
 
             <div>
-              <div className="flex justify-between items-center"><Label className="text-sm font-medium text-[#172030] font-sans">Niveau de maîtrise</Label><span className="text-sm font-bold text-[#2A5141] font-sans">{form.maitrise || 1}/5</span></div>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-[#172030] font-sans">Niveau de maîtrise</Label>
+                  {/* 🔥 TOOLTIP MAÎTRISE */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button className="h-4 w-4 text-[#172030]/40 hover:text-[#2A5141] transition-colors">
+                          <Info className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[250px] text-xs bg-white border-[#E5E2DD] shadow-md p-3 text-[#172030]">
+                        <p className="font-semibold mb-1">Échelle de maîtrise :</p>
+                        <ul className="list-none space-y-0.5 text-[#172030]/80">
+                          <li><span className="font-bold text-[#2A5141]">1</span> Aucune mesure</li>
+                          <li><span className="font-bold text-[#2A5141]">2</span> Faible</li>
+                          <li><span className="font-bold text-[#2A5141]">3</span> Moyen</li>
+                          <li><span className="font-bold text-[#2A5141]">4</span> Élevé</li>
+                          <li><span className="font-bold text-[#2A5141]">5</span> Total</li>
+                        </ul>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{form.maitrise || 1}/5</span>
+              </div>
               <div className="flex gap-1 mt-1.5">
                 {[1, 2, 3, 4, 5].map((v) => (
                   <button key={v} onClick={() => updateField("maitrise", v)} className={cn("flex-1 h-8 text-sm font-medium rounded border transition-all flex items-center justify-center font-sans", (form.maitrise || 1) === v ? "bg-[#2A5141] text-white border-[#2A5141] shadow-sm" : "bg-white text-[#172030]/60 border-[#E5E2DD] hover:border-[#2A5141]")}>{v}</button>
