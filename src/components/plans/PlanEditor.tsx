@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge"; // ✅ IMPORT AJOUTÉ
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,14 +17,39 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/db";
 import { RichTextEditor } from "./RichTextEditor";
-import { PlansData } from "./usePlans";
+import { PlansData, ProcessLite } from "./usePlans"; // ✅ Import du type enrichi
 import {
   Plan, PlanContact, PlanEtape, PlanProcedure, PlanSection, PlanVersion, WorkflowEntry,
   PLAN_STATUTS, PLAN_TYPES, RESOURCE_TYPES, STATUT_STYLE, WORKFLOW_ETAPES,
   effectiveStatut, fmtDate,
 } from "./types";
+import { computeMaxScore, scoreToCriticality, type Criticality } from "@/data/bia";
 
 const SECTION_STATUTS = ["À rédiger", "En cours", "Rédigé"];
+
+// **STYLE DES PASTILLES D'ÉTAT POUR LES SECTIONS**
+const SECTION_STATUS_STYLES = {
+  "Rédigé": { bg: "#E8F5E9", text: "#2E7D32", dot: "#2E7D32" },
+  "En cours": { bg: "#FFF8E1", text: "#F57F17", dot: "#F57F17" },
+  "À rédiger": { bg: "#F1EFE8", text: "#6C7A8A", dot: "#6C7A8A" },
+};
+
+// Palette pour les cards
+const CRITICALITY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  "Critique": { bg: "#FFEBEE", text: "#C62828", border: "#EF9A9A" },
+  "Sévère": { bg: "#FBE9E7", text: "#D84315", border: "#FFAB91" },
+  "Majeur": { bg: "#FFF3E0", text: "#E65100", border: "#FFCC80" },
+  "Modéré": { bg: "#FFF8E1", text: "#F57F17", border: "#FFE082" },
+  "Mineur": { bg: "#E8F5E9", text: "#2E7D32", border: "#A5D6A7" },
+};
+
+const RTO_STYLES: Record<string, string> = {
+  "4h": "#FFEBEE",
+  "8h": "#FBE9E7",
+  "12h": "#FFF3E0",
+  "24h": "#FFF8E1",
+  "72h": "#E8F5E9",
+};
 
 export const PlanEditor = ({
   planId,
@@ -45,6 +71,7 @@ export const PlanEditor = ({
   const [resources, setResources] = useState<Record<string, any[]>>({});
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [openProcs, setOpenProcs] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState("contenu"); // ✅ État d'onglet préservé
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [meta, setMeta] = useState<Partial<Plan>>({});
@@ -320,15 +347,17 @@ export const PlanEditor = ({
         </Button>
       </div>
 
-      <Card className="border border-[#E8E4DC] bg-white rounded-xl">
+      {/* Barre de progression Stylisée */}
+      <Card className="border border-[#E8E4DC] bg-white rounded-xl overflow-hidden">
         <CardContent className="p-4 flex items-center gap-4">
           <div className="flex-1">
             <div className="flex justify-between text-xs text-[#172030]/55 mb-1">
-              <span>Avancement de la rédaction</span>
+              <span className="font-medium">Avancement de la rédaction</span>
               <span className="font-semibold text-[#2A5141]">{completion}%</span>
             </div>
-            <div className="h-2 rounded-full bg-[#F1EFE8] overflow-hidden">
-              <div className="h-full bg-[#2A5141] transition-all" style={{ width: `${completion}%` }} />
+            <div className="h-2 rounded-full bg-[#F1EFE8] overflow-hidden relative">
+              <div className="h-full bg-gradient-to-r from-[#2A5141] to-[#4A7A6A] transition-all duration-700" style={{ width: `${completion}%` }} />
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/20" />
             </div>
           </div>
           <div className="text-xs text-[#172030]/45 whitespace-nowrap">
@@ -337,7 +366,7 @@ export const PlanEditor = ({
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="contenu">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-[#F1EFE8]">
           <TabsTrigger value="contenu">Contenu</TabsTrigger>
           <TabsTrigger value="contacts">Annuaire de crise</TabsTrigger>
@@ -355,22 +384,26 @@ export const PlanEditor = ({
             <div className="grid lg:grid-cols-[260px_1fr] gap-5">
               <Card className="border border-[#E8E4DC] bg-white rounded-xl h-fit">
                 <CardContent className="p-2">
-                  {sections.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => setActiveSection(s.id)}
-                      className={cn(
-                        "w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors",
-                        activeSection === s.id ? "bg-[#E8F0EC] text-[#2A5141] font-medium" : "text-[#172030]/70 hover:bg-[#F5F3EF]"
-                      )}
-                    >
-                      <span className={cn(
-                        "h-1.5 w-1.5 rounded-full shrink-0",
-                        s.statut === "Rédigé" ? "bg-emerald-500" : s.statut === "En cours" ? "bg-amber-500" : "bg-[#D6D1C6]"
-                      )} />
-                      <span className="flex-1 truncate">{s.titre}</span>
-                    </button>
-                  ))}
+                  {sections.map((s) => {
+                    const statusStyle = SECTION_STATUS_STYLES[s.statut as keyof typeof SECTION_STATUS_STYLES] || SECTION_STATUS_STYLES["À rédiger"];
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => setActiveSection(s.id)}
+                        className={cn(
+                          "w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-3 transition-colors",
+                          activeSection === s.id ? "bg-[#E8F0EC] text-[#2A5141] font-medium" : "text-[#172030]/70 hover:bg-[#F5F3EF]"
+                        )}
+                      >
+                        <span
+                          className="h-2.5 w-2.5 rounded-full shrink-0 border"
+                          style={{ backgroundColor: statusStyle.dot, borderColor: statusStyle.dot }}
+                        />
+                        <span className="flex-1 truncate">{s.titre}</span>
+                        {s.statut === "Rédigé" && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
+                      </button>
+                    );
+                  })}
                   <Button variant="ghost" size="sm" onClick={addSection} className="w-full mt-1 text-[#2A5141]">
                     <Plus className="h-3.5 w-3.5 mr-1" /> Section
                   </Button>
@@ -563,7 +596,15 @@ export const PlanEditor = ({
                   <Plus className="h-3.5 w-3.5 mr-1" /> Contact
                 </Button>
               </div>
-              {contacts.length === 0 && <p className="text-xs text-[#172030]/40 py-3">Aucun contact enregistré.</p>}
+              {contacts.length === 0 && (
+                <div className="text-center py-10">
+                  <div className="h-12 w-12 rounded-full bg-[#F0F7F4] mx-auto flex items-center justify-center mb-3">
+                    <Users className="h-6 w-6 text-[#2A5141]" />
+                  </div>
+                  <p className="text-sm text-[#172030] font-medium">Aucun contact enregistré</p>
+                  <p className="text-xs text-[#172030]/50 mt-1">Ajoutez les personnes clés à contacter en cas de crise.</p>
+                </div>
+              )}
               <div className="space-y-2">
                 {contacts.map((c) => (
                   <div key={c.id} className="grid md:grid-cols-[1.2fr_1fr_1fr_1.2fr_auto_auto] gap-2 items-center rounded-lg border border-[#EFEDE7] p-2">
@@ -591,73 +632,133 @@ export const PlanEditor = ({
           </Card>
         </TabsContent>
 
-        {/* ---------------- ASSOCIATIONS ---------------- */}
+        {/* ---------------- ASSOCIATIONS (REFONTE DESIGN) ---------------- */}
         <TabsContent value="associations" className="mt-4">
           <div className="grid lg:grid-cols-3 gap-4">
+            {/* PROCESSUS */}
             <Card className="border border-[#E8E4DC] bg-white rounded-xl">
               <CardContent className="p-4">
                 <p className="text-sm font-semibold text-[#172030] mb-3 flex items-center gap-2">
                   <Link2 className="h-4 w-4 text-[#2A5141]" /> Processus (BIA)
                 </p>
-                <div className="max-h-[420px] overflow-y-auto space-y-1">
-                  {data.processus.map((p) => {
+                <div className="max-h-[420px] overflow-y-auto space-y-2">
+                  {data.processus.map((p: ProcessLite) => {
                     const linked = linkedProcess.includes(p.id);
+                    const criticite = p.criticite || "Mineur"; // ✅ Utilisation de la vraie criticité
+                    const style = CRITICALITY_STYLES[criticite] || CRITICALITY_STYLES["Mineur"];
+                    const rto = p.rto_hours ? `${p.rto_hours}h` : "—";
+                    const rtoBg = RTO_STYLES[rto] || "#F1EFE8";
+
                     return (
-                      <label key={p.id} className="flex items-start gap-2 text-xs p-2 rounded-lg hover:bg-[#FAF9F6] cursor-pointer">
-                        <Checkbox checked={linked} onCheckedChange={() => toggleLink("plan_processus", "processus_id", p.id, linked)} />
-                        <span className="flex-1">
-                          <span className="text-[#172030]">{p.name}</span>
-                          <span className="block text-[10px] text-[#172030]/40">
-                            {p.direction || "—"} · RTO {p.rto_hours ?? "—"}h
+                      <button
+                        key={p.id}
+                        onClick={() => toggleLink("plan_processus", "processus_id", p.id, linked)}
+                        className={cn(
+                          "w-full text-left p-3 rounded-xl border transition-all",
+                          linked ? "bg-[#F0F7F4] border-[#2A5141] shadow-sm" : "bg-white border-[#E8E4DC] hover:border-[#2A5141]/50"
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-[#172030] truncate">{p.name}</span>
+                          {/* Criticité */}
+                          <Badge className="text-[9px] px-2 py-0.5 rounded-full" style={{ backgroundColor: style.bg, color: style.text }}>
+                            {criticite}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-[10px] text-[#172030]/50">{p.direction || "—"}</span>
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: rtoBg, color: "#172030" }}>
+                            RTO {rto}
                           </span>
-                        </span>
-                      </label>
+                          {linked && <CheckCircle2 className="h-4 w-4 text-[#2A5141] ml-auto" />}
+                        </div>
+                      </button>
                     );
                   })}
+                  {data.processus.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="h-10 w-10 rounded-full bg-[#F0F7F4] mx-auto flex items-center justify-center mb-2">
+                        <Link2 className="h-5 w-5 text-[#2A5141]" />
+                      </div>
+                      <p className="text-xs text-[#172030]/50">Aucun processus disponible</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
+            {/* RISQUES */}
             <Card className="border border-[#E8E4DC] bg-white rounded-xl">
               <CardContent className="p-4">
                 <p className="text-sm font-semibold text-[#172030] mb-3 flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-[#2A5141]" /> Risques couverts
                 </p>
-                <div className="max-h-[420px] overflow-y-auto space-y-1">
+                <div className="max-h-[420px] overflow-y-auto space-y-2">
                   {data.risques.map((r) => {
                     const linked = linkedRisks.includes(r.id);
                     return (
-                      <label key={r.id} className="flex items-start gap-2 text-xs p-2 rounded-lg hover:bg-[#FAF9F6] cursor-pointer">
-                        <Checkbox checked={linked} onCheckedChange={() => toggleLink("plan_risques", "risque_id", r.id, linked)} />
-                        <span className="flex-1 text-[#172030]">{r.titre || r.title}</span>
-                      </label>
+                      <button
+                        key={r.id}
+                        onClick={() => toggleLink("plan_risques", "risque_id", r.id, linked)}
+                        className={cn(
+                          "w-full text-left p-3 rounded-xl border transition-all",
+                          linked ? "bg-[#F0F7F4] border-[#2A5141] shadow-sm" : "bg-white border-[#E8E4DC] hover:border-[#2A5141]/50"
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-[#172030] truncate">{r.titre || r.title}</span>
+                          {linked && <CheckCircle2 className="h-4 w-4 text-[#2A5141]" />}
+                        </div>
+                      </button>
                     );
                   })}
-                  {data.risques.length === 0 && <p className="text-xs text-[#172030]/40">Aucun risque enregistré.</p>}
+                  {data.risques.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="h-10 w-10 rounded-full bg-[#F0F7F4] mx-auto flex items-center justify-center mb-2">
+                        <AlertTriangle className="h-5 w-5 text-[#2A5141]" />
+                      </div>
+                      <p className="text-xs text-[#172030]/50">Aucun risque enregistré</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
+            {/* STRATÉGIES */}
             <Card className="border border-[#E8E4DC] bg-white rounded-xl">
               <CardContent className="p-4">
                 <p className="text-sm font-semibold text-[#172030] mb-3 flex items-center gap-2">
                   <GitBranch className="h-4 w-4 text-[#2A5141]" /> Stratégies retenues
                 </p>
-                <div className="max-h-[420px] overflow-y-auto space-y-1">
+                <div className="max-h-[420px] overflow-y-auto space-y-2">
                   {data.strategies.map((s) => {
                     const linked = linkedStrats.includes(s.id);
                     const proc = data.processus.find((p) => p.id === s.processus_id);
                     return (
-                      <label key={s.id} className="flex items-start gap-2 text-xs p-2 rounded-lg hover:bg-[#FAF9F6] cursor-pointer">
-                        <Checkbox checked={linked} onCheckedChange={() => toggleLink("plan_strategies", "strategie_association_id", s.id, linked)} />
-                        <span className="flex-1">
-                          <span className="text-[#172030]">{s.option_retenue || s.nom || "Stratégie"}</span>
-                          <span className="block text-[10px] text-[#172030]/40">{proc?.name || "—"} · {s.statut || "—"}</span>
-                        </span>
-                      </label>
+                      <button
+                        key={s.id}
+                        onClick={() => toggleLink("plan_strategies", "strategie_association_id", s.id, linked)}
+                        className={cn(
+                          "w-full text-left p-3 rounded-xl border transition-all",
+                          linked ? "bg-[#F0F7F4] border-[#2A5141] shadow-sm" : "bg-white border-[#E8E4DC] hover:border-[#2A5141]/50"
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-[#172030] truncate">{s.nom || "Stratégie"}</span>
+                          {linked && <CheckCircle2 className="h-4 w-4 text-[#2A5141]" />}
+                        </div>
+                        <p className="text-[10px] text-[#172030]/50 mt-1">{proc?.name || "—"}</p>
+                      </button>
                     );
                   })}
-                  {data.strategies.length === 0 && <p className="text-xs text-[#172030]/40">Aucune stratégie enregistrée.</p>}
+                  {data.strategies.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="h-10 w-10 rounded-full bg-[#F0F7F4] mx-auto flex items-center justify-center mb-2">
+                        <GitBranch className="h-5 w-5 text-[#2A5141]" />
+                      </div>
+                      <p className="text-xs text-[#172030]/50">Aucune stratégie enregistrée</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

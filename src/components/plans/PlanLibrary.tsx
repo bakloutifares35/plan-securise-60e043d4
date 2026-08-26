@@ -17,23 +17,25 @@ import {
   effectiveStatut, fmtDate, isRevisionDue,
 } from "./types";
 
+// ---------------- Composants Premium ----------------
+
 const Kpi = ({ label, value, icon: Icon, tone = "default" }: any) => {
   const tones: Record<string, string> = {
-    default: "text-[#172030] bg-[#F5F3EF]",
-    success: "text-emerald-700 bg-emerald-50",
-    warning: "text-amber-700 bg-amber-50",
-    danger: "text-rose-700 bg-rose-50",
+    default: "bg-[#F5F3EF] text-[#172030]",
+    success: "bg-[#E8F5E9] text-emerald-700",
+    warning: "bg-[#FFF8E1] text-amber-700",
+    danger: "bg-[#FFEBEE] text-rose-700",
   };
   return (
-    <Card className="border border-[#E8E4DC] rounded-xl shadow-sm bg-white">
-      <CardContent className="p-4 flex items-center justify-between">
-        <div>
+    <Card className="border border-[#E8E4DC] rounded-xl shadow-sm bg-white hover:shadow-md transition-shadow">
+      <CardContent className="p-5 flex items-start justify-between">
+        <div className="space-y-1">
           <p className="text-[10px] uppercase tracking-wider text-[#172030]/40 font-medium">{label}</p>
-          <p className="text-2xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
+          <p className="text-4xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
             {value}
           </p>
         </div>
-        <div className={cn("h-10 w-10 rounded-lg grid place-items-center", tones[tone])}>
+        <div className={cn("h-10 w-10 rounded-xl grid place-items-center", tones[tone])}>
           <Icon className="h-5 w-5" />
         </div>
       </CardContent>
@@ -45,13 +47,38 @@ const StatutBadge = ({ statut }: { statut: string }) => {
   const s = STATUT_STYLE[statut] || STATUT_STYLE.Brouillon;
   return (
     <span
-      className="text-[10px] font-medium rounded-full px-2 py-0.5 whitespace-nowrap"
+      className="text-[10px] font-medium rounded-full px-2.5 py-1 whitespace-nowrap"
       style={{ backgroundColor: s.bg, color: s.text }}
     >
       {statut}
     </span>
   );
 };
+
+// ✅ AJOUT : Jauge de progression dynamique
+const PlanProgress = ({ planId, data }: { planId: string; data: PlansData }) => {
+  const sections = data.planSections.filter((s) => s.plan_id === planId);
+  const total = sections.length;
+  const done = sections.filter((s) => s.statut === "Rédigé").length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  return (
+    <div className="mt-4">
+      <div className="flex justify-between text-[10px] text-[#172030]/50 mb-1">
+        <span>Rédaction</span>
+        <span className="font-medium">{done}/{total} sections</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[#E5E2DD] overflow-hidden">
+        <div 
+          className={cn("h-full rounded-full transition-all duration-500", pct === 100 ? "bg-[#2A5141]" : "bg-[#4A7A6A]")}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ---------------- Bibliothèque de plans ----------------
 
 export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: string) => void }) => {
   const { plans, createPlan, deletePlan, duplicatePlan } = data;
@@ -92,6 +119,7 @@ export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: st
 
   return (
     <div className="space-y-6">
+      {/* KPI PREMIUM */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi label="Plans" value={kpis.total} icon={FileText} />
         <Kpi label="Approuvés" value={kpis.approuves} icon={CheckCircle2} tone="success" />
@@ -99,6 +127,7 @@ export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: st
         <Kpi label="À réviser" value={kpis.aReviser} icon={AlertTriangle} tone="danger" />
       </div>
 
+      {/* Barre de recherche & filtres */}
       <div className="flex flex-col md:flex-row gap-3 md:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#172030]/30" />
@@ -128,14 +157,17 @@ export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: st
         </Button>
       </div>
 
+      {/* Liste des plans */}
       {filtered.length === 0 ? (
         <Card className="border border-dashed border-[#E8E4DC] bg-white/60">
           <CardContent className="py-16 text-center">
-            <FilePlus2 className="h-10 w-10 mx-auto text-[#172030]/20" />
-            <p className="mt-3 text-[#172030] font-medium" style={{ fontFamily: "Playfair Display, serif" }}>
+            <div className="h-16 w-16 rounded-full bg-[#F0F7F4] mx-auto flex items-center justify-center mb-4">
+              <FilePlus2 className="h-8 w-8 text-[#2A5141]" />
+            </div>
+            <p className="text-xl text-[#172030] font-medium" style={{ fontFamily: "Playfair Display, serif" }}>
               Aucun plan pour l'instant
             </p>
-            <p className="text-sm text-[#172030]/50 mt-1">
+            <p className="text-sm text-[#172030]/50 mt-2 max-w-md mx-auto">
               Créez votre premier plan : les 9 sections types seront générées automatiquement.
             </p>
           </CardContent>
@@ -146,15 +178,19 @@ export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: st
             const statut = effectiveStatut(p);
             const ts = TYPE_STYLE[p.type || "PCA"] || TYPE_STYLE.PCA;
             const due = isRevisionDue(p);
+
             return (
               <Card
                 key={p.id}
                 className={cn(
-                  "border rounded-xl shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer",
+                  "border rounded-xl shadow-sm bg-white hover:shadow-md transition-all cursor-pointer overflow-hidden",
                   due ? "border-rose-200" : "border-[#E8E4DC]"
                 )}
                 onClick={() => onOpen(p.id)}
               >
+                {/* Liseré de couleur selon le statut */}
+                <div className="h-1 w-full" style={{ backgroundColor: ts.bg }} />
+                
                 <CardContent className="p-5 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <span
@@ -168,13 +204,16 @@ export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: st
                   </div>
 
                   <div>
-                    <p className="text-base font-semibold text-[#172030] leading-snug" style={{ fontFamily: "Playfair Display, serif" }}>
+                    <p className="text-lg font-semibold text-[#172030] leading-snug" style={{ fontFamily: "Playfair Display, serif" }}>
                       {p.titre}
                     </p>
                     <p className="text-xs text-[#172030]/45 mt-1">
                       Version {p.numero_version ?? 1} · Rédacteur : {p.redacteur || "—"}
                     </p>
                   </div>
+
+                  {/* ✅ Jauge de progression DYNAMIQUE */}
+                  <PlanProgress planId={p.id} data={data} />
 
                   <div className="flex items-center gap-2 text-xs text-[#172030]/55">
                     <CalendarClock className="h-3.5 w-3.5" />

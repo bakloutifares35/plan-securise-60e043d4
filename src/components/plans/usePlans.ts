@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/db";
 import { toast } from "@/hooks/use-toast";
-import { DEFAULT_SECTIONS, MISSING_TABLE, Plan } from "./types";
+import { DEFAULT_SECTIONS, MISSING_TABLE, Plan, PlanSection } from "./types"; 
+import { computeMaxScore, scoreToCriticality, type Criticality } from "@/data/bia";
 
 export type ProcessLite = {
   id: string;
@@ -12,13 +13,24 @@ export type ProcessLite = {
   rpo_hours?: number | null;
   criticality_level?: string | null;
   impacts?: any;
+  criticite?: Criticality;
+  score?: number;
+};
+
+// ⚠️ STRATÉGIE ENRICHIE : On ajoute le nom réel depuis strategies_catalogue
+export type StrategieLite = {
+  id: string;
+  nom: string; // Nom réel de la stratégie
+  processus_id?: string;
+  statut?: string;
 };
 
 export type PlansData = {
   plans: Plan[];
+  planSections: PlanSection[]; 
   processus: ProcessLite[];
   risques: any[];
-  strategies: any[];
+  strategies: StrategieLite[]; // ✅ Type corrigé
   links: { processus: any[]; risques: any[]; strategies: any[] };
   loading: boolean;
   schemaReady: boolean;
@@ -33,9 +45,10 @@ export const usePlans = (): PlansData => {
   const [loading, setLoading] = useState(true);
   const [schemaReady, setSchemaReady] = useState(true);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [planSections, setPlanSections] = useState<PlanSection[]>([]); 
   const [processus, setProcessus] = useState<ProcessLite[]>([]);
   const [risques, setRisques] = useState<any[]>([]);
-  const [strategies, setStrategies] = useState<any[]>([]);
+  const [strategies, setStrategies] = useState<StrategieLite[]>([]);
   const [links, setLinks] = useState<{ processus: any[]; risques: any[]; strategies: any[] }>({
     processus: [],
     risques: [],
@@ -45,13 +58,13 @@ export const usePlans = (): PlansData => {
   const load = useCallback(async () => {
     setLoading(true);
 
-    const [planRes, procRes, riskRes, stratRes, lpRes, lrRes, lsRes] = await Promise.all([
+    // ✅ CORRECTION : On charge TOUTES les vraies tables + catalogue stratégies
+    const [planRes, procRes, sectionsRes, riskRes, stratCatalogRes, associationsRes, lpRes, lrRes, lsRes] = await Promise.all([
       supabase.from("plans").select("*").order("created_at", { ascending: false }),
-      supabase
-        .from("processus_metier")
-        .select("id, name, direction, rto_hours, rpo_hours, criticality_level, impacts")
-        .order("name"),
+      supabase.from("processus_metier").select("id, name, direction, rto_hours, rpo_hours, impacts").order("name"), // ✅ Table réelle !
+      supabase.from("plan_sections").select("id, plan_id, statut"),
       supabase.from("risques").select("id, titre, title, niveau_residuel, score_residuel").limit(500),
+      supabase.from("strategies_catalogue").select("id, nom").limit(500), // ✅ On prend les noms ici !
       supabase.from("strategies_association").select("*").limit(500),
       supabase.from("plan_processus").select("*"),
       supabase.from("plan_risques").select("*"),
@@ -68,10 +81,32 @@ export const usePlans = (): PlansData => {
       toast({ title: "Erreur chargement plans", description: planRes.error.message, variant: "destructive" });
     }
 
+    // ✅ CORRECTION criticité : Depuis les impacts réels de processus_metier
+    const enrichedProcessus = ((procRes.data as any[]) ?? []).map((p) => {
+      const score = computeMaxScore(p.impacts);
+      const criticite = scoreToCriticality(score);
+      return { ...p, criticite, score };
+    });
+
+    // ✅ CORRECTION stratégies : Fusionner l'association avec le nom du catalogue
+    const strategiesCatalogue = (stratCatalogRes.data as any[]) ?? [];
+    const strategieAssociations = (associationsRes.data as any[]) ?? [];
+    
+    const enrichedStrategies = strategieAssociations.map((s) => {
+      const catalogItem = strategiesCatalogue.find((c) => c.id === s.strategie_id); // ⚠️ Champ strategie_id
+      return {
+        id: s.id,
+        nom: catalogItem?.nom || "Stratégie sans nom",
+        processus_id: s.processus_id,
+        statut: s.statut || "—",
+      };
+    });
+
     setPlans((planRes.data as Plan[]) ?? []);
-    setProcessus((procRes.data as ProcessLite[]) ?? []);
+    setPlanSections((sectionsRes.data as PlanSection[]) ?? []); 
+    setProcessus(enrichedProcessus);
     setRisques((riskRes.data as any[]) ?? []);
-    setStrategies((stratRes.data as any[]) ?? []);
+    setStrategies(enrichedStrategies); // ✅ On met les stratégies enrichies
     setLinks({
       processus: (lpRes.data as any[]) ?? [],
       risques: (lrRes.data as any[]) ?? [],
@@ -217,6 +252,7 @@ export const usePlans = (): PlansData => {
 
   return {
     plans,
+    planSections,
     processus,
     risques,
     strategies,
