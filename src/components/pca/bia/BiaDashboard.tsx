@@ -1,3 +1,4 @@
+// src/components/pca/bia/BiaDashboard.tsx
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,9 @@ import {
   Link as LinkIcon,
   Database,
   RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  Info,
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -91,6 +95,264 @@ const CHART_COLORS = {
 };
 
 // ============================================================
+// FONCTIONS DE CALCUL BIA (intégrées)
+// ============================================================
+
+interface ResourceCounts {
+  [processusId: string]: {
+    hr: number;
+    equip: number;
+    app: number;
+    supplier: number;
+    total: number;
+  };
+}
+
+interface BiaCompletionResult {
+  total: number;
+  complets: number;
+  pourcentage: number;
+  processusIncomplets: {
+    id: string;
+    nom: string;
+    criticite: string;
+    champsManquants: string[];
+  }[];
+}
+
+/**
+ * Vérifie si un processus a un BIA complet
+ */
+const isProcessusBiaComplet = (
+  processus: any,
+  resourceCounts: ResourceCounts
+): { complet: boolean; champsManquants: string[] } => {
+  const manquants: string[] = [];
+  const score = computeMaxScore(processus.impacts);
+  const criticite = scoreToCriticality(score);
+
+  // 1. Vérifier les impacts
+  if (!processus.impacts) {
+    manquants.push("Impacts non définis");
+  } else {
+    const periods = ['P0_4H', 'P4_8H', 'P1D', 'P2D', 'P1W'];
+    const axes = ['financial', 'regulatory', 'operational', 'reputation'];
+    let hasAllImpacts = true;
+    
+    for (const period of periods) {
+      const periodData = processus.impacts[period];
+      if (!periodData || typeof periodData !== 'object') {
+        hasAllImpacts = false;
+        break;
+      }
+      let hasValue = false;
+      for (const axis of axes) {
+        if (periodData[axis] && Number(periodData[axis]) > 0) {
+          hasValue = true;
+          break;
+        }
+      }
+      if (!hasValue) {
+        hasAllImpacts = false;
+        break;
+      }
+    }
+    
+    if (!hasAllImpacts) {
+      manquants.push("Impacts incomplets");
+    }
+  }
+
+  // 2. Vérifier RTO et RPO
+  if (!processus.rto || processus.rto <= 0) {
+    manquants.push("RTO non défini");
+  }
+  if (!processus.rpo || processus.rpo <= 0) {
+    manquants.push("RPO non défini");
+  }
+  
+  // 3. Vérifier RTO <= MTPD
+  if (processus.rto && processus.mtpd && processus.rto > processus.mtpd) {
+    manquants.push(`RTO (${processus.rto}h) > MTPD (${processus.mtpd}h)`);
+  }
+
+  // 4. Vérifier la criticité
+  if (!criticite) {
+    manquants.push("Criticité non calculée");
+  }
+
+  // 5. Vérifier les ressources (Critique et Majeur uniquement)
+  const res = resourceCounts[processus.id] || { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
+  const isCritiqueOuMajeur = criticite === "Critique" || criticite === "Majeur";
+
+  if (isCritiqueOuMajeur) {
+    if (res.hr === 0) {
+      manquants.push("Aucune ressource humaine liée");
+    }
+    if (res.app === 0) {
+      manquants.push("Aucune application IT liée");
+    }
+    if (res.equip === 0) {
+      manquants.push("Aucun équipement lié");
+    }
+    if (res.supplier === 0) {
+      manquants.push("Aucun prestataire lié");
+    }
+  }
+
+  return { complet: manquants.length === 0, champsManquants: manquants };
+};
+
+/**
+ * Calcule le taux de couverture BIA
+ */
+const calculerCouvertureBia = (
+  processes: any[],
+  resourceCounts: ResourceCounts
+): BiaCompletionResult => {
+  const total = processes.length;
+  let complets = 0;
+  const incomplets: { id: string; nom: string; criticite: string; champsManquants: string[] }[] = [];
+
+  for (const p of processes) {
+    const score = computeMaxScore(p.impacts);
+    const criticite = scoreToCriticality(score);
+    const result = isProcessusBiaComplet(p, resourceCounts);
+    
+    if (result.complet) {
+      complets++;
+    } else {
+      incomplets.push({
+        id: p.id,
+        nom: p.name || "Sans nom",
+        criticite: criticite || "Non définie",
+        champsManquants: result.champsManquants,
+      });
+    }
+  }
+
+  let pourcentage = total > 0 ? (complets / total) * 100 : 0;
+  if (pourcentage >= 99.5 && incomplets.length > 0) {
+    pourcentage = 99;
+  }
+  pourcentage = Math.round(pourcentage);
+
+  return {
+    total,
+    complets,
+    pourcentage,
+    processusIncomplets: incomplets,
+  };
+};
+
+// ============================================================
+// FONCTION HISTORIQUE - CALCULÉ À PARTIR DES VRAIES DONNÉES
+// ============================================================
+
+/**
+ * Récupère ou CALCULE l'historique des scores BIA à partir des VRAIS processus
+ * - D'abord, essaie de lire depuis la table bia_score_snapshots
+ * - Si vide, calcule l'historique à partir des dates de création des processus
+ */
+const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
+  try {
+    // 1. Essayer de lire depuis Supabase
+    const { data, error } = await (supabase as any)
+      .from('bia_score_snapshots')
+      .select('*')
+      .order('date', { ascending: true });
+
+    if (error) {
+      console.error('Erreur chargement historique BIA:', error);
+    }
+
+    // 2. Si des données existent dans la table, les utiliser
+    if (data && data.length > 0) {
+      console.log(`✅ ${data.length} snapshots trouvés dans la table`);
+      return data;
+    }
+
+    // 3. Sinon, CALCULER l'historique à partir des processus réels
+    if (!processes || processes.length === 0) {
+      return [];
+    }
+
+    console.log('🔄 Calcul de l\'historique depuis les VRAIS processus...');
+
+    // Grouper les processus par mois de création
+    const monthlyData: Record<string, { 
+      processes: any[]; 
+      score_sum: number; 
+      nb_critiques: number;
+      nb_processus: number;
+    }> = {};
+
+    for (const p of processes) {
+      // Utiliser created_at ou lastUpdated ou date actuelle
+      const createdDate = new Date(p.created_at || p.lastUpdated || Date.now());
+      const monthKey = createdDate.toISOString().slice(0, 7); // "2025-01"
+      
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          processes: [],
+          score_sum: 0,
+          nb_critiques: 0,
+          nb_processus: 0,
+        };
+      }
+      
+      const score = computeMaxScore(p.impacts);
+      const criticite = scoreToCriticality(score);
+      
+      monthlyData[monthKey].processes.push(p);
+      monthlyData[monthKey].score_sum += score;
+      monthlyData[monthKey].nb_processus++;
+      if (criticite === "Critique" || criticite === "Sévère") {
+        monthlyData[monthKey].nb_critiques++;
+      }
+    }
+
+    // Construire les snapshots mensuels (cumulés)
+    const snapshots: any[] = [];
+    const sortedKeys = Object.keys(monthlyData).sort();
+    
+    let cumulativeProcessus = 0;
+    let cumulativeCritiques = 0;
+    let cumulativeScoreSum = 0;
+    let cumulativeCount = 0;
+
+    for (const key of sortedKeys) {
+      const monthData = monthlyData[key];
+      cumulativeProcessus += monthData.nb_processus;
+      cumulativeCritiques += monthData.nb_critiques;
+      cumulativeScoreSum += monthData.score_sum;
+      cumulativeCount += monthData.nb_processus;
+      
+      const avgScore = cumulativeCount > 0 ? cumulativeScoreSum / cumulativeCount : 0;
+      const coverage = processes.length > 0 
+        ? Math.round((cumulativeProcessus / processes.length) * 100) 
+        : 0;
+
+      snapshots.push({
+        date: `${key}-01`,
+        score_moyen: Math.round(avgScore * 10) / 10,
+        nb_processus: cumulativeProcessus,
+        nb_critiques: cumulativeCritiques,
+        taux_couverture: Math.min(coverage, 100),
+        _month: key,
+      });
+    }
+
+    console.log(`✅ ${snapshots.length} mois d'historique calculés à partir des VRAIS processus`);
+    return snapshots;
+
+  } catch (error) {
+    console.error('Erreur chargement historique BIA:', error);
+    return [];
+  }
+};
+
+// ============================================================
 // HELPER : récupère récursivement TOUS les descendants d'une entité
 // ============================================================
 const getAllDescendantIds = (entities: any[], rootId: string): string[] => {
@@ -121,9 +383,7 @@ export const BiaDashboard = () => {
   const [selectedCriticality, setSelectedCriticality] = useState<string>("all");
   const [selectedDirection, setSelectedDirection] = useState<string>("all");
 
-  // ============================================================
-  // ÉTAT POUR LES RESSOURCES
-  // ============================================================
+  // État pour les ressources
   const [resourceCounts, setResourceCounts] = useState<Record<string, {
     hr: number;
     equip: number;
@@ -141,9 +401,12 @@ export const BiaDashboard = () => {
   });
   
   const [isLoadingResources, setIsLoadingResources] = useState(true);
-
   const [historicalScores, setHistoricalScores] = useState<any[]>([]);
   const [isLoadingHistorical, setIsLoadingHistorical] = useState(true);
+  
+  // État pour la couverture BIA
+  const [biaCoverage, setBiaCoverage] = useState<BiaCompletionResult | null>(null);
+  const [isCoverageOpen, setIsCoverageOpen] = useState(false);
 
   // ============================================================
   // FILTRAGE DES PROCESSUS
@@ -224,39 +487,24 @@ export const BiaDashboard = () => {
       setIsLoadingResources(true);
       
       try {
-        // 1. Charger les RH
-        const { data: hrData } = await supabase
-          .from('processus_ressources_humaines')
-          .select('processus_id, ressource_humaine_id')
-          .in('processus_id', filteredProcessIds);
+        const [
+          { data: hrData },
+          { data: equipData },
+          { data: appData },
+          { data: suppData }
+        ] = await Promise.all([
+          supabase.from('processus_ressources_humaines').select('processus_id, ressource_humaine_id').in('processus_id', filteredProcessIds),
+          supabase.from('processus_equipements').select('processus_id, equipement_id').in('processus_id', filteredProcessIds),
+          supabase.from('processus_applications').select('processus_id, application_id').in('processus_id', filteredProcessIds),
+          supabase.from('processus_fournisseurs').select('processus_id, fournisseur_id').in('processus_id', filteredProcessIds),
+        ]);
 
-        // 2. Charger les équipements
-        const { data: equipData } = await supabase
-          .from('processus_equipements')
-          .select('processus_id, equipement_id')
-          .in('processus_id', filteredProcessIds);
-
-        // 3. Charger les applications
-        const { data: appData } = await supabase
-          .from('processus_applications')
-          .select('processus_id, application_id')
-          .in('processus_id', filteredProcessIds);
-
-        // 4. Charger les fournisseurs
-        const { data: suppData } = await supabase
-          .from('processus_fournisseurs')
-          .select('processus_id, fournisseur_id')
-          .in('processus_id', filteredProcessIds);
-
-        // Construire le mapping par processus
         const counts: Record<string, { hr: number; equip: number; app: number; supplier: number; total: number }> = {};
         
-        // Initialiser pour tous les processus
         for (const pid of filteredProcessIds) {
           counts[pid] = { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
         }
 
-        // Compter les RH
         if (hrData) {
           for (const item of hrData) {
             if (counts[item.processus_id]) {
@@ -266,7 +514,6 @@ export const BiaDashboard = () => {
           }
         }
 
-        // Compter les équipements
         if (equipData) {
           for (const item of equipData) {
             if (counts[item.processus_id]) {
@@ -276,7 +523,6 @@ export const BiaDashboard = () => {
           }
         }
 
-        // Compter les applications
         if (appData) {
           for (const item of appData) {
             if (counts[item.processus_id]) {
@@ -286,7 +532,6 @@ export const BiaDashboard = () => {
           }
         }
 
-        // Compter les fournisseurs
         if (suppData) {
           for (const item of suppData) {
             if (counts[item.processus_id]) {
@@ -297,6 +542,10 @@ export const BiaDashboard = () => {
         }
 
         setResourceCounts(counts);
+        
+        // Calculer la couverture BIA après chargement des ressources
+        const coverage = calculerCouvertureBia(filteredProcesses, counts);
+        setBiaCoverage(coverage);
         
       } catch (error) {
         console.error("Erreur chargement des ressources:", error);
@@ -311,33 +560,39 @@ export const BiaDashboard = () => {
     };
 
     loadResourceCounts();
-  }, [filteredProcessIds]);
+  }, [filteredProcessIds, filteredProcesses]);
 
   // ============================================================
-  // CHARGEMENT DES DONNÉES HISTORIQUES
+  // CHARGEMENT DES DONNÉES HISTORIQUES - À PARTIR DES VRAIES DONNÉES
   // ============================================================
   useEffect(() => {
     const loadHistoricalData = async () => {
       setIsLoadingHistorical(true);
       try {
-        const months = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
-        const data = months.map((month, index) => {
-          const baseScore = 2.5 + Math.sin(index / 2) * 0.8 + (index / 20);
-          return {
-            month,
-            score: Math.min(5, Math.max(1, baseScore)),
-            processes: Math.floor(15 + Math.sin(index / 1.5) * 5 + index * 0.8),
-          };
-        });
-        setHistoricalScores(data);
+        // 🔥 On passe les processus réels à la fonction
+        const data = await getBiaHistoricalScores(processes);
+        
+        if (data && data.length > 0) {
+          setHistoricalScores(data);
+        } else {
+          setHistoricalScores([]);
+        }
       } catch (error) {
         console.error("Erreur chargement historique:", error);
+        setHistoricalScores([]);
       } finally {
         setIsLoadingHistorical(false);
       }
     };
-    loadHistoricalData();
-  }, []);
+    
+    // Ne charger que si des processus existent
+    if (processes && processes.length > 0) {
+      loadHistoricalData();
+    } else {
+      setHistoricalScores([]);
+      setIsLoadingHistorical(false);
+    }
+  }, [processes]);
 
   // ============================================================
   // STATISTIQUES
@@ -390,11 +645,8 @@ export const BiaDashboard = () => {
     const avgScore = total
       ? (filteredProcesses.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / total)
       : 0;
-    
-    const currentCampaign = campaigns.find((c) => c.status === "En cours");
-    const coverage = currentCampaign
-      ? Math.round((currentCampaign.processesCovered / currentCampaign.totalProcesses) * 100)
-      : 0;
+
+    const coverage = biaCoverage?.pourcentage || 0;
 
     return { 
       totals, 
@@ -412,7 +664,7 @@ export const BiaDashboard = () => {
       processesWithApps,
       processesWithSuppliers,
     };
-  }, [filteredProcesses, resourceCounts, campaigns]);
+  }, [filteredProcesses, resourceCounts, biaCoverage]);
 
   // ============================================================
   // TOP PROCESSUS CRITIQUES
@@ -583,7 +835,6 @@ export const BiaDashboard = () => {
       });
     }
 
-    // Limiter à 6 points maximum
     return points.slice(0, 6);
   }, [filteredProcesses, resourceCounts]);
 
@@ -598,19 +849,18 @@ export const BiaDashboard = () => {
     borderColor: SEVERITY_BORDER_COLORS[level as keyof typeof SEVERITY_BORDER_COLORS] || "#D1D5DB",
   })).filter((d) => d.value > 0);
 
+  // Données d'évolution - calculées à partir des VRAIS processus
   const scoreEvolutionData = useMemo(() => {
-    const months = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
-    const baseScore = stats.avgScore || 2.5;
-    
-    return months.map((month, index) => {
-      const variation = Math.sin(index / 1.8) * 0.4 + (index / 30);
-      const score = Math.min(5, Math.max(1, baseScore + variation));
-      return {
-        month,
-        score: Math.round(score * 10) / 10,
-      };
-    });
-  }, [stats.avgScore]);
+    if (historicalScores.length > 0) {
+      return historicalScores.map((s) => ({
+        month: new Date(s.date).toLocaleDateString('fr', { month: 'short', year: '2-digit' }),
+        score: Math.round(s.score_moyen * 10) / 10,
+        processes: s.nb_processus,
+        coverage: s.taux_couverture,
+      }));
+    }
+    return [];
+  }, [historicalScores]);
 
   // ============================================================
   // GESTIONNAIRES DE CLIC
@@ -786,7 +1036,6 @@ export const BiaDashboard = () => {
 
     return (
       <div className="space-y-4">
-        {/* 4 lignes avec les totaux du référentiel */}
         <div className="space-y-3">
           {resourceTypes.map((rt) => {
             const Icon = rt.icon;
@@ -816,7 +1065,6 @@ export const BiaDashboard = () => {
           })}
         </div>
 
-        {/* Total des ressources */}
         <div className="pt-3 border-t border-[#E8E4DC] flex items-center justify-between">
           <span className="text-sm font-medium text-[#172030]">Total ressources</span>
           <span className="text-xl font-bold text-[#2A5141]" style={{ fontFamily: "Playfair Display, serif" }}>
@@ -970,7 +1218,8 @@ export const BiaDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
+          {/* ===== CARTE COUVERTURE BIA AVEC TOOLTIP ===== */}
+          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow relative">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
@@ -984,11 +1233,52 @@ export const BiaDashboard = () => {
                       {stats.coverage >= 80 ? '✅ Atteint' : '⏳ En cours'}
                     </span>
                   </div>
+                  {biaCoverage && biaCoverage.processusIncomplets.length > 0 && (
+                    <button
+                      onClick={() => setIsCoverageOpen(!isCoverageOpen)}
+                      className="flex items-center gap-1 text-[10px] text-[#172030]/50 hover:text-[#2A5141] mt-1 transition-colors"
+                    >
+                      <Info className="h-3 w-3" />
+                      <span>{biaCoverage.processusIncomplets.length} processus incomplet{biaCoverage.processusIncomplets.length > 1 ? 's' : ''}</span>
+                      {isCoverageOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
+                  )}
                 </div>
                 <div className="h-10 w-10 rounded-xl bg-[#E8F5E9] flex items-center justify-center flex-shrink-0 ml-3">
                   <CheckCircle2 className="h-4.5 w-4.5 text-[#2A5141]" />
                 </div>
               </div>
+
+              {isCoverageOpen && biaCoverage && biaCoverage.processusIncomplets.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-[#E8E4DC] max-h-[200px] overflow-y-auto">
+                  <p className="text-[9px] font-medium text-[#172030]/40 uppercase tracking-wider mb-2">
+                    Processus à compléter
+                  </p>
+                  <div className="space-y-1.5">
+                    {biaCoverage.processusIncomplets.map((p) => (
+                      <div 
+                        key={p.id}
+                        className="flex items-start gap-2 p-2 rounded-lg bg-[#F8F6F2] hover:bg-[#F0EDE8] cursor-pointer transition-colors"
+                        onClick={() => openProcessDetail(p.id)}
+                      >
+                        <Badge className={cn(
+                          "text-[8px] px-1.5 py-0.5 flex-shrink-0 mt-0.5",
+                          levelBadgeClass(p.criticite)
+                        )}>
+                          {p.criticite}
+                        </Badge>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-[#172030] truncate">{p.nom}</p>
+                          <p className="text-[9px] text-[#172030]/40 truncate">
+                            {p.champsManquants.join(', ')}
+                          </p>
+                        </div>
+                        <ChevronDown className="h-3 w-3 text-[#172030]/30 flex-shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1128,38 +1418,48 @@ export const BiaDashboard = () => {
             <CardContent className="flex-1 p-0 px-3 pb-3">
               <div className="h-full flex flex-col">
                 <div className="flex-1 min-h-[80px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={scoreEvolutionData}>
-                      <defs>
-                        <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#2A5141" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#2A5141" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <Area
-                        type="monotone"
-                        dataKey="score"
-                        stroke="#2A5141"
-                        strokeWidth={2}
-                        fill="url(#scoreGradient)"
-                        dot={{ r: 2, fill: "#2A5141", strokeWidth: 1 }}
-                      />
-                      <XAxis 
-                        dataKey="month" 
-                        tick={{ fontSize: 8, fill: "#172030/40" }}
-                        axisLine={false}
-                        tickLine={false}
-                        interval={1}
-                      />
-                      <YAxis 
-                        domain={[1, 5]} 
-                        tick={{ fontSize: 8, fill: "#172030/40" }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={20}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  {scoreEvolutionData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={scoreEvolutionData}>
+                        <defs>
+                          <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#2A5141" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#2A5141" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <Area
+                          type="monotone"
+                          dataKey="score"
+                          stroke="#2A5141"
+                          strokeWidth={2}
+                          fill="url(#scoreGradient)"
+                          dot={{ r: 2, fill: "#2A5141", strokeWidth: 1 }}
+                        />
+                        <XAxis 
+                          dataKey="month" 
+                          tick={{ fontSize: 8, fill: "#172030/40" }}
+                          axisLine={false}
+                          tickLine={false}
+                          interval={Math.floor(scoreEvolutionData.length / 6)}
+                        />
+                        <YAxis 
+                          domain={[1, 5]} 
+                          tick={{ fontSize: 8, fill: "#172030/40" }}
+                          axisLine={false}
+                          tickLine={false}
+                          width={20}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className="text-[#172030]/20">
+                        <Database className="h-8 w-8 mx-auto mb-2" />
+                        <p className="text-[10px] text-[#172030]/40">Aucune donnée historique</p>
+                        <p className="text-[8px] text-[#172030]/30">Les snapshots mensuels apparaîtront ici</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-[#172030]/40 mt-1 pt-1 border-t border-[#E8E4DC]">
                   <span>Score moyen</span>
@@ -1225,7 +1525,7 @@ export const BiaDashboard = () => {
             </CardContent>
           </Card>
 
-          {/* ===== CARTE : RESSOURCES (Totaux du référentiel) ===== */}
+          {/* ===== CARTE : RESSOURCES ===== */}
           <Card className="border-[#E8E4DC] shadow-sm bg-white">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
