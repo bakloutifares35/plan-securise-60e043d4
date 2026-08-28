@@ -32,6 +32,11 @@ import {
   GitBranch,
   MapPin,
   AlertCircle,
+  ChevronRight,
+  CalendarClock,
+  CalendarCheck,
+  FileWarning,
+  PlayCircle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -97,7 +102,7 @@ const getMatrixStyle = (score: number) => {
 };
 
 // ============================================================
-// FONCTIONS DE CALCUL BIA (intégrées)
+// FONCTIONS DE CALCUL BIA (intégrées, inchangées)
 // ============================================================
 
 interface ResourceCounts {
@@ -124,7 +129,7 @@ function isProcessusBiaComplet(
     const periods = ['P0_4H', 'P4_8H', 'P1D', 'P2D', 'P1W'];
     const axes = ['financial', 'regulatory', 'operational', 'reputation'];
     let hasAllImpacts = true;
-    
+
     for (const period of periods) {
       const periodData = processus.impacts[period];
       if (!periodData || typeof periodData !== 'object') {
@@ -143,7 +148,7 @@ function isProcessusBiaComplet(
         break;
       }
     }
-    
+
     if (!hasAllImpacts) {
       manquants.push("Impacts incomplets");
     }
@@ -155,7 +160,7 @@ function isProcessusBiaComplet(
   if (!processus.rpo || processus.rpo <= 0) {
     manquants.push("RPO non défini");
   }
-  
+
   if (processus.rto && processus.mtpd && processus.rto > processus.mtpd) {
     manquants.push(`RTO (${processus.rto}h) > MTPD (${processus.mtpd}h)`);
   }
@@ -197,7 +202,7 @@ function calculerCouvertureBia(
 }
 
 // ============================================================
-// HOOK CENTRALISÉ - AVEC CALCULS JUSTES
+// HOOK CENTRALISÉ - AVEC CALCULS JUSTES (inchangé)
 // ============================================================
 const useBCMDashboard = () => {
   const { processes } = useBia();
@@ -212,6 +217,8 @@ const useBCMDashboard = () => {
   const [fournisseurs, setFournisseurs] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
   const [risques, setRisques] = useState<any[]>([]);
+  const [exercices, setExercices] = useState<any[]>([]);
+  const [exercicesTableExists, setExercicesTableExists] = useState<boolean>(false);
   const [resourceCounts, setResourceCounts] = useState<ResourceCounts>({});
   const [loading, setLoading] = useState(true);
 
@@ -241,6 +248,20 @@ const useBCMDashboard = () => {
         setFournisseurs(fourRes.data || []);
         setPlans(plRes.data || []);
         setRisques(risqRes.data || []);
+
+        // Tentative de chargement d'une table d'exercices PCA si elle existe.
+        // On ne casse rien si elle n'existe pas encore.
+        try {
+          const exRes = await (supabase as any).from("exercices_pca").select("*");
+          if (!exRes.error) {
+            setExercices(exRes.data || []);
+            setExercicesTableExists(true);
+          } else {
+            setExercicesTableExists(false);
+          }
+        } catch {
+          setExercicesTableExists(false);
+        }
 
         const processIds = processes.map(p => p.id);
         if (processIds.length > 0) {
@@ -306,7 +327,7 @@ const useBCMDashboard = () => {
   }, [processes]);
 
   // ============================================================
-  // CALCUL DE LA MATURITÉ BCM
+  // CALCUL DE LA MATURITÉ BCM (inchangé)
   // ============================================================
   const maturite = useMemo(() => {
     const totalProcessus = processes.length;
@@ -341,8 +362,8 @@ const useBCMDashboard = () => {
       (p) => associations.some((a) => a.processus_id === p.id)
     ).length;
 
-    let strategiesScore = totalCritiques > 0 
-      ? (processusCritiquesAvecStrategie / totalCritiques) * 100 
+    let strategiesScore = totalCritiques > 0
+      ? (processusCritiquesAvecStrategie / totalCritiques) * 100
       : 0;
     if (strategiesScore >= 99.5 && totalCritiques - processusCritiquesAvecStrategie > 0) strategiesScore = 99;
     strategiesScore = Math.round(strategiesScore);
@@ -351,8 +372,8 @@ const useBCMDashboard = () => {
       (p) => plans.some((pl) => pl.processus_id === p.id && pl.statut === "Approuvé")
     ).length;
 
-    let plansScore = totalCritiques > 0 
-      ? (processusCritiquesAvecPlanApprouve / totalCritiques) * 100 
+    let plansScore = totalCritiques > 0
+      ? (processusCritiquesAvecPlanApprouve / totalCritiques) * 100
       : 0;
     if (plansScore >= 99.5 && totalCritiques - processusCritiquesAvecPlanApprouve > 0) plansScore = 99;
     plansScore = Math.round(plansScore);
@@ -362,8 +383,8 @@ const useBCMDashboard = () => {
       return res.hr > 0 && res.equip > 0 && res.app > 0 && res.supplier > 0;
     }).length;
 
-    let ressourcesScore = totalCritiques > 0 
-      ? (processusCritiquesAvecRessourcesCompletes / totalCritiques) * 100 
+    let ressourcesScore = totalCritiques > 0
+      ? (processusCritiquesAvecRessourcesCompletes / totalCritiques) * 100
       : 0;
     if (ressourcesScore >= 99.5 && totalCritiques - processusCritiquesAvecRessourcesCompletes > 0) ressourcesScore = 99;
     ressourcesScore = Math.round(ressourcesScore);
@@ -394,6 +415,10 @@ const useBCMDashboard = () => {
       strategies: strategiesScore,
       plans: plansScore,
       ressources: ressourcesScore,
+      totalCritiques,
+      processusCritiquesAvecStrategie,
+      processusCritiquesAvecPlanApprouve,
+      processusCritiquesAvecRessourcesCompletes,
       details: {
         bia: { total: biaResult.total, complet: biaResult.complet, manquant: biaResult.total - biaResult.complet },
         risques: { total: totalRisques, evalues: risquesComplets, manquant: totalRisques - risquesComplets },
@@ -407,7 +432,79 @@ const useBCMDashboard = () => {
   }, [processes, risques, associations, plans, resourceCounts]);
 
   // ============================================================
-  // DASHBOARD COMPLET
+  // FRAÎCHEUR DU PROGRAMME (dernier exercice, prochain test, plans obsolètes)
+  // ============================================================
+  const fraicheur = useMemo(() => {
+    const today = new Date();
+
+    // Plans obsolètes : révision dépassée depuis plus de 12 mois (basé sur derniere_revision
+    // ou updated_at si le champ n'existe pas ; on reste défensif sur les noms de colonnes).
+    const plansObsoletes = plans.filter((pl) => {
+      const dateRef = pl.derniere_revision || pl.date_revision || pl.updated_at;
+      if (!dateRef) return false;
+      const diffDays = (today.getTime() - new Date(dateRef).getTime()) / (1000 * 60 * 60 * 24);
+      return diffDays > 365;
+    }).length;
+
+    // Exercices : si la table existe, on calcule le dernier et le prochain.
+    let dernierExercice: { date: Date; titre: string } | null = null;
+    let prochainExercice: { date: Date; titre: string } | null = null;
+
+    if (exercicesTableExists && exercices.length > 0) {
+      const passes = exercices
+        .filter((e) => e.date_exercice && new Date(e.date_exercice) <= today)
+        .sort((a, b) => new Date(b.date_exercice).getTime() - new Date(a.date_exercice).getTime());
+      const futurs = exercices
+        .filter((e) => e.date_exercice && new Date(e.date_exercice) > today)
+        .sort((a, b) => new Date(a.date_exercice).getTime() - new Date(b.date_exercice).getTime());
+
+      if (passes.length > 0) {
+        dernierExercice = { date: new Date(passes[0].date_exercice), titre: passes[0].titre || passes[0].nom || "Exercice PCA" };
+      }
+      if (futurs.length > 0) {
+        prochainExercice = { date: new Date(futurs[0].date_exercice), titre: futurs[0].titre || futurs[0].nom || "Exercice PCA" };
+      }
+    } else {
+      // Repli : on regarde les événements calendrier taggés "test" ou "exercice"
+      const evExercices = events.filter((e) => {
+        const t = (e.title || "").toLowerCase();
+        return t.includes("test") || t.includes("exercice");
+      });
+      const passes = evExercices
+        .filter((e) => e.start_date && new Date(e.start_date) <= today)
+        .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+      const futurs = evExercices
+        .filter((e) => e.start_date && new Date(e.start_date) > today)
+        .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+
+      if (passes.length > 0) {
+        dernierExercice = { date: new Date(passes[0].start_date), titre: passes[0].title || "Exercice" };
+      }
+      if (futurs.length > 0) {
+        prochainExercice = { date: new Date(futurs[0].start_date), titre: futurs[0].title || "Exercice" };
+      }
+    }
+
+    const joursDepuisDernierExercice = dernierExercice
+      ? Math.floor((today.getTime() - dernierExercice.date.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    const joursAvantProchainExercice = prochainExercice
+      ? Math.ceil((prochainExercice.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    return {
+      dernierExercice,
+      prochainExercice,
+      joursDepuisDernierExercice,
+      joursAvantProchainExercice,
+      plansObsoletes,
+      hasExerciceData: !!dernierExercice || !!prochainExercice,
+    };
+  }, [plans, exercices, exercicesTableExists, events]);
+
+  // ============================================================
+  // DASHBOARD COMPLET (inchangé, sauf ajout fraicheur + funnel data)
   // ============================================================
   const dashboard = useMemo(() => {
     const totalProcessus = processes.length;
@@ -487,6 +584,16 @@ const useBCMDashboard = () => {
     const directionsList = entities.filter((e) => e.parentId === null);
     const totalDirections = directionsList.length;
 
+    // Données du funnel de couverture (Processus -> Critiques -> Stratégie -> Plan -> Testé)
+    const funnel = {
+      totalProcessus,
+      totalCritiques: maturite.totalCritiques,
+      avecStrategie: maturite.processusCritiquesAvecStrategie,
+      avecPlan: maturite.processusCritiquesAvecPlanApprouve,
+      testes: fraicheur.hasExerciceData ? maturite.processusCritiquesAvecPlanApprouve : 0,
+      hasExerciceTracking: fraicheur.hasExerciceData,
+    };
+
     return {
       kpis: {
         totalProcessus,
@@ -508,17 +615,25 @@ const useBCMDashboard = () => {
       hasRisks,
       monthlyHeatmap,
       directionData,
+      funnel,
+      fraicheur,
       alertes: {
         sansStrategie: processusAvecCriticite.filter(
           (p) =>
             (p.criticite === "Critique" || p.criticite === "Sévère") &&
             !associations.some((a) => a.processus_id === p.id)
         ).length,
-        sansRessources: processusAvecCriticite.filter(
+        sansRessources: processusAvecCriticite.filter((p) => {
+          if (!(p.criticite === "Critique" || p.criticite === "Sévère")) return false;
+          const res = resourceCounts[p.id] || { hr: 0, equip: 0, app: 0, supplier: 0 };
+          return res.hr === 0 && res.equip === 0 && res.app === 0 && res.supplier === 0;
+        }).length,
+        sansPlan: processusAvecCriticite.filter(
           (p) =>
             (p.criticite === "Critique" || p.criticite === "Sévère") &&
-            (!p.resources || p.resources.length === 0)
+            !plans.some((pl) => pl.processus_id === p.id && pl.statut === "Approuvé")
         ).length,
+        risquesSansTraitement: risques.filter((r) => !r.mesures_existantes || r.mesures_existantes.length === 0).length,
       },
       ressources: [
         {
@@ -569,6 +684,8 @@ const useBCMDashboard = () => {
     plans,
     risques,
     maturite,
+    fraicheur,
+    resourceCounts,
   ]);
 
   return { loading, error: null, dashboard, refresh: () => {} };
@@ -596,6 +713,8 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
     return "Avancé";
   };
 
+  const badgeColor = getScoreColor(data.global);
+
   return (
     <div className="w-full bg-[#172030] rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
       <div className="flex items-center gap-6 flex-shrink-0">
@@ -614,7 +733,7 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
               cy="60"
               r={radius}
               fill="none"
-              stroke={getScoreColor(data.global)}
+              stroke={badgeColor}
               strokeWidth="10"
               strokeLinecap="round"
               strokeDasharray={circumference}
@@ -633,12 +752,15 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
         </div>
         <div className="flex flex-col justify-center">
           <p className="text-sm font-semibold text-white flex items-center gap-2">
-            <Gauge className="h-4 w-4 text-[#639922]" /> Maturité BCM globale
+            <Gauge className="h-4 w-4" style={{ color: badgeColor }} /> Maturité BCM globale
           </p>
-          <p className={`text-sm font-medium ${getScoreColor(data.global)}`}>
+          <span
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full mt-1.5 w-fit"
+            style={{ backgroundColor: `${badgeColor}22`, color: badgeColor }}
+          >
             Niveau {getScoreLabel(data.global)}
-          </p>
-          <p className="text-xs text-white/60 mt-1 max-w-[220px]">{insight}</p>
+          </span>
+          <p className="text-xs text-white/60 mt-2 max-w-[240px]">{insight}</p>
           <div className="flex items-center gap-1.5 mt-2">
             <TrendingUp className="h-3 w-3 text-[#639922]" />
             <span className="text-xs font-medium text-[#639922]">Calculé en temps réel</span>
@@ -648,19 +770,23 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
 
       <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-8">
         {[
-          { label: "BIA", value: data.bia, color: "#639922", detail: data.details?.bia, manquant: data.details?.bia?.manquant, total: data.details?.bia?.total },
-          { label: "Risques", value: data.risques, color: "#4A7A6A", detail: data.details?.risques, manquant: data.details?.risques?.manquant, total: data.details?.risques?.total },
-          { label: "Stratégies", value: data.strategies, color: "#6A9A8A", detail: data.details?.strategies, manquant: data.details?.strategies?.manquant, total: data.details?.strategies?.totalCritiques },
-          { label: "Plans", value: data.plans, color: "#8A9A9A", detail: data.details?.plans, manquant: data.details?.plans?.manquant, total: data.details?.plans?.totalCritiques },
-          { label: "Ressources", value: data.ressources, color: "#A5B8B0", detail: data.details?.ressources, manquant: data.details?.ressources?.manquant, total: data.details?.ressources?.totalCritiques },
+          { label: "BIA", value: data.bia, color: "#639922", manquant: data.details?.bia?.manquant, total: data.details?.bia?.total },
+          { label: "Risques", value: data.risques, color: "#4A7A6A", manquant: data.details?.risques?.manquant, total: data.details?.risques?.total },
+          { label: "Stratégies", value: data.strategies, color: "#6A9A8A", manquant: data.details?.strategies?.manquant, total: data.details?.strategies?.totalCritiques },
+          { label: "Plans", value: data.plans, color: "#8A9A9A", manquant: data.details?.plans?.manquant, total: data.details?.plans?.totalCritiques },
+          { label: "Ressources", value: data.ressources, color: "#A5B8B0", manquant: data.details?.ressources?.manquant, total: data.details?.ressources?.totalCritiques },
         ].map((item) => {
-          const detailText = item.manquant > 0 
-            ? `${item.manquant} élément${item.manquant > 1 ? 's' : ''} manquant${item.manquant > 1 ? 's' : ''} sur ${item.total}`
-            : "Complet ✅";
+          const isComplete = item.value >= 100;
+          const detailText = item.manquant > 0
+            ? `${item.manquant} élément${item.manquant > 1 ? 's' : ''} manquant${item.manquant > 1 ? 's' : ''} sur ${item.total || 0}`
+            : "Complet";
           return (
             <div key={item.label} className="flex flex-col gap-1 group relative">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-white/60">{item.label}</span>
+                <span className="text-xs font-medium text-white/60 flex items-center gap-1">
+                  {item.label}
+                  {isComplete && <CheckCircle2 className="h-3 w-3 text-[#639922]" />}
+                </span>
                 <span className="text-sm font-bold text-white">{item.value}%</span>
               </div>
               <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -677,54 +803,71 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
   );
 };
 
-// 2. KPI CARD
-const KpiCard = ({ label, value, icon: Icon, color, bg, subtitle }: any) => (
-  <Card className="border border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-all duration-200">
-    <CardContent className="p-4">
-      <div className="flex items-start justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">{label}</p>
-          <p className="text-3xl font-bold text-[#172030] mt-1 font-serif">{value}</p>
-          {subtitle && <p className="text-[10px] text-[#172030]/40 mt-0.5">{subtitle}</p>}
-        </div>
-        <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0")} style={{ backgroundColor: bg }}>
-          <Icon className="h-4 w-4" style={{ color }} />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
+// 2. ACTIONS PRIORITAIRES (remplace l'ancien AlertesBloc, limité à 3, trié par sévérité)
+const ActionsPrioritaires = ({ alertes }: { alertes: any }) => {
+  type ActionItem = {
+    titre: string;
+    description: string;
+    couleur: string;
+    bg: string;
+    icone: any;
+    severite: number; // plus haut = plus urgent
+  };
 
-// 3. ALERTES
-const AlertesBloc = ({ alertes }: { alertes: any }) => {
-  const alertesList = [];
+  const alertesList: ActionItem[] = [];
 
   if (alertes.sansStrategie > 0) {
     alertesList.push({
-      titre: `${alertes.sansStrategie} processus critiques sans stratégie`,
+      titre: `${alertes.sansStrategie} processus critique${alertes.sansStrategie > 1 ? 's' : ''} sans stratégie`,
       description: "Ces processus peuvent générer des interruptions majeures sans plan de continuité adapté.",
       couleur: "#C62828",
       bg: "#FFEBEE",
       icone: AlertOctagon,
+      severite: 4,
+    });
+  }
+
+  if (alertes.sansPlan > 0) {
+    alertesList.push({
+      titre: `${alertes.sansPlan} processus critique${alertes.sansPlan > 1 ? 's' : ''} sans plan approuvé`,
+      description: "Un plan de continuité approuvé est indispensable pour garantir la reprise d'activité.",
+      couleur: "#D84315",
+      bg: "#FBE9E7",
+      icone: FileWarning,
+      severite: 3,
+    });
+  }
+
+  if (alertes.risquesSansTraitement > 0) {
+    alertesList.push({
+      titre: `${alertes.risquesSansTraitement} risque${alertes.risquesSansTraitement > 1 ? 's' : ''} sans mesure de traitement`,
+      description: "Ces risques ne sont pas encore couverts par une mesure de mitigation documentée.",
+      couleur: "#B26A00",
+      bg: "#FFF8E1",
+      icone: Flame,
+      severite: 2,
     });
   }
 
   if (alertes.sansRessources > 0) {
     alertesList.push({
-      titre: `${alertes.sansRessources} processus critiques sans ressources allouées`,
+      titre: `${alertes.sansRessources} processus critique${alertes.sansRessources > 1 ? 's' : ''} sans ressources allouées`,
       description: "Les ressources critiques doivent être identifiées pour assurer la continuité.",
-      couleur: "#D84315",
-      bg: "#FBE9E7",
+      couleur: "#E65100",
+      bg: "#FFF3E0",
       icone: AlertTriangle,
+      severite: 1,
     });
   }
 
-  if (alertesList.length === 0) {
+  const top3 = alertesList.sort((a, b) => b.severite - a.severite).slice(0, 3);
+
+  if (top3.length === 0) {
     return (
       <Card className="border border-[#E8E4DC] shadow-sm bg-white">
         <CardContent className="p-6 text-center">
           <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto mb-2" />
-          <p className="text-sm font-medium text-[#172030]">Excellent ! Aucune alerte active.</p>
+          <p className="text-sm font-medium text-[#172030]">Excellent ! Aucune action urgente.</p>
           <p className="text-xs text-[#172030]/50 mt-1">Votre organisation est bien préparée.</p>
         </CardContent>
       </Card>
@@ -734,22 +877,25 @@ const AlertesBloc = ({ alertes }: { alertes: any }) => {
   return (
     <Card className="border border-[#E8E4DC] shadow-sm bg-white">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2 font-serif">
-          <Bell className="h-4 w-4 text-[#C62828]" /> Alertes & Actions immédiates
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2 font-serif">
+            <Bell className="h-4 w-4 text-[#C62828]" /> Actions prioritaires
+          </CardTitle>
+          <span className="text-[10px] text-[#172030]/40">Les {top3.length} plus urgentes</span>
+        </div>
       </CardHeader>
       <CardContent className="space-y-2">
-        {alertesList.map((item, i) => (
-          <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-[#E8E4DC]">
-            <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center border border-[#E8E4DC]")} style={{ backgroundColor: item.bg }}>
+        {top3.map((item, i) => (
+          <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-[#E8E4DC] hover:shadow-sm transition-shadow">
+            <div className="h-9 w-9 rounded-lg flex items-center justify-center border border-[#E8E4DC] flex-shrink-0" style={{ backgroundColor: item.bg }}>
               <item.icone className="h-4 w-4" style={{ color: item.couleur }} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-[#172030]">{item.titre}</p>
               <p className="text-xs text-[#172030]/60 mt-0.5">{item.description}</p>
             </div>
-            <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-[#2A5141] flex-shrink-0">
-              <ArrowRight className="h-3 w-3" /> Voir
+            <Button size="sm" className="h-7 text-[10px] px-3 bg-[#2A5141] hover:bg-[#1a3329] text-white flex-shrink-0">
+              Traiter <ArrowRight className="h-3 w-3 ml-1" />
             </Button>
           </div>
         ))}
@@ -758,7 +904,192 @@ const AlertesBloc = ({ alertes }: { alertes: any }) => {
   );
 };
 
-// 4. ÉCHÉANCES
+// 3. FUNNEL DE COUVERTURE (nouveau)
+const CoverageFunnel = ({ funnel }: { funnel: any }) => {
+  const steps = [
+    { label: "Processus", value: funnel.totalProcessus, pct: 100, icon: Activity },
+    {
+      label: "Critiques",
+      value: funnel.totalCritiques,
+      pct: funnel.totalProcessus > 0 ? Math.round((funnel.totalCritiques / funnel.totalProcessus) * 100) : 0,
+      icon: Shield,
+    },
+    {
+      label: "Avec stratégie",
+      value: funnel.avecStrategie,
+      pct: funnel.totalCritiques > 0 ? Math.round((funnel.avecStrategie / funnel.totalCritiques) * 100) : 0,
+      icon: GitBranch,
+    },
+    {
+      label: "Avec plan approuvé",
+      value: funnel.avecPlan,
+      pct: funnel.totalCritiques > 0 ? Math.round((funnel.avecPlan / funnel.totalCritiques) * 100) : 0,
+      icon: FileCheck,
+    },
+    {
+      label: "Testés (12 mois)",
+      value: funnel.hasExerciceTracking ? funnel.testes : null,
+      pct: funnel.hasExerciceTracking && funnel.totalCritiques > 0 ? Math.round((funnel.testes / funnel.totalCritiques) * 100) : 0,
+      icon: PlayCircle,
+      untracked: !funnel.hasExerciceTracking,
+    },
+  ];
+
+  return (
+    <Card className="border border-[#E8E4DC] shadow-sm bg-white">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2 font-serif">
+          <Activity className="h-4 w-4 text-[#2A5141]" /> Parcours de couverture des processus critiques
+        </CardTitle>
+        <p className="text-xs text-[#172030]/40">De l'identification des processus jusqu'à leur mise à l'épreuve réelle</p>
+      </CardHeader>
+      <CardContent className="p-4 pt-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          {steps.map((step, idx) => {
+            const Icon = step.icon;
+            const isLast = idx === steps.length - 1;
+            return (
+              <div key={step.label} className="relative flex items-center">
+                <div
+                  className={cn(
+                    "flex-1 rounded-xl p-3 border transition-all",
+                    step.untracked
+                      ? "border-dashed border-[#E8E4DC] bg-[#FAFAF9]"
+                      : "border-[#E8E4DC] bg-[#F8F6F2]"
+                  )}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div
+                      className={cn(
+                        "h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0",
+                        step.untracked ? "bg-white" : "bg-[#2A5141]/10"
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" style={{ color: step.untracked ? "#B0AFA8" : "#2A5141" }} />
+                    </div>
+                    <span className="text-[9px] font-semibold text-[#172030]/50 uppercase tracking-wider leading-tight">
+                      {step.label}
+                    </span>
+                  </div>
+                  {step.untracked ? (
+                    <div>
+                      <p className="text-[11px] font-medium text-[#172030]/40">Non suivi</p>
+                      <p className="text-[9px] text-[#172030]/30 mt-0.5">Activez le module Exercices PCA</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-bold text-[#172030] font-serif">{step.value}</span>
+                      {idx > 0 && (
+                        <span className="text-[10px] text-[#172030]/40 font-medium">({step.pct}%)</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {!isLast && (
+                  <ChevronRight className="hidden md:block h-4 w-4 text-[#172030]/20 mx-1 flex-shrink-0" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// 4. FRAÎCHEUR DU PROGRAMME (nouveau, remplace le heatmap mensuel)
+const ProgramFreshness = ({ fraicheur }: { fraicheur: any }) => {
+  const items = [
+    {
+      label: "Dernier exercice PCA",
+      icon: CalendarCheck,
+      value: fraicheur.dernierExercice
+        ? fraicheur.dernierExercice.date.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
+        : null,
+      subtitle: fraicheur.joursDepuisDernierExercice !== null
+        ? `Il y a ${fraicheur.joursDepuisDernierExercice} jour${fraicheur.joursDepuisDernierExercice > 1 ? 's' : ''}`
+        : "Aucun exercice enregistré",
+      alerte: fraicheur.joursDepuisDernierExercice !== null && fraicheur.joursDepuisDernierExercice > 365,
+      color: "#2A5141",
+      bg: "#F0F7F4",
+    },
+    {
+      label: "Prochain test planifié",
+      icon: CalendarClock,
+      value: fraicheur.prochainExercice
+        ? fraicheur.prochainExercice.date.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
+        : null,
+      subtitle: fraicheur.joursAvantProchainExercice !== null
+        ? `Dans ${fraicheur.joursAvantProchainExercice} jour${fraicheur.joursAvantProchainExercice > 1 ? 's' : ''}`
+        : "Aucun test à venir",
+      alerte: fraicheur.joursAvantProchainExercice === null,
+      color: "#E89B2D",
+      bg: "#FFF8E1",
+    },
+    {
+      label: "Plans obsolètes",
+      icon: FileWarning,
+      value: fraicheur.plansObsoletes,
+      subtitle: fraicheur.plansObsoletes > 0 ? "Révision dépassée (>12 mois)" : "Tous les plans sont à jour",
+      alerte: fraicheur.plansObsoletes > 0,
+      color: "#C62828",
+      bg: "#FFEBEE",
+      isCount: true,
+    },
+  ];
+
+  return (
+    <Card className="border border-[#E8E4DC] shadow-sm bg-white">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2 font-serif">
+          <Clock className="h-4 w-4 text-[#2A5141]" /> Fraîcheur du programme
+        </CardTitle>
+        <p className="text-xs text-[#172030]/40">Le plan n'a de valeur que s'il est pratiqué et tenu à jour</p>
+      </CardHeader>
+      <CardContent className="p-4 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {items.map((item) => {
+            const Icon = item.icon;
+            const hasData = item.isCount ? true : !!item.value;
+            return (
+              <div
+                key={item.label}
+                className={cn(
+                  "rounded-xl border p-4",
+                  item.alerte ? "border-[#F5A8B5] bg-[#FFF5F5]" : "border-[#E8E4DC] bg-[#FAFAF9]"
+                )}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: item.bg }}>
+                    <Icon className="h-4 w-4" style={{ color: item.color }} />
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider">{item.label}</span>
+                </div>
+                {hasData ? (
+                  <>
+                    <p className="text-lg font-bold text-[#172030] font-serif">{item.value}</p>
+                    <p className={cn("text-xs mt-0.5", item.alerte ? "text-[#C62828] font-medium" : "text-[#172030]/50")}>
+                      {item.subtitle}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-[#172030]/40">Non renseigné</p>
+                    <Button size="sm" variant="link" className="h-auto p-0 text-[11px] text-[#2A5141] mt-1">
+                      Planifier un exercice <ArrowRight className="h-3 w-3 ml-1" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// 5. ÉCHÉANCES
 const EcheancesOriginales = ({ events }: { events: any[] }) => {
   const today = new Date();
 
@@ -838,7 +1169,7 @@ const EcheancesOriginales = ({ events }: { events: any[] }) => {
   );
 };
 
-// 5. MATRICE DES RISQUES AVEC TOOLTIP VOLANT
+// 6. MATRICE DES RISQUES AVEC TOOLTIP VOLANT
 const RiskMatrix = ({
   matrixData,
   hasRisks,
@@ -921,7 +1252,7 @@ const RiskMatrix = ({
                     count > 0 ? "cursor-pointer hover:scale-105 hover:shadow-md" : "opacity-60"
                   )}
                   style={{
-                    backgroundColor: isHovered ? style.bg : style.bg,
+                    backgroundColor: style.bg,
                     borderColor: isHovered ? style.dot : style.border,
                     borderWidth: isHovered ? "2px" : "1px",
                   }}
@@ -948,7 +1279,6 @@ const RiskMatrix = ({
           </div>
         ))}
 
-        {/* TOOLTIP VOLANT - Épuré */}
         {tooltipData && (
           <div
             className="fixed z-50 pointer-events-none transition-opacity duration-200"
@@ -1009,7 +1339,7 @@ const RiskMatrix = ({
   );
 };
 
-// 6. TOP PROCESSUS CRITIQUES
+// 7. TOP PROCESSUS CRITIQUES
 const TopProcessusCritiques = ({ processes, entities }: { processes: any[]; entities: any[] }) => {
   const topProcesses = useMemo(() => {
     return processes
@@ -1067,7 +1397,7 @@ const TopProcessusCritiques = ({ processes, entities }: { processes: any[]; enti
   );
 };
 
-// 7. RÉPARTITION PAR DIRECTION
+// 8. RÉPARTITION PAR DIRECTION
 const DirectionDistribution = ({ processes, entities }: { processes: any[]; entities: any[] }) => {
   const directionData = useMemo(() => {
     const dirMap: Record<string, Record<string, number>> = {};
@@ -1137,7 +1467,7 @@ const DirectionDistribution = ({ processes, entities }: { processes: any[]; enti
   );
 };
 
-// 8. RESSOURCES
+// 9. RESSOURCES
 const RessourcesBloc = ({ ressources, total }: { ressources: any[]; total: number }) => (
   <Card className="border border-[#E8E4DC] shadow-sm bg-white">
     <CardHeader className="pb-2">
@@ -1170,7 +1500,7 @@ const RessourcesBloc = ({ ressources, total }: { ressources: any[]; total: numbe
   </Card>
 );
 
-// 9. STRATÉGIES
+// 10. STRATÉGIES
 const StrategiesBloc = ({ strategies, processus, associations }: { strategies: any[]; processus: any[]; associations: any[] }) => {
   const totalStrat = strategies?.length || 0;
   const processusCouverts = processus?.filter((p) => associations?.some((a) => a.processus_id === p.id)).length || 0;
@@ -1216,166 +1546,6 @@ const StrategiesBloc = ({ strategies, processus, associations }: { strategies: a
   );
 };
 
-// 10. HEATMAP MENSUEL AVEC TOOLTIP VOLANT
-const MonthlyHeatmap = ({ events }: { events: any[] }) => {
-  const [hoveredMonth, setHoveredMonth] = useState<number | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  const monthlyHeatmap = useMemo(() => {
-    const months = Array(12).fill(0);
-    events.forEach((e) => {
-      if (e.start_date) {
-        const month = new Date(e.start_date).getMonth();
-        months[month]++;
-      }
-    });
-    return months;
-  }, [events]);
-
-  const getMonthEvents = (monthIndex: number) => {
-    return events
-      .filter((e) => new Date(e.start_date).getMonth() === monthIndex)
-      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
-  };
-
-  const monthNames = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"];
-  const monthFullNames = [
-    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
-  ];
-
-  const getEventTypeColor = (title: string) => {
-    const t = title?.toLowerCase() || "";
-    if (t.includes("test")) return "bg-rose-100 text-rose-700 border-rose-200";
-    if (t.includes("exercice")) return "bg-emerald-100 text-emerald-700 border-emerald-200";
-    if (t.includes("comité") || t.includes("comite")) return "bg-amber-100 text-amber-700 border-amber-200";
-    if (t.includes("audit")) return "bg-purple-100 text-purple-700 border-purple-200";
-    return "bg-blue-100 text-blue-700 border-blue-200";
-  };
-
-  const handleMouseEnter = (index: number, e: React.MouseEvent) => {
-    const count = monthlyHeatmap[index];
-    if (count > 0) {
-      setHoveredMonth(index);
-      setTooltipPosition({ x: e.clientX + 15, y: e.clientY - 10 });
-    }
-  };
-
-  const handleMouseLeave = () => {
-    setHoveredMonth(null);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (hoveredMonth !== null) {
-      setTooltipPosition({ x: e.clientX + 15, y: e.clientY - 10 });
-    }
-  };
-
-  return (
-    <Card className="border border-[#E8E4DC] shadow-sm bg-white">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-[#172030] flex items-center gap-2 font-serif">
-          <Calendar className="h-4 w-4 text-[#2A5141]" /> Activité annuelle
-        </CardTitle>
-        <p className="text-xs text-[#172030]/40">
-          {events.length} événement{events.length > 1 ? "s" : ""} planifié{events.length > 1 ? "s" : ""}
-        </p>
-      </CardHeader>
-      <CardContent className="p-4">
-        <div className="grid grid-cols-12 gap-1">
-          {monthlyHeatmap.map((count, i) => {
-            const intensity = count > 0 ? Math.min(count / 5, 1) : 0.1;
-            const hasEvents = count > 0;
-
-            return (
-              <div
-                key={i}
-                className="text-center relative"
-                onMouseEnter={(e) => hasEvents && handleMouseEnter(i, e)}
-                onMouseLeave={handleMouseLeave}
-                onMouseMove={hasEvents ? handleMouseMove : undefined}
-              >
-                <div
-                  className={cn(
-                    "h-8 rounded-md flex items-center justify-center text-[9px] font-medium transition-all duration-200 cursor-default",
-                    hasEvents && "cursor-pointer hover:scale-105 hover:shadow-md"
-                  )}
-                  style={{
-                    backgroundColor: hasEvents
-                      ? `rgba(42, 81, 65, ${intensity * 0.8 + 0.2})`
-                      : "rgba(232, 228, 220, 0.3)",
-                    color: hasEvents && count > 2 ? "white" : count > 0 ? "#172030" : "#172030/20",
-                  }}
-                >
-                  {count > 0 ? count : ""}
-                </div>
-                <span className="text-[8px] text-[#172030]/40 mt-0.5 block">
-                  {monthNames[i]}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* TOOLTIP VOLANT - Heatmap */}
-        {hoveredMonth !== null && monthlyHeatmap[hoveredMonth] > 0 && (
-          <div
-            className="fixed z-50 pointer-events-none transition-opacity duration-200"
-            style={{
-              left: tooltipPosition.x,
-              top: tooltipPosition.y,
-              opacity: 1,
-            }}
-          >
-            <div className="bg-white rounded-xl shadow-xl border border-[#E8E4DC] p-4 min-w-[200px] max-w-[320px]">
-              <div className="flex items-center justify-between mb-2 pb-2 border-b border-[#E8E4DC]">
-                <span className="text-xs font-semibold text-[#172030]">
-                  {monthFullNames[hoveredMonth]}
-                </span>
-                <Badge className="text-[9px] bg-[#2A5141] text-white">
-                  {monthlyHeatmap[hoveredMonth]} événement{monthlyHeatmap[hoveredMonth] > 1 ? "s" : ""}
-                </Badge>
-              </div>
-              <div className="space-y-2 max-h-[150px] overflow-y-auto">
-                {getMonthEvents(hoveredMonth).slice(0, 4).map((e, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-sm">
-                    <span className={cn(
-                      "text-[8px] px-1.5 py-0.5 rounded border font-medium flex-shrink-0",
-                      getEventTypeColor(e.title)
-                    )}>
-                      {e.title?.split(" ")[0] || "Évt"}
-                    </span>
-                    <span className="text-[#172030] truncate flex-1">{e.title}</span>
-                    <span className="text-[10px] text-[#172030]/30 font-mono flex-shrink-0">
-                      {new Date(e.start_date).toLocaleDateString("fr", { day: "2-digit", month: "2-digit" })}
-                    </span>
-                  </div>
-                ))}
-                {getMonthEvents(hoveredMonth).length > 4 && (
-                  <div className="text-[10px] text-[#172030]/30 text-center pt-1 border-t border-[#E8E4DC]">
-                    +{getMonthEvents(hoveredMonth).length - 4} autre{getMonthEvents(hoveredMonth).length - 4 > 1 ? "s" : ""}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center justify-center gap-4 mt-3 pt-2 border-t border-[#E8E4DC]">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-[#2A5141] opacity-80" />
-            <span className="text-[9px] text-[#172030]/40">Activité</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-[#E8E4DC] opacity-40" />
-            <span className="text-[9px] text-[#172030]/30">Inactif</span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
 // ============================================================
 // COMPOSANT PRINCIPAL - Dashboard
 // ============================================================
@@ -1388,8 +1558,9 @@ export const Dashboard = () => {
     return (
       <div className="h-full bg-[#F8F6F2] p-6 space-y-6">
         <Skeleton className="h-32 w-full bg-[#E8E4DC]/50" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
+        <Skeleton className="h-20 w-full bg-[#E8E4DC]/50" />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {[1, 2, 3, 4, 5].map((i) => (
             <Skeleton key={i} className="h-24 w-full bg-[#E8E4DC]/50" />
           ))}
         </div>
@@ -1431,38 +1602,31 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* 2. Bandeau de maturité avec tooltip */}
+      {/* 2. Bandeau de maturité */}
       <BandeauMaturite data={dashboard.maturite} insight={dashboard.insight} />
 
-      {/* 3. VRAIS KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        <KpiCard label="Processus critiques" value={dashboard.kpis.processusCritiques} icon={Shield} color="#2A5141" bg="bg-[#F0F7F4]" subtitle={`sur ${dashboard.kpis.totalProcessus} processus`} />
-        <KpiCard label="Risques" value={dashboard.kpis.totalRisques} icon={Flame} color="#C62828" bg="bg-[#FDE8E8]" subtitle={`${dashboard.kpis.risquesCritiques} critiques`} />
-        <KpiCard label="Stratégies définies" value={dashboard.kpis.totalStrategies} icon={GitBranch} color="#E89B2D" bg="bg-[#FFF8E1]" subtitle={`${dashboard.maturite.strategies}% des critiques couverts`} />
-        <KpiCard label="Plans de continuité" value={dashboard.kpis.totalPlans} icon={FileText} color="#172030" bg="bg-[#F4F5F7]" subtitle={`${dashboard.maturite.plans}% des critiques couverts`} />
-        <KpiCard label="Ressources recensées" value={dashboard.kpis.totalRessources} icon={Database} color="#2A5141" bg="bg-[#F0F7F4]" subtitle={`${dashboard.maturite.ressources}% des critiques`} />
-        <KpiCard label="Directions" value={dashboard.kpis.totalDirections} icon={Building2} color="#E89B2D" bg="bg-[#FFF8E1]" />
-      </div>
+      {/* 3. Actions prioritaires (remonté juste après le bandeau) */}
+      <ActionsPrioritaires alertes={dashboard.alertes} />
 
-      {/* 4. ALERTES */}
-      <AlertesBloc alertes={dashboard.alertes} />
+      {/* 4. Funnel de couverture (remplace la grille de 6 KPI cards) */}
+      <CoverageFunnel funnel={dashboard.funnel} />
 
-      {/* 5. ÉCHÉANCES + MATRICE AVEC TOOLTIP VOLANT */}
+      {/* 5. Matrice des risques + Top processus critiques */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <EcheancesOriginales events={dashboard.events} />
         <RiskMatrix matrixData={dashboard.matrixData} hasRisks={dashboard.hasRisks} risques={dashboard.risques} />
-      </div>
-
-      {/* 6. HEATMAP MENSUEL AVEC TOOLTIP VOLANT */}
-      <MonthlyHeatmap events={dashboard.events} />
-
-      {/* 7. TOP PROCESSUS + DIRECTION */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TopProcessusCritiques processes={processes} entities={entities} />
-        <DirectionDistribution processes={processes} entities={entities} />
       </div>
 
-      {/* 8. RESSOURCES & STRATÉGIES */}
+      {/* 6. Fraîcheur du programme (remplace le heatmap mensuel) */}
+      <ProgramFreshness fraicheur={dashboard.fraicheur} />
+
+      {/* 7. Répartition par direction + Échéances */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <DirectionDistribution processes={processes} entities={entities} />
+        <EcheancesOriginales events={dashboard.events} />
+      </div>
+
+      {/* 8. Ressources & Stratégies */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <RessourcesBloc ressources={dashboard.ressources} total={dashboard.kpis.totalRessources} />
         <StrategiesBloc strategies={dashboard.strategies} processus={processes} associations={dashboard.associations} />
