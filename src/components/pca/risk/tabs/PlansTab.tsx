@@ -270,6 +270,12 @@ export const PlansTab = ({ data }: Props) => {
     return risque.niveau || "Faible";
   };
 
+  const openAiSuggestions = (risque: Risque) => {
+    setSelectedRiskId(risque.id);
+    setAiRisk(risque);
+    setAiOpen(true);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 bg-[#F8F6F2]">
