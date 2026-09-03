@@ -73,6 +73,8 @@ export const PlansTab = ({ data }: Props) => {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMeasure, setEditingMeasure] = useState<Measure | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiRisk, setAiRisk] = useState<Risque | null>(null);
   const [form, setForm] = useState({
     mesure: "",
     description: "",
