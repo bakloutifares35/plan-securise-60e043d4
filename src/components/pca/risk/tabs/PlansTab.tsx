@@ -390,6 +390,17 @@ export const PlansTab = ({ data }: Props) => {
                           </Badge>
                         )}
                       </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 w-full h-7 text-[11px] border-[#2A5141]/30 text-[#2A5141] hover:bg-[#E5F0EB] bg-white font-sans"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openAiSuggestions(r);
+                        }}
+                      >
+                        <Sparkles className="h-3 w-3 mr-1" /> 🤖 Suggérer avec l'IA
+                      </Button>
                     </div>
                   );
                 })
