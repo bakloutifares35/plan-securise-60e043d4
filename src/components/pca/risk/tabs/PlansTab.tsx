@@ -15,11 +15,12 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/db";
 import { 
   Plus, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Euro, Loader2,
-  TrendingUp, Zap, Target, Shield
+  TrendingUp, Zap, Target, Shield, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type RiskData } from "../useRiskData";
 import { type Risque, NIVEAU_STYLE } from "../riskModel";
+import { AiActionSuggestions } from "../AiActionSuggestions";
 
 type Props = {
   data: RiskData;
@@ -72,6 +73,8 @@ export const PlansTab = ({ data }: Props) => {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMeasure, setEditingMeasure] = useState<Measure | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiRisk, setAiRisk] = useState<Risque | null>(null);
   const [form, setForm] = useState({
     mesure: "",
     description: "",
@@ -267,6 +270,12 @@ export const PlansTab = ({ data }: Props) => {
     return risque.niveau || "Faible";
   };
 
+  const openAiSuggestions = (risque: Risque) => {
+    setSelectedRiskId(risque.id);
+    setAiRisk(risque);
+    setAiOpen(true);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 bg-[#F8F6F2]">
@@ -387,6 +396,17 @@ export const PlansTab = ({ data }: Props) => {
                           </Badge>
                         )}
                       </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 w-full h-7 text-[11px] border-[#2A5141]/30 text-[#2A5141] hover:bg-[#E5F0EB] bg-white font-sans"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openAiSuggestions(r);
+                        }}
+                      >
+                        <Sparkles className="h-3 w-3 mr-1" /> 🤖 Suggérer avec l'IA
+                      </Button>
                     </div>
                   );
                 })
