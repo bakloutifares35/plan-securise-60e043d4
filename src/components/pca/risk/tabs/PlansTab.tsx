@@ -15,11 +15,12 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/db";
 import { 
   Plus, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Euro, Loader2,
-  TrendingUp, Zap, Target, Shield
+  TrendingUp, Zap, Target, Shield, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type RiskData } from "../useRiskData";
 import { type Risque, NIVEAU_STYLE } from "../riskModel";
+import { AiActionSuggestions } from "../AiActionSuggestions";
 
 type Props = {
   data: RiskData;
