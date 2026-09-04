@@ -1,4 +1,5 @@
 // Modale de suggestions d'actions de traitement générées par l'IA (GPT-oss)
+import { functionsClient } from "@/integrations/supabase/functionsClient";
 import { useCallback, useEffect, useState } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,

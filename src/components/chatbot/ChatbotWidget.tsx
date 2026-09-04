@@ -1,4 +1,5 @@
 // src/components/chatbot/ChatbotWidget.tsx
+import { functionsClient } from "@/integrations/supabase/functionsClient";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

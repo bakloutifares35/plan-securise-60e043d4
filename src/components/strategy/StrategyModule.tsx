@@ -1,4 +1,5 @@
 // src/components/strategy/StrategyModule.tsx
+import { functionsClient } from "@/integrations/supabase/functionsClient";
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
