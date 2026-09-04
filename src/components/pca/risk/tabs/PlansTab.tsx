@@ -271,7 +271,6 @@ export const PlansTab = ({ data }: Props) => {
   };
 
   const openAiSuggestions = (risque: Risque) => {
-    setSelectedRiskId(risque.id);
     setAiRisk(risque);
     setAiOpen(true);
   };
@@ -396,17 +395,6 @@ export const PlansTab = ({ data }: Props) => {
                           </Badge>
                         )}
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-2 w-full h-7 text-[11px] border-[#2A5141]/30 text-[#2A5141] hover:bg-[#E5F0EB] bg-white font-sans"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openAiSuggestions(r);
-                        }}
-                      >
-                        <Sparkles className="h-3 w-3 mr-1" /> 🤖 Suggérer avec l'IA
-                      </Button>
                     </div>
                   );
                 })
@@ -429,13 +417,23 @@ export const PlansTab = ({ data }: Props) => {
                       {selectedRisk.title} — {selectedRisk.description || "Pas de description"}
                     </p>
                   </div>
-                  <Button 
-                    size="sm" 
-                    className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm font-sans"
-                    onClick={openCreate}
-                  >
-                    <Plus className="h-4 w-4 mr-1.5" /> Nouvelle action
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-[#2A5141] text-[#2A5141] hover:bg-[#E5F0EB] bg-white font-sans"
+                      onClick={() => openAiSuggestions(selectedRisk)}
+                    >
+                      <Sparkles className="h-4 w-4 mr-1.5" /> 🤖 Suggérer avec l'IA
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm font-sans"
+                      onClick={openCreate}
+                    >
+                      <Plus className="h-4 w-4 mr-1.5" /> Nouvelle action
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-5 space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
@@ -664,6 +662,15 @@ export const PlansTab = ({ data }: Props) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modale de suggestions IA */}
+      <AiActionSuggestions
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        risque={aiRisk}
+        existingActions={measures.filter(m => m.risque_id === aiRisk?.id).map(m => m.mesure)}
+        onAdded={loadMeasures}
+      />
 
       {/* ==========================================================
           STYLE SCROLLBAR PERSONNALISÉ
