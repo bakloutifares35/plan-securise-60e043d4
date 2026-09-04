@@ -13,7 +13,8 @@ import {
   ListChecks, ClipboardCheck, AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+// ✅ CHANGEMENT : Utiliser le même client Supabase que PlansTab
+import { supabase } from "@/integrations/supabase/db";
 import type { RiskData } from "../useRiskData";
 import { scoreToNiveau } from "../riskModel";
 // Import Recharts pour un rendu PRO
@@ -23,11 +24,20 @@ type Props = {
   data: RiskData;
 };
 
+// ✅ CORRECTION : Type Measure complet comme dans PlansTab
 type Measure = {
   id: string;
   risque_id: string;
   mesure: string;
-  avancement?: number;
+  description: string | null;
+  type_mesure: string;
+  responsable: string | null;
+  echeance: string | null;
+  cout_estime: number;
+  charge_jh: number;
+  avancement: number;
+  statut: string;
+  created_at?: string;
 };
 
 // ============================================================
@@ -194,37 +204,32 @@ const ModernPieChart = ({
 
   return (
     <div className="relative h-28 w-28 shrink-0 cursor-pointer">
-      {/* Le graphique Donut avec Recharts */}
       <ResponsiveContainer width="100%" height="100%">
         <RePieChart>
           <Pie
             data={filteredData}
             cx="50%"
             cy="50%"
-            innerRadius={38} // Le grand trou au centre
-            outerRadius={52} // Épaisseur de l'anneau
+            innerRadius={38}
+            outerRadius={52}
             dataKey="value"
-            stroke="none" // On gère la bordure via Cell
+            stroke="none"
             onClick={(e) => onSliceClick(activeLabel === e.label ? "all" : e.label)}
           >
             {filteredData.map((entry, index) => (
               <Cell 
                 key={`cell-${index}`} 
                 fill={entry.color}
-                // Bordure fine et colorée pour le style de votre image
                 stroke={entry.borderColor} 
                 strokeWidth={1.5}
-                // Effet de survol et de sélection
                 className="transition-all duration-200 hover:opacity-90 hover:drop-shadow-sm"
               />
             ))}
           </Pie>
-          {/* Texte Tooltip personnalisé ou suppression */}
           <Tooltip content={<div className="hidden"/>} />
         </RePieChart>
       </ResponsiveContainer>
 
-      {/* Texte centré dans le trou de l'anneau */}
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         <span className="text-base font-bold font-sans text-[#172030] tracking-tight leading-none">
           {total}
@@ -252,6 +257,35 @@ export const ComexTab = ({ data }: Props) => {
   const [selectedCell, setSelectedCell] = useState<{p: number, i: number} | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{p: number, i: number} | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // ============================
+  // 🔥 CHARGEMENT DES MESURES (MÊME LOGIQUE QUE PlansTab)
+  // ============================
+  const [measures, setMeasures] = useState<Measure[]>([]);
+  const [isLoadingMeasures, setIsLoadingMeasures] = useState(true);
+
+  // ✅ Fonction de chargement identique à PlansTab
+  const loadMeasures = async () => {
+    setIsLoadingMeasures(true);
+    try {
+      const { data: measuresData, error } = await supabase
+        .from("plans_traitement")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setMeasures(measuresData || []);
+    } catch (error: any) {
+      console.error("Erreur chargement mesures:", error);
+      setMeasures([]);
+    } finally {
+      setIsLoadingMeasures(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMeasures();
+  }, []);
 
   // ============================
   // LOGIQUE MÉTIER
@@ -290,25 +324,36 @@ export const ComexTab = ({ data }: Props) => {
   })();
 
   // ==========================================================
-  // CORRECTION : LOGIQUE DE COUVERTURE (Utilisation des données Risques)
+  // 🔥 LOGIQUE DE COUVERTURE (basée sur les vraies mesures)
   // ==========================================================
   
-  // On vérifie le champ 'mesures_existantes' directement dans l'objet risque
-  const withMesures = filteredRisks.filter(r => {
-    if (!r.mesures_existantes) return false;
-    if (Array.isArray(r.mesures_existantes) && r.mesures_existantes.length === 0) return false;
-    if (typeof r.mesures_existantes === 'string' && r.mesures_existantes.trim() === '') return false;
-    return true;
-  }).length;
-  
+  // Créer un Set des IDs de risques qui ont au moins une action
+  const riskIdsWithMeasures = useMemo(() => {
+    const ids = new Set<string>();
+    for (const measure of measures) {
+      if (measure.risque_id) {
+        ids.add(String(measure.risque_id));
+      }
+    }
+    return ids;
+  }, [measures]);
+
+  // Compter les risques filtrés qui ont des mesures
+  const withMesures = useMemo(() => {
+    return filteredRisks.filter(r => riskIdsWithMeasures.has(String(r.id))).length;
+  }, [filteredRisks, riskIdsWithMeasures]);
+
   const couvertureMesures = total > 0 ? Math.round((withMesures / total) * 100) : 0;
   
   const sansResponsable = filteredRisks.filter(r => !r.owner || r.owner.trim() === "").length;
 
-  const risquesCritiquesSansMesures = filteredRisks.filter(r => 
-    (r.niveauCalc === "Critique" || r.niveauCalc === "Élevé") && 
-    !(r.mesures_existantes && r.mesures_existantes.length > 0)
-  ).length;
+  // Risques critiques/élevés SANS AUCUNE mesure réelle
+  const risquesCritiquesSansMesures = useMemo(() => {
+    return filteredRisks.filter(r => 
+      (r.niveauCalc === "Critique" || r.niveauCalc === "Élevé") && 
+      !riskIdsWithMeasures.has(String(r.id))
+    ).length;
+  }, [filteredRisks, riskIdsWithMeasures]);
 
   const lastUpdateDate = useMemo(() => {
     if (risques.length === 0) return null;
@@ -372,7 +417,7 @@ export const ComexTab = ({ data }: Props) => {
   };
 
   // ============================
-  // DONNÉES POUR LE PIE CHART (PASTEL AVEC BORDURE)
+  // DONNÉES POUR LE PIE CHART
   // ============================
   const pieData = [
     { label: "Critique", value: critiques, color: "#FDE8E8", borderColor: "#EBC5C5" },
@@ -425,7 +470,7 @@ export const ComexTab = ({ data }: Props) => {
     <div className="space-y-6" ref={exportRef}>
       
       {/* ==========================================================
-          FILTRES - Style BIA Dashboard
+          FILTRES
           ========================================================== */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -435,6 +480,11 @@ export const ComexTab = ({ data }: Props) => {
           {lastUpdateDate && (
             <span className="text-xs text-[#172030]/40 flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border border-[#E5E2DD]">
               <Clock className="h-3 w-3" /> MAJ {lastUpdateDate}
+            </span>
+          )}
+          {isLoadingMeasures && (
+            <span className="text-xs text-[#172030]/40 flex items-center gap-1">
+              <span className="animate-pulse">⏳</span> Chargement des mesures...
             </span>
           )}
         </div>
@@ -484,10 +534,13 @@ export const ComexTab = ({ data }: Props) => {
         <KpiCard 
           label="Couverture plans"
           value={`${couvertureMesures}%`}
-          subValue={`${withMesures} sur ${total} risques traités`}
+          subValue={`${withMesures} sur ${total} risques couverts`}
           icon={ClipboardCheck}
-          color="green"
-          badge={{ label: "✅ Bonne", color: "bg-emerald-100 text-emerald-700" }}
+          color={couvertureMesures >= 80 ? "green" : couvertureMesures >= 50 ? "amber" : "red"}
+          badge={{ 
+            label: couvertureMesures >= 80 ? "✅ Bonne" : couvertureMesures >= 50 ? "⏳ En cours" : "⚠️ Faible", 
+            color: couvertureMesures >= 80 ? "bg-emerald-100 text-emerald-700" : couvertureMesures >= 50 ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700" 
+          }}
         />
 
         <KpiCard 
@@ -495,14 +548,17 @@ export const ComexTab = ({ data }: Props) => {
           value={total - withMesures}
           subValue={`dont ${risquesCritiquesSansMesures} critique${risquesCritiquesSansMesures > 1 ? 's' : ''}`}
           icon={AlertCircle}
-          color="red"
-          badge={{ label: "✅ OK", color: "bg-emerald-100 text-emerald-700" }}
+          color={(total - withMesures) > 0 ? "red" : "green"}
+          badge={{ 
+            label: (total - withMesures) === 0 ? "✅ OK" : "⚠️ Attention", 
+            color: (total - withMesures) === 0 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700" 
+          }}
         />
 
         <KpiCard 
           label="Risques suivis"
           value={total}
-          subValue={`${withMesures} associé${withMesures > 1 ? 's' : ''} à une stratégie`}
+          subValue={`${withMesures} avec action${withMesures > 1 ? 's' : ''}`}
           icon={ListChecks}
           color="blue"
         />
@@ -512,8 +568,11 @@ export const ComexTab = ({ data }: Props) => {
           value={critiques + eleves}
           subValue={`${couvertureMesures}% de couverture`}
           icon={AlertTriangle}
-          color="red"
-          badge={{ label: "⚠️ Attention", color: "bg-rose-100 text-rose-700" }}
+          color={(critiques + eleves) > 0 ? "red" : "green"}
+          badge={{ 
+            label: (critiques + eleves) > 0 ? "⚠️ Attention" : "✅ OK", 
+            color: (critiques + eleves) > 0 ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700" 
+          }}
         />
       </div>
 
@@ -552,6 +611,7 @@ export const ComexTab = ({ data }: Props) => {
                 {topRisks.map((risk, index) => {
                   const style = COLORS.risk[risk.niveauCalc as keyof typeof COLORS.risk] || COLORS.risk.Faible;
                   const isActiveCell = selectedCell && risk.probabilite === selectedCell.p && risk.impact === selectedCell.i;
+                  const hasMeasure = riskIdsWithMeasures.has(String(risk.id));
 
                   return (
                     <div 
@@ -571,6 +631,11 @@ export const ComexTab = ({ data }: Props) => {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium text-[#172030] truncate">{risk.title}</p>
                           <RiskLevelBadge level={risk.niveauCalc} />
+                          {hasMeasure && (
+                            <Badge className="text-[8px] bg-emerald-100 text-emerald-700 border-0 rounded-full px-1.5 py-0">
+                              ✓
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-[10px] text-[#172030]/40">
                           <span className="flex items-center gap-1">
@@ -580,7 +645,7 @@ export const ComexTab = ({ data }: Props) => {
                           <span className="text-[#172030]/20">·</span>
                           <span className="font-mono">P{risk.probabilite}×I{risk.impact}</span>
                           <span className="text-[#172030]/20">·</span>
-                          <span>{risk.category || "Non catégorisé"}</span>
+                          <span>{risk.categorie || "Non catégorisé"}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -705,7 +770,7 @@ export const ComexTab = ({ data }: Props) => {
           ========================================================== */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
         
-        {/* RÉPARTITION - ModernPieChart avec Recharts (Design Anneau) */}
+        {/* RÉPARTITION */}
         <Card className="border-0 shadow-sm bg-white rounded-xl col-span-12 md:col-span-3">
           <CardHeader className="p-4 pb-2 border-b border-[#F8F6F2]">
             <div className="flex items-center justify-between">
@@ -721,7 +786,6 @@ export const ComexTab = ({ data }: Props) => {
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-3 flex items-center gap-3">
-            {/* Le graphique DONUT PRO */}
             <ModernPieChart 
               data={pieData}
               total={total}
@@ -737,7 +801,6 @@ export const ComexTab = ({ data }: Props) => {
               activeLabel={filterLevel !== "all" ? filterLevel : null}
             />
             
-            {/* La liste des risques à côté */}
             <div className="flex-1 flex flex-col justify-center space-y-1.5">
               {pieData.map((item) => {
                 const isActive = filterLevel === item.label;
@@ -765,7 +828,7 @@ export const ComexTab = ({ data }: Props) => {
           </CardContent>
         </Card>
 
-        {/* COUVERTURE - CORRIGÉ POUR AFFICHER 0% CORRECTEMENT */}
+        {/* COUVERTURE DES PLANS D'ACTION */}
         <Card className="border-0 shadow-sm bg-white rounded-xl col-span-12 md:col-span-6">
           <CardHeader className="p-4 pb-2 border-b border-[#F8F6F2]">
             <div className="flex items-center justify-between">
@@ -778,21 +841,16 @@ export const ComexTab = ({ data }: Props) => {
                 </CardTitle>
               </div>
               <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/40 font-sans rounded-full px-2.5 py-0.5">
-                {couvertureMesures}% couvert
+                {isLoadingMeasures ? "Chargement..." : `${couvertureMesures}% couvert`}
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="p-4 flex items-center justify-between">
             
-            {/* GRAPHIQUE CIRCULAIRE CORRIGÉ */}
+            {/* Progress Ring */}
             <div className="relative h-28 w-28 shrink-0 group">
               <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90 transition-all duration-1000 group-hover:scale-105">
-                {/* Le fond gris clair (seulement si on a au moins 1% de couverture pour éviter le bug "cercle invisible") */}
-                {couvertureMesures > 0 && (
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="#F8F6F2" strokeWidth="7" />
-                )}
-                
-                {/* La barre de progression verte */}
+                <circle cx="50" cy="50" r="40" fill="none" stroke="#F0EDE8" strokeWidth="7" />
                 {couvertureMesures > 0 && (
                   <circle 
                     cx="50" cy="50" r="40" fill="none" stroke="#2A5141" strokeWidth="7" 
@@ -807,35 +865,62 @@ export const ComexTab = ({ data }: Props) => {
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className={cn(
                   "text-xl font-bold font-sans transition-all duration-300 group-hover:scale-110",
-                  couvertureMesures > 0 ? "text-[#172030]" : "text-[#172030]" // Reste noir même à 0%
+                  couvertureMesures > 0 ? "text-[#172030]" : "text-[#172030]"
                 )}>
-                  {couvertureMesures}%
+                  {isLoadingMeasures ? "..." : `${couvertureMesures}%`}
                 </span>
                 <span className="text-[8px] text-[#172030]/40 font-sans">couvert</span>
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col gap-2 pl-4">
+            {/* Détails */}
+            <div className="flex-1 flex flex-col gap-1.5 pl-4">
               <div className="flex items-center justify-between border-b border-[#F8F6F2] pb-1.5">
                 <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
                   <CheckCircle className="h-3.5 w-3.5 text-[#2A5141]" />
-                  Avec mesures
+                  Avec actions
                 </span>
-                <span className="text-sm font-bold text-[#2A5141] font-sans">{withMesures}</span>
+                <span className="text-sm font-bold text-[#2A5141] font-sans">{isLoadingMeasures ? "..." : withMesures}</span>
               </div>
               <div className="flex items-center justify-between border-b border-[#F8F6F2] pb-1.5">
                 <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
                   <AlertOctagon className="h-3.5 w-3.5 text-[#C62828]" />
-                  Sans mesures
+                  Sans actions
                 </span>
-                <span className="text-sm font-bold text-[#C62828] font-sans">{total - withMesures}</span>
+                <span className="text-sm font-bold text-[#C62828] font-sans">{isLoadingMeasures ? "..." : total - withMesures}</span>
+              </div>
+              <div className="flex items-center justify-between border-b border-[#F8F6F2] pb-1.5">
+                <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5 text-[#172030]/40" />
+                  Actions totales
+                </span>
+                <span className="text-sm font-bold text-[#172030] font-sans">{isLoadingMeasures ? "..." : measures.length}</span>
               </div>
               <div className="flex items-center justify-between pt-0.5">
-                <span className="text-xs font-medium text-[#172030]/80 font-sans">Total</span>
-                <span className="text-sm font-bold text-[#172030] font-sans">{total}</span>
+                <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+                  Risques critiques couverts
+                </span>
+                <span className="text-sm font-bold text-emerald-600 font-sans">
+                  {isLoadingMeasures ? "..." : (critiques + eleves) - risquesCritiquesSansMesures}
+                </span>
               </div>
             </div>
           </CardContent>
+          
+          <div className="px-4 pb-4 pt-0 border-t border-[#F8F6F2]">
+            <p className="text-[10px] text-[#172030]/40 font-sans">
+              {isLoadingMeasures ? (
+                "Chargement des données..."
+              ) : withMesures === 0 ? (
+                "Aucun risque ne dispose d'un plan d'action."
+              ) : withMesures === total ? (
+                `✅ Tous les risques (${total}) disposent d'au moins une action.`
+              ) : (
+                `${withMesures} risque${withMesures > 1 ? 's' : ''} sur ${total} dispose${withMesures > 1 ? 'nt' : ''} d'au moins une action.`
+              )}
+            </p>
+          </div>
         </Card>
 
         {/* IMPACT */}
@@ -963,7 +1048,7 @@ export const ComexTab = ({ data }: Props) => {
                 Réinitialiser
               </Button>
             )}
-            <Button variant="ghost" size="sm" className="text-[10px] text-[#172030]/40 hover:text-[#172030] h-7 px-3" onClick={() => window.location.reload()}>
+            <Button variant="ghost" size="sm" className="text-[10px] text-[#172030]/40 hover:text-[#172030] h-7 px-3" onClick={loadMeasures}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" />
               Actualiser
             </Button>

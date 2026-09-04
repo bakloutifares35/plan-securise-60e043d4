@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { functionsClient } from "@/integrations/supabase/functionsClient";
+import { supabase as functionsClient } from "@/integrations/resillia/client";
 import { ChevronDown, ChevronRight, Plus, Building2, Trash2, Pencil, Save, X, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

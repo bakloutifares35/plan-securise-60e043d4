@@ -1,5 +1,5 @@
 // src/components/chatbot/ChatbotWidget.tsx
-import { functionsClient } from "@/integrations/supabase/functionsClient";
+import { supabase as functionsClient } from "@/integrations/resillia/client";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

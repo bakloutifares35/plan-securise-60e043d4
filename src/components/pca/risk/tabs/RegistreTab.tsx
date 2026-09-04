@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { functionsClient } from "@/integrations/supabase/functionsClient";
+import { supabase as functionsClient } from "@/integrations/resillia/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
