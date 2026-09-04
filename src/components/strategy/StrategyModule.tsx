@@ -1414,7 +1414,7 @@ export const StrategyModule = () => {
           color = "#DC2626";
           if (!linked) { priority = 1; reason = "Aucune stratégie définie"; }
           else { priority = 2; reason = "Stratégie définie"; }
-        } else if (level === "Sévère") {
+        } else if ((level as string) === "Sévère") {
           color = "#EA580C";
           if (!linked) { priority = 3; reason = "Aucune stratégie définie"; }
           else { priority = 4; reason = "Stratégie définie"; }

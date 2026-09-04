@@ -580,7 +580,7 @@ export const ComexTab = ({ data }: Props) => {
                           <span className="text-[#172030]/20">·</span>
                           <span className="font-mono">P{risk.probabilite}×I{risk.impact}</span>
                           <span className="text-[#172030]/20">·</span>
-                          <span>{risk.categorie || "Non catégorisé"}</span>
+                          <span>{risk.category || "Non catégorisé"}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
