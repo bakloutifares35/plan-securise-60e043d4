@@ -307,7 +307,7 @@ const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
       monthlyData[monthKey].processes.push(p);
       monthlyData[monthKey].score_sum += score;
       monthlyData[monthKey].nb_processus++;
-      if (criticite === "Critique" || criticite === "Sévère") {
+      if (criticite === "Critique" || (criticite as string) === "Sévère") {
         monthlyData[monthKey].nb_critiques++;
       }
     }

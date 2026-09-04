@@ -354,7 +354,7 @@ const useBCMDashboard = () => {
     });
 
     const processusCritiques = processusAvecCriticite.filter(
-      (p) => p.criticite === "Critique" || p.criticite === "Sévère"
+      (p) => p.criticite === "Critique" || (p.criticite as string) === "Sévère"
     );
     const totalCritiques = processusCritiques.length;
 
@@ -517,7 +517,7 @@ const useBCMDashboard = () => {
     });
 
     const processusCritiques = processusAvecCriticite.filter(
-      (p) => p.criticite === "Critique" || p.criticite === "Sévère"
+      (p) => p.criticite === "Critique" || (p.criticite as string) === "Sévère"
     ).length;
 
     const today = new Date();
@@ -620,17 +620,17 @@ const useBCMDashboard = () => {
       alertes: {
         sansStrategie: processusAvecCriticite.filter(
           (p) =>
-            (p.criticite === "Critique" || p.criticite === "Sévère") &&
+            (p.criticite === "Critique" || (p.criticite as string) === "Sévère") &&
             !associations.some((a) => a.processus_id === p.id)
         ).length,
         sansRessources: processusAvecCriticite.filter((p) => {
-          if (!(p.criticite === "Critique" || p.criticite === "Sévère")) return false;
+          if (!(p.criticite === "Critique" || (p.criticite as string) === "Sévère")) return false;
           const res = resourceCounts[p.id] || { hr: 0, equip: 0, app: 0, supplier: 0 };
           return res.hr === 0 && res.equip === 0 && res.app === 0 && res.supplier === 0;
         }).length,
         sansPlan: processusAvecCriticite.filter(
           (p) =>
-            (p.criticite === "Critique" || p.criticite === "Sévère") &&
+            (p.criticite === "Critique" || (p.criticite as string) === "Sévère") &&
             !plans.some((pl) => pl.processus_id === p.id && pl.statut === "Approuvé")
         ).length,
         risquesSansTraitement: risques.filter((r) => !r.mesures_existantes || r.mesures_existantes.length === 0).length,
