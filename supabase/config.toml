@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.org-process-suggester]
 verify_jwt = false
+
+[functions.risk-actions-suggester]
+verify_jwt = false
