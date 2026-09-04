@@ -1,4 +1,5 @@
 // src/components/chatbot/ChatbotWidget.tsx
+import { functionsClient } from "@/integrations/supabase/functionsClient";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +45,7 @@ export const ChatbotWidget = () => {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('groq-chatbot', {
+      const { data, error } = await functionsClient.functions.invoke('groq-chatbot', {
         body: { messages: [{ role: "user", content: text }], history: messages }
       });
 

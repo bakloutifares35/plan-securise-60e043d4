@@ -1,4 +1,5 @@
 // Modale de suggestions d'actions de traitement générées par l'IA (GPT-oss)
+import { functionsClient } from "@/integrations/supabase/functionsClient";
 import { useCallback, useEffect, useState } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -61,7 +62,7 @@ export const AiActionSuggestions = ({ open, onOpenChange, risque, existingAction
     setEditingIndex(null);
     setAddedIndexes([]);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("risk-actions-suggester", {
+      const { data, error: fnError } = await functionsClient.functions.invoke("risk-actions-suggester", {
         body: {
           title: risque.title,
           description: risque.description,
