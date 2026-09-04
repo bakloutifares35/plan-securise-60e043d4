@@ -837,7 +837,7 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
           hypotheses: form.hypotheses,
           options: catalogue.map((opt: any) => ({ id: opt.id, nom: opt.nom, description: opt.description }))
         };
-        const { data, error } = await supabase.functions.invoke('groq-strategy-assist', { body: { action: 'recommend', context } });
+        const { data, error } = await functionsClient.functions.invoke('groq-strategy-assist', { body: { action: 'recommend', context } });
         if (error) throw error;
         if (data?.response) {
           try { setAiRecommendation(JSON.parse(data.response)); } catch (e) { console.error("Erreur parsing", e); }
@@ -865,7 +865,7 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
         selectedOptionName: selectedOption.nom,
         selectedOptionDescription: selectedOption.description || ""
       };
-      const { data, error } = await supabase.functions.invoke('groq-strategy-assist', { body: { action: 'justify', context } });
+      const { data, error } = await functionsClient.functions.invoke('groq-strategy-assist', { body: { action: 'justify', context } });
       if (error) throw error;
       if (data?.justification) setJustification(data.justification);
     } catch (error) {

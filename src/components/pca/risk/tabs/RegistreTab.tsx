@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { functionsClient } from "@/integrations/supabase/functionsClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -101,7 +102,7 @@ export const RegistreTab = ({ data }: Props) => {
         category: form.category || "Cyber",
       };
 
-      const { data, error } = await supabase.functions.invoke('groq-strategy-assist', {
+      const { data, error } = await functionsClient.functions.invoke('groq-strategy-assist', {
         body: { 
           action: 'suggest_risk_measures',
           context 

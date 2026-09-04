@@ -44,7 +44,7 @@ export const ChatbotWidget = () => {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('groq-chatbot', {
+      const { data, error } = await functionsClient.functions.invoke('groq-chatbot', {
         body: { messages: [{ role: "user", content: text }], history: messages }
       });
 

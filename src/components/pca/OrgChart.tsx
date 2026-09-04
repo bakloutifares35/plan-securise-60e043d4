@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { functionsClient } from "@/integrations/supabase/functionsClient";
 import { ChevronDown, ChevronRight, Plus, Building2, Trash2, Pencil, Save, X, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1437,7 +1438,7 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       toast.loading("🧠 Analyse par l'IA en cours...", { id: loadingToast });
       console.log("🔵 Envoi à l'Edge Function Groq...");
       
-      const { data, error } = await supabase.functions.invoke('groq-extract', {
+      const { data, error } = await functionsClient.functions.invoke('groq-extract', {
         body: { text: cleanText.substring(0, 10000) }
       });
 
@@ -1496,7 +1497,7 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
         toast.loading("🔄 Second essai d'analyse...", { id: loadingToast });
         
         // Appel simplifié pour extraire juste les noms et niveaux
-        const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke('groq-extract', {
+        const { data: fallbackData, error: fallbackError } = await functionsClient.functions.invoke('groq-extract', {
           body: { 
             text: `Extrais uniquement les noms d'entités et leur niveau hiérarchique du texte suivant. Retourne un JSON avec la liste des entités.
 
