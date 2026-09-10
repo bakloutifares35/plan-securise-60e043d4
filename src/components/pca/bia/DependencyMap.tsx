@@ -23,7 +23,10 @@ import {
   Link2,
   Unlink,
   Activity,
-  Zap
+  Zap,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/resillia/client";
@@ -31,7 +34,9 @@ import { toast } from "sonner";
 
 type Pos = { x: number; y: number };
 
-// Couleurs Resillia
+// ============================================================
+// CHARTE RESILLIA
+// ============================================================
 const COLORS = {
   navy: "#172030",
   cream: "#F8F6F2",
@@ -39,6 +44,11 @@ const COLORS = {
   border: "#E8E4DC",
   text: "#172030",
   textMuted: "#6B7280",
+  white: "#FFFFFF",
+  danger: "#DC2626",
+  warning: "#F97316",
+  success: "#22C55E",
+  info: "#3B82F6",
 };
 
 const CRITICALITY_COLORS = {
@@ -48,6 +58,9 @@ const CRITICALITY_COLORS = {
   Mineur: "#22C55E",
 };
 
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 export const DependencyMap = () => {
   const { processes, setProcesses } = useBia();
   const [selectedProcess, setSelectedProcess] = useState<any | null>(null);
@@ -55,7 +68,9 @@ export const DependencyMap = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedDependsOn, setEditedDependsOn] = useState<string[]>([]);
 
-  // Calcul des positions des nœuds
+  // ============================================================
+  // POSITIONS DES NŒUDS
+  // ============================================================
   const positions = useMemo(() => {
     const map: Record<string, Pos> = {};
     const n = processes.length;
@@ -79,27 +94,95 @@ export const DependencyMap = () => {
     return map;
   }, [processes]);
 
-  // Calcul des arêtes (dépendances)
-  const edges = useMemo(() => {
-    const list: { from: string; to: string; score: number; fromName: string; toName: string }[] = [];
+  // ============================================================
+  // DÉPENDANCES : AMONT (incoming) et AVAL (outgoing)
+  // ============================================================
+  const { incomingEdges, outgoingEdges, allEdges } = useMemo(() => {
+    const incoming: { from: string; to: string; score: number; fromName: string; toName: string }[] = [];
+    const outgoing: { from: string; to: string; score: number; fromName: string; toName: string }[] = [];
+    const all: { from: string; to: string; score: number; fromName: string; toName: string; type: 'incoming' | 'outgoing' }[] = [];
+
     for (const p of processes) {
-      for (const dep of p.dependsOn) {
-        const target = processes.find((x) => x.id === dep);
+      const deps = p.dependsOn || [];
+      for (const depId of deps) {
+        const target = processes.find((x) => x.id === depId);
         if (!target) continue;
-        list.push({ 
+        
+        // Dépendance AMONT : p dépend de target (target est en amont)
+        incoming.push({ 
           from: p.id, 
-          to: dep, 
+          to: depId, 
           score: computeMaxScore(target.impacts),
           fromName: p.name,
           toName: target.name
         });
+        
+        all.push({ 
+          from: p.id, 
+          to: depId, 
+          score: computeMaxScore(target.impacts),
+          fromName: p.name,
+          toName: target.name,
+          type: 'incoming'
+        });
       }
     }
-    return list;
+
+    // Dépendances AVAL : processus qui dépendent de chaque processus
+    for (const p of processes) {
+      const dependents = processes.filter(x => (x.dependsOn || []).includes(p.id));
+      for (const dep of dependents) {
+        outgoing.push({
+          from: p.id,
+          to: dep.id,
+          score: computeMaxScore(dep.impacts),
+          fromName: p.name,
+          toName: dep.name
+        });
+        
+        // Éviter les doublons
+        const existing = all.find(e => e.from === p.id && e.to === dep.id);
+        if (!existing) {
+          all.push({
+            from: p.id,
+            to: dep.id,
+            score: computeMaxScore(dep.impacts),
+            fromName: p.name,
+            toName: dep.name,
+            type: 'outgoing'
+          });
+        }
+      }
+    }
+
+    return { incomingEdges: incoming, outgoingEdges: outgoing, allEdges: all };
   }, [processes]);
 
-  const edgeColor = (criticality: Criticality) => {
-    return CRITICALITY_COLORS[criticality] || "#94A3B8";
+  // ============================================================
+  // STATISTIQUES DES DÉPENDANCES
+  // ============================================================
+  const dependencyStats = useMemo(() => {
+    const incomingCount: Record<string, number> = {};
+    const outgoingCount: Record<string, number> = {};
+    
+    for (const edge of incomingEdges) {
+      incomingCount[edge.to] = (incomingCount[edge.to] || 0) + 1;
+    }
+    for (const edge of outgoingEdges) {
+      outgoingCount[edge.from] = (outgoingCount[edge.from] || 0) + 1;
+    }
+    
+    return { incomingCount, outgoingCount };
+  }, [incomingEdges, outgoingEdges]);
+
+  // ============================================================
+  // COULEURS DES ARÊTES
+  // ============================================================
+  const getEdgeColor = (criticality: Criticality, type: 'incoming' | 'outgoing') => {
+    if (type === 'incoming') {
+      return criticality === "Critique" ? "#DC2626" : criticality === "Majeur" ? "#F97316" : "#EAB308";
+    }
+    return criticality === "Critique" ? "#3B82F6" : criticality === "Majeur" ? "#60A5FA" : "#93C5FD";
   };
 
   const getNodeBgColor = (criticality: Criticality) => {
@@ -116,6 +199,9 @@ export const DependencyMap = () => {
     return colors[criticality] || "rgba(34,197,94,0.3)";
   };
 
+  // ============================================================
+  // ACTIONS
+  // ============================================================
   const handleNodeClick = (process: any) => {
     setSelectedProcess(process);
     setEditedDependsOn(process.dependsOn || []);
@@ -144,21 +230,17 @@ export const DependencyMap = () => {
     }
   };
 
-  const getDependencyStats = () => {
-    const incoming: Record<string, number> = {};
-    const outgoing: Record<string, number> = {};
-    for (const edge of edges) {
-      outgoing[edge.from] = (outgoing[edge.from] || 0) + 1;
-      incoming[edge.to] = (incoming[edge.to] || 0) + 1;
-    }
-    return { incoming, outgoing };
-  };
-  
-  const stats = getDependencyStats();
+  // ============================================================
+  // RENDU
+  // ============================================================
+  const totalProcesses = processes.length;
+  const totalEdges = allEdges.length;
+  const criticalCount = processes.filter(p => computeMaxScore(p.impacts) >= 4).length;
+  const noDepsCount = processes.filter(p => !p.dependsOn || p.dependsOn.length === 0).length;
 
   return (
     <div className="space-y-6">
-      {/* En-tête */}
+      {/* ===== EN-TÊTE ===== */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold" style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}>
@@ -166,10 +248,18 @@ export const DependencyMap = () => {
             Carte des dépendances
           </h1>
           <p className="text-sm mt-1" style={{ color: COLORS.textMuted }}>
-            Visualisation interactive des dépendances entre processus métier
+            Visualisation interactive des dépendances amont et aval entre processus métier
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${COLORS.forest}10` }}>
+            <ArrowUpRight className="h-3.5 w-3.5" style={{ color: COLORS.warning }} />
+            <span className="text-xs font-medium" style={{ color: COLORS.forest }}>Amont</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${COLORS.info}10` }}>
+            <ArrowDownLeft className="h-3.5 w-3.5" style={{ color: COLORS.info }} />
+            <span className="text-xs font-medium" style={{ color: COLORS.forest }}>Aval</span>
+          </div>
           {Object.entries(CRITICALITY_COLORS).map(([label, color]) => (
             <Badge key={label} variant="outline" className="flex items-center gap-1.5 border-0" style={{ backgroundColor: `${color}15`, color: color }}>
               <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
@@ -179,13 +269,13 @@ export const DependencyMap = () => {
         </div>
       </div>
 
-      {/* Statistiques - Style Resillia */}
+      {/* ===== STATISTIQUES ===== */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="border-0 shadow-sm" style={{ backgroundColor: COLORS.cream }}>
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Processus</p>
-              <p className="text-2xl font-bold" style={{ color: COLORS.navy }}>{processes.length}</p>
+              <p className="text-2xl font-bold" style={{ color: COLORS.navy }}>{totalProcesses}</p>
             </div>
             <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${COLORS.forest}15` }}>
               <GitBranch className="h-5 w-5" style={{ color: COLORS.forest }} />
@@ -197,7 +287,7 @@ export const DependencyMap = () => {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Dépendances</p>
-              <p className="text-2xl font-bold" style={{ color: COLORS.navy }}>{edges.length}</p>
+              <p className="text-2xl font-bold" style={{ color: COLORS.navy }}>{totalEdges}</p>
             </div>
             <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#FEF3C7" }}>
               <Link2 className="h-5 w-5" style={{ color: "#D97706" }} />
@@ -209,9 +299,7 @@ export const DependencyMap = () => {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Critiques</p>
-              <p className="text-2xl font-bold" style={{ color: "#DC2626" }}>
-                {processes.filter(p => computeMaxScore(p.impacts) >= 4).length}
-              </p>
+              <p className="text-2xl font-bold" style={{ color: "#DC2626" }}>{criticalCount}</p>
             </div>
             <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#FEE2E2" }}>
               <ShieldAlert className="h-5 w-5" style={{ color: "#DC2626" }} />
@@ -223,9 +311,7 @@ export const DependencyMap = () => {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.textMuted }}>Sans dépendances</p>
-              <p className="text-2xl font-bold" style={{ color: COLORS.forest }}>
-                {processes.filter(p => !p.dependsOn || p.dependsOn.length === 0).length}
-              </p>
+              <p className="text-2xl font-bold" style={{ color: COLORS.forest }}>{noDepsCount}</p>
             </div>
             <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#D1FAE5" }}>
               <Unlink className="h-5 w-5" style={{ color: "#059669" }} />
@@ -234,31 +320,43 @@ export const DependencyMap = () => {
         </Card>
       </div>
 
-      {/* Graphe principal */}
+      {/* ===== GRAPHE PRINCIPAL ===== */}
       <Card className="border-0 shadow-sm overflow-hidden" style={{ backgroundColor: COLORS.cream }}>
         <CardHeader className="pb-2 border-b" style={{ borderColor: COLORS.border }}>
           <CardTitle className="text-base font-semibold flex items-center gap-2" style={{ color: COLORS.navy }}>
             <Activity className="h-5 w-5" style={{ color: COLORS.forest }} />
             Visualisation des dépendances
+            <span className="text-xs font-normal ml-2" style={{ color: COLORS.textMuted }}>
+              — Cliquez sur un nœud pour modifier
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="w-full overflow-auto bg-gradient-to-br from-white to-[#FAFAF9] rounded-b-xl">
             <svg viewBox="0 0 800 560" className="w-full h-[560px] cursor-pointer">
               <defs>
-                <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                {/* Flèches AMONT (orange) */}
+                <marker id="arrow-upstream-critical" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill="#DC2626" />
                 </marker>
-                <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <marker id="arrow-upstream-major" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill="#F97316" />
                 </marker>
-                <marker id="arrow-yellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <marker id="arrow-upstream-moderate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill="#EAB308" />
                 </marker>
-                <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94A3B8" />
-                </marker>
                 
+                {/* Flèches AVAL (bleues) */}
+                <marker id="arrow-downstream-critical" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#3B82F6" />
+                </marker>
+                <marker id="arrow-downstream-major" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#60A5FA" />
+                </marker>
+                <marker id="arrow-downstream-moderate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#93C5FD" />
+                </marker>
+
                 {/* Glow filter */}
                 <filter id="glow">
                   <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
@@ -271,60 +369,89 @@ export const DependencyMap = () => {
               
               <rect x="0" y="0" width="800" height="560" fill="transparent" />
               
-              {/* Lignes de dépendances */}
-              {edges.map((e, i) => {
+              {/* ===== ARÊTES : DÉPENDANCES AMONT (incoming) ===== */}
+              {incomingEdges.map((e, i) => {
                 const a = positions[e.from];
                 const b = positions[e.to];
                 if (!a || !b) return null;
+                
                 const targetProcess = processes.find(p => p.id === e.to);
-                const criticality = targetProcess ? scoreToCriticality(computeMaxScore(targetProcess.impacts)) : "Mineur";
+                const criticality: Criticality = targetProcess ? scoreToCriticality(computeMaxScore(targetProcess.impacts)) : "Mineur";
                 
-                let marker = "url(#arrow-gray)";
-                if (criticality === "Critique") marker = "url(#arrow-red)";
-                else if (criticality === "Majeur") marker = "url(#arrow-orange)";
-                else if (criticality === "Modéré") marker = "url(#arrow-yellow)";
+                let marker = "url(#arrow-upstream-moderate)";
+                if (criticality === "Critique") marker = "url(#arrow-upstream-critical)";
+                else if (criticality === "Majeur") marker = "url(#arrow-upstream-major)";
                 
-                const color = edgeColor(criticality);
+                const color = getEdgeColor(criticality, 'incoming');
+                const isHovered = hoveredProcess === e.from || hoveredProcess === e.to;
                 
                 return (
-                  <g key={i}>
-                    {/* Ombre portée pour la ligne */}
+                  <g key={`incoming-${i}`}>
                     <line 
                       x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                       stroke={color} 
                       strokeWidth={criticality === "Critique" ? 3.5 : 2.5} 
-                      strokeDasharray={criticality === "Critique" ? "none" : "6 3"}
-                      opacity={0.15}
+                      strokeDasharray="none"
+                      opacity={isHovered ? 1 : 0.6}
                       strokeLinecap="round"
+                      markerEnd={marker}
                     />
+                  </g>
+                );
+              })}
+
+              {/* ===== ARÊTES : DÉPENDANCES AVAL (outgoing) - en pointillés ===== */}
+              {outgoingEdges.map((e, i) => {
+                const a = positions[e.from];
+                const b = positions[e.to];
+                if (!a || !b) return null;
+                
+                // Vérifier si cette arête est déjà affichée comme incoming
+                const alreadyDisplayed = incomingEdges.some(
+                  inc => inc.from === e.from && inc.to === e.to
+                );
+                if (alreadyDisplayed) return null;
+                
+                const targetProcess = processes.find(p => p.id === e.to);
+                const criticality: Criticality = targetProcess ? scoreToCriticality(computeMaxScore(targetProcess.impacts)) : "Mineur";
+                
+                let marker = "url(#arrow-downstream-moderate)";
+                if (criticality === "Critique") marker = "url(#arrow-downstream-critical)";
+                else if (criticality === "Majeur") marker = "url(#arrow-downstream-major)";
+                
+                const color = getEdgeColor(criticality, 'outgoing');
+                const isHovered = hoveredProcess === e.from || hoveredProcess === e.to;
+                
+                return (
+                  <g key={`outgoing-${i}`}>
                     <line 
                       x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                       stroke={color} 
                       strokeWidth={criticality === "Critique" ? 3 : 2} 
-                      strokeDasharray={criticality === "Critique" ? "none" : "6 3"}
-                      markerEnd={marker} 
-                      opacity={hoveredProcess === e.from || hoveredProcess === e.to ? 1 : 0.7}
+                      strokeDasharray="6 4"
+                      opacity={isHovered ? 1 : 0.5}
                       strokeLinecap="round"
+                      markerEnd={marker}
                     />
                   </g>
                 );
               })}
               
-              {/* Nœuds */}
+              {/* ===== NŒUDS ===== */}
               {processes.map((p) => {
                 const pos = positions[p.id];
                 if (!pos) return null;
+                
                 const score = computeMaxScore(p.impacts);
                 const criticality: Criticality = scoreToCriticality(score);
                 const isHovered = hoveredProcess === p.id;
                 const isSelected = selectedProcess?.id === p.id;
-                const incomingCount = stats.incoming[p.id] || 0;
-                const outgoingCount = stats.outgoing[p.id] || 0;
+                const incomingCount = dependencyStats.incomingCount[p.id] || 0;
+                const outgoingCount = dependencyStats.outgoingCount[p.id] || 0;
                 const totalDeps = incomingCount + outgoingCount;
-                const bgColor = getNodeBgColor(criticality);
-                const shadowColor = getNodeShadowColor(criticality);
                 
                 const circleColor = CRITICALITY_COLORS[criticality] || "#22C55E";
+                const shadowColor = getNodeShadowColor(criticality);
                 
                 return (
                   <g 
@@ -366,12 +493,12 @@ export const DependencyMap = () => {
                       {p.name.substring(0, 2).toUpperCase()}
                     </text>
                     
-                    {/* Badge de dépendances */}
+                    {/* Badge de dépendances totales */}
                     {totalDeps > 0 && (
                       <g>
                         <circle 
                           cx={pos.x + 24} cy={pos.y - 24} 
-                          r={isHovered ? 12 : 10} 
+                          r={isHovered ? 13 : 11} 
                           fill="white" 
                           stroke={circleColor} 
                           strokeWidth={2.5}
@@ -391,6 +518,44 @@ export const DependencyMap = () => {
                         </text>
                       </g>
                     )}
+
+                    {/* Indicateur AMONT (flèche vers le haut) */}
+                    {incomingCount > 0 && (
+                      <g>
+                        <circle 
+                          cx={pos.x - 20} cy={pos.y - 20} 
+                          r={isHovered ? 10 : 8} 
+                          fill="#FEF3C7" 
+                          stroke="#D97706" 
+                          strokeWidth={1.5}
+                        />
+                        <ArrowUpRight 
+                          x={pos.x - 23} y={pos.y - 24} 
+                          className="pointer-events-none"
+                          size={isHovered ? 12 : 10}
+                          style={{ color: "#D97706" }}
+                        />
+                      </g>
+                    )}
+
+                    {/* Indicateur AVAL (flèche vers le bas) */}
+                    {outgoingCount > 0 && (
+                      <g>
+                        <circle 
+                          cx={pos.x + 20} cy={pos.y + 20} 
+                          r={isHovered ? 10 : 8} 
+                          fill="#DBEAFE" 
+                          stroke="#3B82F6" 
+                          strokeWidth={1.5}
+                        />
+                        <ArrowDownLeft 
+                          x={pos.x + 17} cy={pos.y + 17} 
+                          className="pointer-events-none"
+                          size={isHovered ? 12 : 10}
+                          style={{ color: "#3B82F6" }}
+                        />
+                      </g>
+                    )}
                     
                     {/* Nom du processus */}
                     <text 
@@ -401,10 +566,7 @@ export const DependencyMap = () => {
                         fontSize: isHovered ? "11px" : "10px", 
                         color: isHovered ? COLORS.navy : COLORS.textMuted,
                         fontFamily: "'Inter', sans-serif",
-                        transition: "all 0.2s ease-in-out",
-                        maxWidth: "120px",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis"
+                        transition: "all 0.2s ease-in-out"
                       }}
                     >
                       {p.name.length > 22 ? p.name.slice(0, 19) + "…" : p.name}
@@ -415,7 +577,7 @@ export const DependencyMap = () => {
             </svg>
           </div>
           
-          {/* Légende améliorée */}
+          {/* ===== LÉGENDE ===== */}
           <div className="flex flex-wrap items-center gap-4 px-6 py-4 border-t" style={{ borderColor: COLORS.border }}>
             <div className="flex items-center gap-3 flex-wrap">
               {Object.entries(CRITICALITY_COLORS).map(([label, color]) => (
@@ -425,28 +587,35 @@ export const DependencyMap = () => {
                 </div>
               ))}
             </div>
+            
             <div className="w-px h-5" style={{ backgroundColor: COLORS.border }} />
+            
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
-                <div className="w-6 h-0.5" style={{ backgroundColor: "#DC2626" }} />
-                <span className="text-xs" style={{ color: COLORS.textMuted }}>Critique</span>
+                <div className="w-5 h-0.5" style={{ backgroundColor: "#F97316" }} />
+                <ArrowUpRight className="h-3 w-3" style={{ color: "#F97316" }} />
+                <span className="text-xs font-medium" style={{ color: COLORS.forest }}>Amont</span>
+                <span className="text-[9px]" style={{ color: COLORS.textMuted }}>(dépend de)</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-6 h-0.5 border-t-2 border-dashed" style={{ borderColor: "#94A3B8" }} />
-                <span className="text-xs" style={{ color: COLORS.textMuted }}>Standard</span>
+                <div className="w-5 h-0.5 border-t-2 border-dashed" style={{ borderColor: "#3B82F6" }} />
+                <ArrowDownLeft className="h-3 w-3" style={{ color: "#3B82F6" }} />
+                <span className="text-xs font-medium" style={{ color: COLORS.forest }}>Aval</span>
+                <span className="text-[9px]" style={{ color: COLORS.textMuted }}>(dépend de lui)</span>
               </div>
             </div>
+            
             <div className="flex items-center gap-1.5 ml-auto">
               <div className="h-5 w-5 rounded-full bg-white border-2 flex items-center justify-center" style={{ borderColor: COLORS.border }}>
                 <span className="text-[9px] font-bold" style={{ color: COLORS.navy }}>3</span>
               </div>
-              <span className="text-xs" style={{ color: COLORS.textMuted }}>Nombre de dépendances</span>
+              <span className="text-xs" style={{ color: COLORS.textMuted }}>Nombre total de dépendances</span>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Panel latéral pour MODIFIER les dépendances - Style Resillia */}
+      {/* ===== PANEL LATÉRAL ===== */}
       <Sheet open={!!selectedProcess} onOpenChange={() => setSelectedProcess(null)}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto" style={{ backgroundColor: "white" }}>
           {selectedProcess && (
@@ -455,7 +624,7 @@ export const DependencyMap = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div 
-                      className="h-10 w-10 rounded-lg flex items-center justify-center"
+                      className="h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0"
                       style={{ backgroundColor: getNodeBgColor(scoreToCriticality(computeMaxScore(selectedProcess.impacts))) }}
                     >
                       <Building2 className="h-5 w-5 text-white" />
@@ -463,7 +632,7 @@ export const DependencyMap = () => {
                     <div>
                       <SheetTitle className="text-lg" style={{ color: COLORS.navy }}>{selectedProcess.name}</SheetTitle>
                       <SheetDescription className="text-xs" style={{ color: COLORS.textMuted }}>
-                        {selectedProcess.department} · {selectedProcess.owner}
+                        {selectedProcess.department || "Sans département"} · {selectedProcess.owner || "Sans responsable"}
                       </SheetDescription>
                     </div>
                   </div>
@@ -531,22 +700,54 @@ export const DependencyMap = () => {
                 <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
                   <Clock className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
                   <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>RTO</p>
-                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.rto}h</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.rto || 0}h</p>
                 </div>
                 <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
                   <Database className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
                   <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>RPO</p>
-                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.rpo}h</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.rpo || 0}h</p>
                 </div>
                 <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
                   <AlertTriangle className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
                   <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>MTPD</p>
-                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.mtpd}h</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.mtpd || 0}h</p>
                 </div>
                 <div className="rounded-lg p-3 text-center" style={{ backgroundColor: COLORS.cream }}>
                   <TrendingUp className="h-4 w-4 mx-auto mb-1" style={{ color: COLORS.textMuted }} />
                   <p className="text-[10px] font-medium" style={{ color: COLORS.textMuted }}>MBCO</p>
-                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.mbco}%</p>
+                  <p className="text-lg font-bold" style={{ color: COLORS.navy }}>{selectedProcess.mbco || 0}%</p>
+                </div>
+              </div>
+
+              {/* Dépendances AMONT et AVAL - Vue synthétique */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg p-3 border" style={{ borderColor: "#FDE68A", backgroundColor: "#FFFBEB" }}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <ArrowUpRight className="h-4 w-4" style={{ color: "#D97706" }} />
+                    <span className="text-xs font-semibold" style={{ color: "#D97706" }}>Amont</span>
+                    <Badge variant="outline" className="text-[9px] ml-auto" style={{ borderColor: "#FDE68A" }}>
+                      {dependencyStats.incomingCount[selectedProcess.id] || 0}
+                    </Badge>
+                  </div>
+                  <p className="text-[10px]" style={{ color: COLORS.textMuted }}>
+                    {dependencyStats.incomingCount[selectedProcess.id] > 0 
+                      ? `${dependencyStats.incomingCount[selectedProcess.id]} processus dont dépend ce processus` 
+                      : "Aucune dépendance amont"}
+                  </p>
+                </div>
+                <div className="rounded-lg p-3 border" style={{ borderColor: "#BFDBFE", backgroundColor: "#EFF6FF" }}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <ArrowDownLeft className="h-4 w-4" style={{ color: "#3B82F6" }} />
+                    <span className="text-xs font-semibold" style={{ color: "#3B82F6" }}>Aval</span>
+                    <Badge variant="outline" className="text-[9px] ml-auto" style={{ borderColor: "#BFDBFE" }}>
+                      {dependencyStats.outgoingCount[selectedProcess.id] || 0}
+                    </Badge>
+                  </div>
+                  <p className="text-[10px]" style={{ color: COLORS.textMuted }}>
+                    {dependencyStats.outgoingCount[selectedProcess.id] > 0 
+                      ? `${dependencyStats.outgoingCount[selectedProcess.id]} processus dépendent de celui-ci` 
+                      : "Aucune dépendance aval"}
+                  </p>
                 </div>
               </div>
 
@@ -554,7 +755,7 @@ export const DependencyMap = () => {
               <div className="space-y-3">
                 <h4 className="text-sm font-semibold flex items-center gap-2" style={{ color: COLORS.navy }}>
                   <GitBranch className="h-4 w-4" style={{ color: COLORS.forest }} />
-                  Dépendances 
+                  Dépendances (amont)
                   <Badge variant="outline" className="text-[10px]" style={{ borderColor: COLORS.border }}>
                     {selectedProcess.dependsOn?.length || 0}
                   </Badge>
@@ -584,7 +785,7 @@ export const DependencyMap = () => {
                           />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate" style={{ color: COLORS.navy }}>{p.name}</p>
-                            <p className="text-xs truncate" style={{ color: COLORS.textMuted }}>{p.department}</p>
+                            <p className="text-xs truncate" style={{ color: COLORS.textMuted }}>{p.department || "Sans département"}</p>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: critColor }} />
@@ -620,7 +821,7 @@ export const DependencyMap = () => {
                       })
                     ) : (
                       <p className="text-sm italic py-3 text-center" style={{ color: COLORS.textMuted }}>
-                        Aucune dépendance
+                        Aucune dépendance amont
                       </p>
                     )}
                   </div>

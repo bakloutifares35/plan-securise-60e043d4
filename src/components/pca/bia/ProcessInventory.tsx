@@ -24,7 +24,8 @@ import {
   BarChart3, TrendingUp as TrendingUpIcon, AlertOctagon, Check, Minus,
   Circle, CircleCheck, CircleDot, CircleDashed, CircleOff,
   Square, SquareCheck, SquareDot, SquareDashed, PlusCircle, FolderTree,
-  MoreHorizontal as MoreHoriz, Loader2
+  MoreHorizontal as MoreHoriz, Loader2,
+  ArrowUpRight, ArrowDownLeft
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -193,17 +194,15 @@ const getNodeShadowColor = (criticality: Criticality) => {
   }
 };
 
-const edgeColor = (criticality: Criticality) => {
-  switch (criticality) {
-    case "Critique": return "#ef4444";
-    case "Majeur": return "#f97316";
-    case "Modéré": return "#eab308";
-    default: return "#94a3b8";
+const edgeColor = (criticality: Criticality, isUpstream: boolean = false) => {
+  if (isUpstream) {
+    return criticality === "Critique" ? "#ef4444" : criticality === "Majeur" ? "#f97316" : "#eab308";
   }
+  return criticality === "Critique" ? "#3b82f6" : criticality === "Majeur" ? "#60a5fa" : "#93c5fd";
 };
 
 // ============================================================
-// COMPOSANT - Dialogue de sélection de processus pour liaison AVEC RTO/RPO (CORRIGÉ)
+// COMPOSANT - Dialogue de sélection de processus pour liaison
 // ============================================================
 const LinkProcessDialog = ({
   open,
@@ -215,6 +214,7 @@ const LinkProcessDialog = ({
   onUnlink,
   linkedProcesses: initialLinkedProcesses,
   departmentProcesses,
+  onRefresh,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -225,40 +225,28 @@ const LinkProcessDialog = ({
   onUnlink: (processId: string) => void;
   linkedProcesses?: any[];
   departmentProcesses?: any[];
+  onRefresh?: () => void;
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [isLinking, setIsLinking] = useState(false);
+  const [localLinkedProcesses, setLocalLinkedProcesses] = useState<any[]>(initialLinkedProcesses || []);
 
-  // États pour RTO/RPO dans le dialogue de liaison
-  const [linkRtoHours, setLinkRtoHours] = useState<number>(4);
-  const [linkRpoHours, setLinkRpoHours] = useState<number>(2);
+  useEffect(() => {
+    setLocalLinkedProcesses(initialLinkedProcesses || []);
+  }, [initialLinkedProcesses]);
 
-  const rtoOptions = [1, 2, 4, 6, 8, 12, 24, 48, 72];
-  const rpoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24];
-
-  // Déterminer si on doit afficher les champs RTO/RPO
-  const showRtoField = resourceType === 'Equipement' || resourceType === 'App' || resourceType === 'Fournisseur';
-  const showRpoField = resourceType === 'App';
-  const showNoRtoField = resourceType === 'HR';
-
-  // Réinitialiser la sélection quand on ouvre
   useEffect(() => {
     if (open) {
       setSelectedProcessId(null);
       setSearchQuery("");
-      setLinkRtoHours(4);
-      setLinkRpoHours(2);
     }
   }, [open]);
 
-  // 🔥 CORRECTION : On utilise directement les props passées, plus besoin de les mettre dans des states locaux !
-  const linkedProcesses = initialLinkedProcesses || [];
   const allProcesses = departmentProcesses || [];
 
-  // Filtrer les processus disponibles pour la liaison (ceux qui ne sont PAS déjà liés)
   const filteredProcesses = allProcesses.filter(p => {
-    const isLinked = linkedProcesses.some(lp => lp.id === p.id);
+    const isLinked = localLinkedProcesses.some(lp => lp.id === p.id);
     if (isLinked) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -270,17 +258,22 @@ const LinkProcessDialog = ({
   const handleLink = async () => {
     if (selectedProcessId) {
       setIsLinking(true);
-      await onLink(selectedProcessId, linkRtoHours, linkRpoHours);
+      await onLink(selectedProcessId);
+      if (onRefresh) {
+        await onRefresh();
+      }
       setSelectedProcessId(null);
-      setLinkRtoHours(4);
-      setLinkRpoHours(2);
       setIsLinking(false);
+      onOpenChange(false);
     }
   };
 
   const handleUnlink = async (processId: string) => {
     if (confirm(`Voulez-vous dissocier cette ressource du processus ?`)) {
       await onUnlink(processId);
+      if (onRefresh) {
+        await onRefresh();
+      }
     }
   };
 
@@ -314,6 +307,43 @@ const LinkProcessDialog = ({
     }
   };
 
+  const renderRTOValues = (p: any) => {
+    if (resourceType === 'HR') {
+      return null;
+    }
+    if (resourceType === 'App') {
+      return (
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+          {p._linkRto !== undefined && (
+            <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+              <Clock className="h-3 w-3" />
+              RTO {p._linkRto}h
+            </span>
+          )}
+          {p._linkRpo !== undefined && (
+            <span className="inline-flex items-center gap-1 text-[10px] bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full border border-orange-200">
+              <Database className="h-3 w-3" />
+              RPO {p._linkRpo}h
+            </span>
+          )}
+        </div>
+      );
+    }
+    if (resourceType === 'Equipement' || resourceType === 'Fournisseur') {
+      return (
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+          {p._linkRto !== undefined && (
+            <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+              <Clock className="h-3 w-3" />
+              RTO {p._linkRto}h
+            </span>
+          )}
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
@@ -328,31 +358,30 @@ const LinkProcessDialog = ({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Section des processus déjà liés */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-sm font-medium text-[#172030] flex items-center gap-2">
                 <LinkIcon className="h-4 w-4 text-[#2A5141]" />
-                Processus liés ({linkedProcesses.length})
+                Processus liés ({localLinkedProcesses.length})
               </h4>
-              {linkedProcesses.length > 0 && !showNoRtoField && (
+              {localLinkedProcesses.length > 0 && resourceType !== 'HR' && (
                 <span className="text-xs text-[#172030]/40">
-                  RTO/RPO spécifiques à chaque liaison
+                  RTO/RPO hérités du référentiel
                 </span>
               )}
-              {linkedProcesses.length > 0 && showNoRtoField && (
+              {localLinkedProcesses.length > 0 && resourceType === 'HR' && (
                 <span className="text-xs text-[#172030]/40">
-                  Liaisons sans RTO/RPO
+                  Les collaborateurs n'ont pas de RTO/RPO
                 </span>
               )}
             </div>
-            {linkedProcesses.length === 0 ? (
+            {localLinkedProcesses.length === 0 ? (
               <p className="text-sm text-[#172030]/40 italic p-4 text-center bg-[#F8F6F2] rounded-lg border border-dashed border-[#E8E4DC]">
                 Aucun processus lié pour le moment
               </p>
             ) : (
               <div className="space-y-2">
-                {linkedProcesses.map(p => (
+                {localLinkedProcesses.map(p => (
                   <div 
                     key={p.id} 
                     className={cn(
@@ -371,24 +400,7 @@ const LinkProcessDialog = ({
                             {p.owner || "—"}
                           </Badge>
                         </div>
-                        {!showNoRtoField && (
-                          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                            {/* Affichage RTO si disponible */}
-                            {p._linkRto !== undefined && showRtoField && (
-                              <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
-                                <Clock className="h-3 w-3" />
-                                RTO {p._linkRto}h
-                              </span>
-                            )}
-                            {/* Affichage RPO si disponible */}
-                            {p._linkRpo !== undefined && showRpoField && (
-                              <span className="inline-flex items-center gap-1 text-[10px] bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full border border-orange-200">
-                                <Database className="h-3 w-3" />
-                                RPO {p._linkRpo}h
-                              </span>
-                            )}
-                          </div>
-                        )}
+                        {renderRTOValues(p)}
                       </div>
                     </div>
                     <Button
@@ -422,60 +434,6 @@ const LinkProcessDialog = ({
               />
             </div>
 
-            {/* Sélecteur de RTO/RPO avant la sélection du processus (sauf pour RH) */}
-            {!showNoRtoField && (
-              <div className="mb-3 p-3 bg-[#F8F6F2] rounded-lg border border-[#E8E4DC]">
-                <Label className="text-sm font-medium text-[#172030] flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-[#2A5141]" />
-                  Objectifs de reprise pour cette liaison
-                </Label>
-                <div className={cn("grid gap-3 mt-2", showRpoField ? "grid-cols-2" : "grid-cols-1")}>
-                  <div>
-                    <Label className="text-xs text-slate-500">RTO (heures)</Label>
-                    <select
-                      value={linkRtoHours}
-                      onChange={(e) => setLinkRtoHours(Number(e.target.value))}
-                      className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
-                    >
-                      {rtoOptions.map((val) => (
-                        <option key={val} value={val}>{val}h</option>
-                      ))}
-                    </select>
-                  </div>
-                  {showRpoField && (
-                    <div>
-                      <Label className="text-xs text-slate-500">RPO (heures)</Label>
-                      <select
-                        value={linkRpoHours}
-                        onChange={(e) => setLinkRpoHours(Number(e.target.value))}
-                        className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
-                      >
-                        {rpoOptions.map((val) => (
-                          <option key={val} value={val}>{val}h</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  {showRpoField 
-                    ? "Ces valeurs seront appliquées à la liaison de cette application avec le processus sélectionné."
-                    : "Cette valeur sera appliquée à la liaison de cette ressource avec le processus sélectionné."
-                  }
-                </p>
-              </div>
-            )}
-
-            {showNoRtoField && (
-              <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <p className="text-sm text-blue-700 flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Les collaborateurs n'ont pas de RTO/RPO spécifique
-                </p>
-              </div>
-            )}
-
-            {/* 🔥 CORRECTION ICI : On affiche directement filteredProcesses, plus besoin de isLoading */}
             <div className="max-h-48 overflow-y-auto border rounded-lg divide-y divide-[#E8E4DC]">
               {filteredProcesses.length === 0 ? (
                 <div className="p-4 text-center text-sm text-gray-400">
@@ -647,6 +605,64 @@ const SelectFromCMDBDialog = ({
     }
   };
 
+  const renderRTOColumns = () => {
+    if (resourceType === 'App') {
+      return (
+        <>
+          <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">RTO</TableHead>
+          <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">RPO</TableHead>
+        </>
+      );
+    }
+    if (resourceType === 'Equipement' || resourceType === 'Fournisseur') {
+      return (
+        <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">RTO</TableHead>
+      );
+    }
+    return null;
+  };
+
+  const renderRTOValues = (r: any) => {
+    if (resourceType === 'App') {
+      return (
+        <>
+          <TableCell className="py-2 text-center">
+            {r.rto_hours ? (
+              <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px]">
+                {r.rto_hours}h
+              </Badge>
+            ) : (
+              <span className="text-[10px] text-[#172030]/30">—</span>
+            )}
+          </TableCell>
+          <TableCell className="py-2 text-center">
+            {r.rpo_hours ? (
+              <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[10px]">
+                {r.rpo_hours}h
+              </Badge>
+            ) : (
+              <span className="text-[10px] text-[#172030]/30">—</span>
+            )}
+          </TableCell>
+        </>
+      );
+    }
+    if (resourceType === 'Equipement' || resourceType === 'Fournisseur') {
+      return (
+        <TableCell className="py-2 text-center">
+          {r.rto_hours ? (
+            <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px]">
+              {r.rto_hours}h
+            </Badge>
+          ) : (
+            <span className="text-[10px] text-[#172030]/30">—</span>
+          )}
+        </TableCell>
+      );
+    }
+    return null;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
@@ -714,12 +730,13 @@ const SelectFromCMDBDialog = ({
                     Aucun(e) {getResourceLabel()} trouvé(e)
                   </p>
                 )}
-                <Button                  variant="outline"
+                <Button
+                  variant="outline"
                   size="sm"
                   className="text-[#2A5141] border-[#2A5141] hover:bg-[#F8F6F2]"
                   onClick={() => {
                     onOpenChange(false);
-                    onAddToCMDB();
+                    setTimeout(() => onAddToCMDB(), 150);
                   }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -740,6 +757,7 @@ const SelectFromCMDBDialog = ({
                     </TableHead>
                     <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Nom</TableHead>
                     <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Détail</TableHead>
+                    {renderRTOColumns()}
                     <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Informations</TableHead>
                     <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Statut</TableHead>
                   </TableRow>
@@ -780,6 +798,7 @@ const SelectFromCMDBDialog = ({
                         <TableCell className="py-2 text-sm text-[#172030]/60">
                           {getResourceDetails(r)}
                         </TableCell>
+                        {renderRTOValues(r)}
                         <TableCell className="py-2 text-sm text-[#172030]/50">
                           {getResourceExtra(r)}
                         </TableCell>
@@ -812,7 +831,7 @@ const SelectFromCMDBDialog = ({
                 className="text-[#2A5141]"
                 onClick={() => {
                   onOpenChange(false);
-                  onAddToCMDB();
+                  setTimeout(() => onAddToCMDB(), 150);
                 }}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" />
@@ -843,7 +862,7 @@ const SelectFromCMDBDialog = ({
 };
 
 // ============================================================
-// COMPOSANT - Dialogue d'ajout au référentiel - CORRIGÉ
+// COMPOSANT - Dialogue d'ajout au référentiel
 // ============================================================
 const AddToCMDBDialog = ({
   open,
@@ -926,8 +945,6 @@ const AddToCMDBDialog = ({
           break;
         case 'App':
           table = 'applications_it';
-          // ⚠️ CORRECTION : 'service' n'existe pas dans la table
-          // On ne garde que 'type' qui existe
           if (type) data.type = type;
           if (departmentId) data.department_id = departmentId;
           break;
@@ -1064,7 +1081,6 @@ const AddToCMDBDialog = ({
                   className="mt-1 border-[#E8E4DC]"
                 />
               </div>
-              {/* ⚠️ SUPPRESSION du champ 'Service' car la colonne n'existe pas dans la base */}
             </>
           )}
 
@@ -1108,7 +1124,7 @@ const AddToCMDBDialog = ({
 };
 
 // ============================================================
-// COMPOSANT - Dialogue de liaison de ressources
+// COMPOSANT - Dialogue de liaison de ressources (SANS RTO/RPO - hérités du référentiel)
 // ============================================================
 const LinkResourceDialog = ({
   open,
@@ -1135,16 +1151,9 @@ const LinkResourceDialog = ({
   onNavigateToCMDB?: () => void;
 }) => {
   const [selectedResourceId, setSelectedResourceId] = useState<string>("");
-  const [linkRtoHours, setLinkRtoHours] = useState<number>(4);
-  const [linkRpoHours, setLinkRpoHours] = useState<number>(2);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const rtoOptions = [1, 2, 4, 6, 8, 12, 24, 48, 72];
-  const rpoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24];
-
   useEffect(() => {
-    setLinkRtoHours(4);
-    setLinkRpoHours(2);
     setSelectedResourceId("");
     setSearchQuery("");
   }, [resourceType]);
@@ -1192,9 +1201,6 @@ const LinkResourceDialog = ({
     }
   };
 
-  const showRtoFields = resourceType === 'App' || resourceType === 'Equipement' || resourceType === 'Fournisseur';
-  const showRpoFields = resourceType === 'App';
-
   const resources = getResourcesForType();
 
   const handleLink = () => {
@@ -1202,16 +1208,8 @@ const LinkResourceDialog = ({
       toast({ title: "Erreur", description: "Veuillez sélectionner une ressource", variant: "destructive" });
       return;
     }
-    if (resourceType === 'App') {
-      onLink(resourceType, selectedResourceId, linkRtoHours, linkRpoHours);
-    } else if (resourceType === 'Equipement' || resourceType === 'Fournisseur') {
-      onLink(resourceType, selectedResourceId, linkRtoHours);
-    } else {
-      onLink(resourceType, selectedResourceId);
-    }
+    onLink(resourceType, selectedResourceId);
     setSelectedResourceId("");
-    setLinkRtoHours(4);
-    setLinkRpoHours(2);
     onOpenChange(false);
   };
 
@@ -1322,6 +1320,29 @@ const LinkResourceDialog = ({
                         <p className="text-xs text-gray-400">
                           {r.role || r.type || r.service || "—"}
                         </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {resourceType === 'App' && (
+                            <>
+                              {r.rto_hours && (
+                                <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px]">
+                                  RTO {r.rto_hours}h
+                                </Badge>
+                              )}
+                              {r.rpo_hours && (
+                                <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[9px]">
+                                  RPO {r.rpo_hours}h
+                                </Badge>
+                              )}
+                            </>
+                          )}
+                          {(resourceType === 'Equipement' || resourceType === 'Fournisseur') && (
+                            r.rto_hours && (
+                              <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px]">
+                                RTO {r.rto_hours}h
+                              </Badge>
+                            )
+                          )}
+                        </div>
                       </div>
                     </div>
                     {selectedResourceId === r.id && (
@@ -1334,48 +1355,6 @@ const LinkResourceDialog = ({
               )}
             </div>
           </div>
-
-          {showRtoFields && selectedResourceId && (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-[#172030]">
-                Objectifs de reprise pour cette liaison
-              </Label>
-              <div className={cn("grid gap-3", showRpoFields ? "grid-cols-2" : "grid-cols-1")}>
-                <div>
-                  <Label className="text-xs text-slate-500">RTO (heures) *</Label>
-                  <select
-                    value={linkRtoHours}
-                    onChange={(e) => setLinkRtoHours(Number(e.target.value))}
-                    className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
-                  >
-                    {rtoOptions.map((val) => (
-                      <option key={val} value={val}>{val}h</option>
-                    ))}
-                  </select>
-                </div>
-                {showRpoFields && (
-                  <div>
-                    <Label className="text-xs text-slate-500">RPO (heures) *</Label>
-                    <select
-                      value={linkRpoHours}
-                      onChange={(e) => setLinkRpoHours(Number(e.target.value))}
-                      className="w-full mt-1 px-3 py-2 border rounded-lg bg-white text-sm focus:ring-2 focus:ring-[#2A5141] focus:border-[#2A5141]"
-                    >
-                      {rpoOptions.map((val) => (
-                        <option key={val} value={val}>{val}h</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-400">
-                {showRpoFields 
-                  ? "Ces valeurs sont spécifiques à la liaison de cette application avec ce processus."
-                  : "Cette valeur est spécifique à la liaison de cette ressource avec ce processus."
-                }
-              </p>
-            </div>
-          )}
 
           <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
             {getResourceIcon()}
@@ -1528,7 +1507,7 @@ const PersonnelTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - EquipmentTableau AVEC GESTION DES LIENS
+// COMPOSANT - EquipmentTableau (AVEC RTO DU RÉFÉRENTIEL)
 // ============================================================
 const EquipmentTableau = ({ 
   equipment, 
@@ -1541,13 +1520,6 @@ const EquipmentTableau = ({
   linkedProcessesMap?: Record<string, any[]>;
   onManageLinks?: (id: string, name: string) => void;
 }) => {
-  const periods = [
-    { key: "P0_4H", label: "0-4h" },
-    { key: "P4_8H", label: "4-8h" },
-    { key: "P1D", label: "1j" },
-    { key: "P2D", label: "2j" },
-  ];
-
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -1555,19 +1527,13 @@ const EquipmentTableau = ({
           <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Équipement</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Type</TableHead>
-            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Unités</TableHead>
-            {periods.map((p) => (
-              <TableHead key={p.key} className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">
-                {p.label}
-              </TableHead>
-            ))}
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">RTO</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {equipment.map((eq, idx) => {
-            const quantities = eq.quantities || {};
             const displayProcesses = linkedProcessesMap?.[eq.id] || [];
             const visibleProcesses = displayProcesses.slice(0, 2);
             const remainingCount = displayProcesses.length - 2;
@@ -1584,14 +1550,15 @@ const EquipmentTableau = ({
                   <span className="text-sm font-medium text-[#172030]">{eq.name}</span>
                 </TableCell>
                 <TableCell className="py-2 text-sm text-[#172030]/60">{eq.type || "—"}</TableCell>
-                <TableCell className="py-2 text-center font-mono text-sm text-[#172030]">
-                  {eq.quantity || 1}
+                <TableCell className="py-2 text-center">
+                  {eq.rto_hours ? (
+                    <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-medium">
+                      RTO {eq.rto_hours}h
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">—</span>
+                  )}
                 </TableCell>
-                {periods.map((p) => (
-                  <TableCell key={p.key} className="py-2 text-center font-mono text-sm text-[#172030]">
-                    {quantities[p.key] || 0}
-                  </TableCell>
-                ))}
                 <TableCell className="py-2">
                   {displayProcesses.length > 0 ? (
                     <div className="flex flex-wrap items-center gap-1">
@@ -1661,7 +1628,7 @@ const EquipmentTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - AppTableau AVEC GESTION DES LIENS
+// COMPOSANT - AppTableau AVEC RTO/RPO
 // ============================================================
 const AppTableau = ({ 
   apps, 
@@ -1681,7 +1648,8 @@ const AppTableau = ({
           <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Application</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Type</TableHead>
-            {/* ❌ SUPPRESSION de la colonne "Service" car elle n'existe pas dans la table */}
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">RTO</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">RPO</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Alternative</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
@@ -1705,7 +1673,24 @@ const AppTableau = ({
                   <span className="text-sm font-medium text-[#172030]">{app.name}</span>
                 </TableCell>
                 <TableCell className="py-2 text-sm text-[#172030]/60">{app.type || "—"}</TableCell>
-                {/* ❌ SUPPRESSION de la cellule "Service" */}
+                <TableCell className="py-2 text-center">
+                  {app.rto_hours ? (
+                    <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-medium">
+                      RTO {app.rto_hours}h
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="py-2 text-center">
+                  {app.rpo_hours ? (
+                    <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[10px] font-medium">
+                      RPO {app.rpo_hours}h
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">—</span>
+                  )}
+                </TableCell>
                 <TableCell className="py-2 text-sm text-[#172030]/60">{app.remplacablepar || "—"}</TableCell>
                 <TableCell className="py-2">
                   {displayProcesses.length > 0 ? (
@@ -1722,12 +1707,15 @@ const AppTableau = ({
                               +{remainingCount}
                             </Badge>
                           </PopoverTrigger>
-                          <PopoverContent className="w-48 p-3 border-[#E8E4DC] bg-white shadow-lg">
+                          <PopoverContent className="w-64 p-3 border-[#E8E4DC] bg-white shadow-lg">
                             <div className="space-y-1.5">
                               <p className="text-xs font-medium text-[#172030]/60 uppercase tracking-wider mb-1">Tous les processus</p>
                               {displayProcesses.map((p: any) => (
-                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0">
-                                  {p.name}
+                                <div key={p.id} className="text-sm text-[#172030] py-0.5 border-b border-[#E8E4DC]/30 last:border-0 flex justify-between">
+                                  <span>{p.name}</span>
+                                  <span className="text-[10px] text-[#172030]/40">
+                                    RTO {p.rto_hours || 4}h {p.rpo_hours && `| RPO ${p.rpo_hours}h`}
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -1776,7 +1764,7 @@ const AppTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - SupplierTableau AVEC GESTION DES LIENS
+// COMPOSANT - SupplierTableau AVEC RTO DU RÉFÉRENTIEL
 // ============================================================
 const SupplierTableau = ({ 
   suppliers, 
@@ -1797,6 +1785,7 @@ const SupplierTableau = ({
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Prestataire</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Service</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Contact</TableHead>
+            <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">RTO</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2">Processus liés</TableHead>
             <TableHead className="text-[10px] font-semibold text-[#172030]/50 uppercase tracking-wider py-2 text-center">Actions</TableHead>
           </TableRow>
@@ -1820,6 +1809,15 @@ const SupplierTableau = ({
                 </TableCell>
                 <TableCell className="py-2 text-sm text-[#172030]/60">{sup.service || "—"}</TableCell>
                 <TableCell className="py-2 text-sm text-[#172030]/60">{sup.contact || "—"}</TableCell>
+                <TableCell className="py-2 text-center">
+                  {sup.rto_hours ? (
+                    <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-medium">
+                      RTO {sup.rto_hours}h
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-[#172030]/30">—</span>
+                  )}
+                </TableCell>
                 <TableCell className="py-2">
                   {displayProcesses.length > 0 ? (
                     <div className="flex flex-wrap items-center gap-1">
@@ -1889,7 +1887,7 @@ const SupplierTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - ProcessDetailView (SANS MTPD)
+// COMPOSANT - ProcessDetailView (AVEC DÉPENDANCES AMONT/AVAL)
 // ============================================================
 const ProcessDetailView = ({ 
   process, 
@@ -1914,6 +1912,18 @@ const ProcessDetailView = ({
 
   const score = computeMaxScoreFromImpacts(process.impacts);
   const crit = scoreToCriticality(score);
+
+  // ✅ Calcul des dépendances amont/aval
+  const upstreamDependencies = useMemo(() => {
+    if (!process.depends_on || process.depends_on.length === 0) return [];
+    return allProcesses.filter(p => process.depends_on.includes(p.id));
+  }, [process, allProcesses]);
+
+  const downstreamDependencies = useMemo(() => {
+    return allProcesses.filter(p => 
+      p.depends_on && p.depends_on.includes(process.id)
+    );
+  }, [process, allProcesses]);
 
   const loadLinkedResources = useCallback(async () => {
     console.log('🔄 ProcessDetailView - Chargement des ressources liées pour:', process.id, process.name);
@@ -1958,8 +1968,7 @@ const ProcessDetailView = ({
           .in('id', equipIds);
         
         const enrichedEquip = equipData?.map(eq => {
-          const link = equipLinks.find((l: any) => l.equipement_id === eq.id);
-          return { ...eq, _linkRto: link?.rto_hours || 4 };
+          return { ...eq, _linkRto: eq.rto_hours || 4 };
         });
         setLinkedEquipment(enrichedEquip || []);
         console.log('✅ Équipements chargés:', enrichedEquip?.length || 0);
@@ -2012,8 +2021,7 @@ const ProcessDetailView = ({
           .in('id', suppIds);
         
         const enrichedSuppliers = suppData?.map(sup => {
-          const link = suppLinks.find((l: any) => l.fournisseur_id === sup.id);
-          return { ...sup, _linkRto: link?.rto_hours || 4 };
+          return { ...sup, _linkRto: sup.rto_hours || 4 };
         });
         setLinkedSuppliers(enrichedSuppliers || []);
         console.log('✅ Fournisseurs chargés:', enrichedSuppliers?.length || 0);
@@ -2117,7 +2125,7 @@ const ProcessDetailView = ({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Code</p>
                 <p className="font-mono text-sm">{process.code || process.id?.slice(0, 8)}</p>
@@ -2126,8 +2134,8 @@ const ProcessDetailView = ({
                 <p className="text-xs text-gray-400">Responsable</p>
                 <p className="font-medium text-sm">{process.owner || "—"}</p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-400">RTO</p>
+              <div className="bg-gray-50 rounded-lg p-3 text-center col-span-2">
+                <p className="text-xs text-gray-400">RTO (objectif de reprise)</p>
                 <p className="font-medium text-sm">{process.rto || 0}h</p>
               </div>
             </div>
@@ -2138,6 +2146,44 @@ const ProcessDetailView = ({
                 <p className="text-sm">{process.description}</p>
               </div>
             )}
+
+            {/* ✅ DÉPENDANCES AMONT/AVAL */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                <p className="text-xs font-medium text-orange-700 flex items-center gap-1.5">
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  Dépendances amont ({upstreamDependencies.length})
+                </p>
+                {upstreamDependencies.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {upstreamDependencies.map(dep => (
+                      <Badge key={dep.id} variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[9px]">
+                        {dep.name}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-orange-400/60 mt-1">Aucune dépendance amont</p>
+                )}
+              </div>
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                <p className="text-xs font-medium text-blue-700 flex items-center gap-1.5">
+                  <ArrowDownLeft className="h-3.5 w-3.5" />
+                  Dépendances aval ({downstreamDependencies.length})
+                </p>
+                {downstreamDependencies.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {downstreamDependencies.map(dep => (
+                      <Badge key={dep.id} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px]">
+                        {dep.name}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-blue-400/60 mt-1">Aucune dépendance aval</p>
+                )}
+              </div>
+            </div>
 
             <div className="border rounded-lg overflow-hidden">
               <div className="bg-gray-100 px-4 py-2 font-medium text-sm flex items-center gap-2">
@@ -2155,7 +2201,6 @@ const ProcessDetailView = ({
                 </div>
               ) : (
                 <div className="p-4 grid grid-cols-2 gap-4">
-                  {/* RH */}
                   <div className="border rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Users className="h-4 w-4 text-blue-600" />
@@ -2187,7 +2232,6 @@ const ProcessDetailView = ({
                     )}
                   </div>
 
-                  {/* Équipements */}
                   <div className="border rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Monitor className="h-4 w-4 text-yellow-600" />
@@ -2202,9 +2246,9 @@ const ProcessDetailView = ({
                           <span className="truncate">{r.name}</span>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <Badge variant="outline" className="text-[10px]">{r.type || "—"}</Badge>
-                            {r._linkRto !== undefined && (
+                            {r.rto_hours && (
                               <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
-                                RTO {r._linkRto}h
+                                RTO {r.rto_hours}h
                               </Badge>
                             )}
                             <Button 
@@ -2224,7 +2268,6 @@ const ProcessDetailView = ({
                     )}
                   </div>
 
-                  {/* Apps */}
                   <div className="border rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Server className="h-4 w-4 text-purple-600" />
@@ -2238,14 +2281,14 @@ const ProcessDetailView = ({
                         <div key={a.id || i} className="text-sm border-b border-gray-100 py-1 flex justify-between items-center">
                           <span className="truncate">{a.name}</span>
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            {a._linkRto !== undefined && (
+                            {a.rto_hours && (
                               <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
-                                RTO {a._linkRto}h
+                                RTO {a.rto_hours}h
                               </Badge>
                             )}
-                            {a._linkRpo !== undefined && (
+                            {a.rpo_hours && (
                               <Badge variant="outline" className="text-[10px] bg-orange-50 border-orange-200 text-orange-700">
-                                RPO {a._linkRpo}h
+                                RPO {a.rpo_hours}h
                               </Badge>
                             )}
                             <Button 
@@ -2265,7 +2308,6 @@ const ProcessDetailView = ({
                     )}
                   </div>
 
-                  {/* Prestataires */}
                   <div className="border rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Handshake className="h-4 w-4 text-orange-600" />
@@ -2280,9 +2322,9 @@ const ProcessDetailView = ({
                           <span className="truncate">{r.name}</span>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <Badge variant="outline" className="text-[10px]">{r.service || "—"}</Badge>
-                            {r._linkRto !== undefined && (
+                            {r.rto_hours && (
                               <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
-                                RTO {r._linkRto}h
+                                RTO {r.rto_hours}h
                               </Badge>
                             )}
                             <Button 
@@ -2312,7 +2354,7 @@ const ProcessDetailView = ({
 };
 
 // ============================================================
-// COMPOSANT - DependencyMapView
+// COMPOSANT - DependencyMapView (AVEC DÉPENDANCES AMONT/AVAL)
 // ============================================================
 const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { processes: any[]; serviceName: string; onProcessesUpdate?: () => void }) => {
   const [hoveredProcess, setHoveredProcess] = useState<string | null>(null);
@@ -2343,8 +2385,9 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
     return map;
   }, [processes]);
 
+  // ✅ Déterminer les dépendances amont/aval
   const edges = useMemo(() => {
-    const list: { from: string; to: string; score: number; fromName: string; toName: string }[] = [];
+    const list: { from: string; to: string; score: number; fromName: string; toName: string; isUpstream: boolean }[] = [];
     for (const p of processes) {
       const deps = p.depends_on || p.dependsOn || [];
       for (const dep of deps) {
@@ -2355,7 +2398,8 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
           to: dep, 
           score: computeMaxScoreFromImpacts(target.impacts),
           fromName: p.name,
-          toName: target.name
+          toName: target.name,
+          isUpstream: true // ✅ Ce processus dépend de target (amont)
         });
       }
     }
@@ -2434,6 +2478,14 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
           <Badge variant="outline" className="flex items-center gap-1 text-xs">
             <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#22c55e" }} />Mineur
           </Badge>
+          <Badge variant="outline" className="flex items-center gap-1 text-xs bg-orange-50 border-orange-200 text-orange-700">
+            <ArrowUpRight className="h-2.5 w-2.5" />
+            Dépendance amont
+          </Badge>
+          <Badge variant="outline" className="flex items-center gap-1 text-xs bg-blue-50 border-blue-200 text-blue-700">
+            <ArrowDownLeft className="h-2.5 w-2.5" />
+            Dépendance aval
+          </Badge>
         </div>
       </div>
 
@@ -2467,10 +2519,12 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
       <div className="w-full overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 rounded-xl border">
         <svg viewBox="0 0 800 560" className="w-full h-[480px] cursor-pointer">
           <defs>
-            <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" /></marker>
-            <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f97316" /></marker>
-            <marker id="arrow-yellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#eab308" /></marker>
-            <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" /></marker>
+            <marker id="arrow-upstream-critical" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" /></marker>
+            <marker id="arrow-upstream-major" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f97316" /></marker>
+            <marker id="arrow-upstream-moderate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#eab308" /></marker>
+            <marker id="arrow-downstream-critical" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6" /></marker>
+            <marker id="arrow-downstream-major" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#60a5fa" /></marker>
+            <marker id="arrow-downstream-moderate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#93c5fd" /></marker>
           </defs>
           
           <rect x="0" y="0" width="800" height="560" fill="transparent" />
@@ -2482,17 +2536,33 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
             const targetProcess = processes.find(p => p.id === e.to);
             const criticality: Criticality = targetProcess ? scoreToCriticality(computeMaxScoreFromImpacts(targetProcess.impacts)) : "Mineur";
             
-            let marker = "url(#arrow-gray)";
-            if (criticality === "Critique") marker = "url(#arrow-red)";
-            else if (criticality === "Majeur") marker = "url(#arrow-orange)";
-            else if (criticality === "Modéré") marker = "url(#arrow-yellow)";
+            let marker = "";
+            if (e.isUpstream) {
+              if (criticality === "Critique") marker = "url(#arrow-upstream-critical)";
+              else if (criticality === "Majeur") marker = "url(#arrow-upstream-major)";
+              else if (criticality === "Modéré") marker = "url(#arrow-upstream-moderate)";
+              else marker = "url(#arrow-upstream-moderate)";
+            } else {
+              if (criticality === "Critique") marker = "url(#arrow-downstream-critical)";
+              else if (criticality === "Majeur") marker = "url(#arrow-downstream-major)";
+              else if (criticality === "Modéré") marker = "url(#arrow-downstream-moderate)";
+              else marker = "url(#arrow-downstream-moderate)";
+            }
+            
+            const strokeColor = e.isUpstream 
+              ? (criticality === "Critique" ? "#ef4444" : criticality === "Majeur" ? "#f97316" : "#eab308")
+              : (criticality === "Critique" ? "#3b82f6" : criticality === "Majeur" ? "#60a5fa" : "#93c5fd");
+            
+            const strokeDasharray = e.isUpstream ? "none" : "6 3";
             
             return (
-              <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                stroke={edgeColor(criticality)} 
-                strokeWidth={criticality === "Critique" ? 3.5 : 2.5} 
-                strokeDasharray={criticality === "Critique" ? "none" : "6 3"}
-                markerEnd={marker} 
+              <line 
+                key={i} 
+                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                stroke={strokeColor}
+                strokeWidth={criticality === "Critique" ? 3.5 : 2.5}
+                strokeDasharray={strokeDasharray}
+                markerEnd={marker}
                 opacity={hoveredProcess === e.from || hoveredProcess === e.to ? 1 : 0.7}
               />
             );
@@ -2549,7 +2619,8 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
         <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#eab308" }} />Modéré (score 2-3)</div>
         <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: "#22c55e" }} />Mineur (score {"<"} 2)</div>
         <div className="flex items-center gap-1 ml-4"><div className="w-6 h-0.5" style={{ backgroundColor: "#ef4444" }} />Dépendance critique</div>
-        <div className="flex items-center gap-1"><div className="w-6 h-0.5 bg-gray-400 border-t-2 border-dashed border-gray-400" />Dépendance standard</div>
+        <div className="flex items-center gap-1"><div className="w-6 h-0.5 bg-orange-400 border-t-2 border-dashed border-orange-400" />Dépendance amont</div>
+        <div className="flex items-center gap-1"><div className="w-6 h-0.5 bg-blue-400" />Dépendance aval</div>
       </div>
       
       <div className="text-center text-xs text-muted-foreground">
@@ -2603,6 +2674,47 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-muted/20 rounded-lg p-2 text-center"><Clock className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">RTO</p><p className="text-lg font-bold">{selectedProcess.rto}h</p></div>
                 <div className="bg-muted/20 rounded-lg p-2 text-center"><Database className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">RPO</p><p className="text-lg font-bold">{selectedProcess.rpo}h</p></div>
+              </div>
+
+              {/* ✅ Dépendances amont/aval dans le dialogue */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-orange-50 rounded-lg p-2 border border-orange-200">
+                  <p className="text-xs font-medium text-orange-700 flex items-center gap-1">
+                    <ArrowUpRight className="h-3 w-3" />
+                    Amont ({stats.incoming[selectedProcess.id] || 0})
+                  </p>
+                  {selectedProcess.depends_on && selectedProcess.depends_on.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedProcess.depends_on.map((depId: string) => {
+                        const dep = processes.find(p => p.id === depId);
+                        return dep ? (
+                          <Badge key={depId} variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[9px]">
+                            {dep.name}
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-orange-400/60">Aucune</p>
+                  )}
+                </div>
+                <div className="bg-blue-50 rounded-lg p-2 border border-blue-200">
+                  <p className="text-xs font-medium text-blue-700 flex items-center gap-1">
+                    <ArrowDownLeft className="h-3 w-3" />
+                    Aval ({stats.outgoing[selectedProcess.id] || 0})
+                  </p>
+                  {processes.filter(p => p.depends_on && p.depends_on.includes(selectedProcess.id)).length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {processes.filter(p => p.depends_on && p.depends_on.includes(selectedProcess.id)).map(dep => (
+                        <Badge key={dep.id} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px]">
+                          {dep.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-blue-400/60">Aucune</p>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -2672,7 +2784,7 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
 };
 
 // ============================================================
-// COMPOSANT - BIAServiceCard (SANS COMPLÉTION)
+// COMPOSANT - BIAServiceCard
 // ============================================================
 const BIAServiceCard = ({ 
   service,
@@ -2712,7 +2824,6 @@ const BIAServiceCard = ({
         </Badge>
       </div>
 
-      {/* Grid 3 colonnes sans Complétion */}
       <div className="grid grid-cols-3 gap-2 py-3 border-t border-b border-[#E8E4DC] mb-3">
         <div className="text-center">
           <div className={cn(
@@ -2793,18 +2904,16 @@ const DirectionSection = ({
 };
 
 // ============================================================
-// IMPACT MATRIX (SANS MTPD)
+// IMPACT MATRIX (SANS RPO POUR LES PROCESSUS)
 // ============================================================
 const ImpactMatrix = ({ 
   impacts, 
   isCritical,
   rto,
-  rpo,
 }: { 
   impacts: any;
   isCritical: boolean;
   rto?: number;
-  rpo?: number;
 }) => {
   const getSeverityPastelStyle = (value: number) => {
     if (value === 0) {
@@ -2857,7 +2966,7 @@ const ImpactMatrix = ({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <div className="bg-white rounded-lg p-3 border border-[#E8E4DC] shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -2869,18 +2978,6 @@ const ImpactMatrix = ({
             </div>
           </div>
           <p className="text-[10px] text-[#172030]/40">Délai de reprise max</p>
-        </div>
-        <div className="bg-white rounded-lg p-3 border border-[#E8E4DC] shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">RPO</p>
-              <p className="text-xl font-bold text-[#172030]">{rpo || 0}<span className="text-xs font-normal text-[#172030]/40 ml-0.5">h</span></p>
-            </div>
-            <div className="w-7 h-7 rounded-full bg-orange-50 flex items-center justify-center">
-              <Database className="h-3.5 w-3.5 text-orange-500" />
-            </div>
-          </div>
-          <p className="text-[10px] text-[#172030]/40">Perte de données max</p>
         </div>
       </div>
 
@@ -2982,7 +3079,7 @@ const ImpactMatrix = ({
 };
 
 // ============================================================
-// PROCESS ACCORDION (SANS MTPD)
+// PROCESS ACCORDION (AVEC DÉPENDANCES AMONT)
 // ============================================================
 const ProcessAccordion = ({ 
   process, 
@@ -2995,6 +3092,7 @@ const ProcessAccordion = ({
   resourceCount,
   canDelete,
   processResources,
+  allProcesses,
 }: { 
   process: any;
   index: number;
@@ -3011,6 +3109,7 @@ const ProcessAccordion = ({
     apps: any[];
     suppliers: any[];
   };
+  allProcesses?: any[];
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -3032,6 +3131,11 @@ const ProcessAccordion = ({
   const suppliersResources = processResources?.suppliers || [];
   
   const hasAnyResource = hrResources.length > 0 || equipmentResources.length > 0 || appsResources.length > 0 || suppliersResources.length > 0;
+
+  // ✅ Dépendances amont
+  const upstreamDeps = allProcesses?.filter(p => 
+    process.depends_on && process.depends_on.includes(p.id)
+  ) || [];
 
   return (
     <div className={cn(
@@ -3056,11 +3160,16 @@ const ProcessAccordion = ({
           </span>
           <span className="text-[10px] text-[#172030]/40 hidden sm:inline">Resp. {process.owner || "—"}</span>
           <span className="text-[10px] text-[#172030]/40 hidden md:inline">RTO {process.rto || 0}h</span>
-          <span className="text-[10px] text-[#172030]/40 hidden md:inline">RPO {process.rpo || 0}h</span>
           {resourceCount > 0 && (
             <span className="inline-flex items-center gap-1 text-[10px] bg-[#F8F6F2] px-1.5 py-0.5 rounded border border-[#E8E4DC] text-[#172030]/60">
               <LinkIcon className="h-2.5 w-2.5" />
               {resourceCount}
+            </span>
+          )}
+          {upstreamDeps.length > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200 text-orange-600">
+              <ArrowUpRight className="h-2.5 w-2.5" />
+              {upstreamDeps.length}
             </span>
           )}
         </div>
@@ -3129,8 +3238,24 @@ const ProcessAccordion = ({
             impacts={process.impacts}
             isCritical={isCritical}
             rto={process.rto}
-            rpo={process.rpo}
           />
+
+          {/* ✅ Dépendances amont dans l'accordéon */}
+          {upstreamDeps.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-[#E8E4DC]">
+              <p className="text-xs font-medium text-[#172030]/50 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                <ArrowUpRight className="h-3 w-3 text-orange-500" />
+                Dépendances amont ({upstreamDeps.length})
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {upstreamDeps.map(dep => (
+                  <Badge key={dep.id} variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[9px]">
+                    {dep.name}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 pt-4 border-t border-[#E8E4DC]">
             <div className="flex items-center gap-2 mb-3">
@@ -3177,8 +3302,8 @@ const ProcessAccordion = ({
                       {equipmentResources.map((eq, i) => (
                         <Badge key={eq.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
                           {eq.name} {eq.type && `(${eq.type})`}
-                          {eq._linkRto !== undefined && (
-                            <span className="ml-1 text-[10px] text-blue-600">RTO {eq._linkRto}h</span>
+                          {eq.rto_hours && (
+                            <span className="ml-1 text-[10px] text-blue-600">RTO {eq.rto_hours}h</span>
                           )}
                         </Badge>
                       ))}
@@ -3199,11 +3324,11 @@ const ProcessAccordion = ({
                       {appsResources.map((app, i) => (
                         <Badge key={app.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
                           {app.name}
-                          {app._linkRto !== undefined && (
-                            <span className="ml-1 text-[10px] text-blue-600">RTO {app._linkRto}h</span>
+                          {app.rto_hours && (
+                            <span className="ml-1 text-[10px] text-blue-600">RTO {app.rto_hours}h</span>
                           )}
-                          {app._linkRpo !== undefined && (
-                            <span className="ml-1 text-[10px] text-orange-600">RPO {app._linkRpo}h</span>
+                          {app.rpo_hours && (
+                            <span className="ml-1 text-[10px] text-orange-600">RPO {app.rpo_hours}h</span>
                           )}
                         </Badge>
                       ))}
@@ -3224,8 +3349,8 @@ const ProcessAccordion = ({
                       {suppliersResources.map((sup, i) => (
                         <Badge key={sup.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
                           {sup.name} {sup.service && `(${sup.service})`}
-                          {sup._linkRto !== undefined && (
-                            <span className="ml-1 text-[10px] text-blue-600">RTO {sup._linkRto}h</span>
+                          {sup.rto_hours && (
+                            <span className="ml-1 text-[10px] text-blue-600">RTO {sup.rto_hours}h</span>
                           )}
                         </Badge>
                       ))}
@@ -3242,7 +3367,7 @@ const ProcessAccordion = ({
 };
 
 // ============================================================
-// COMPOSANT - BIAFicheDetail (SANS MTPD) AVEC GESTION DES LIENS ET MISE À JOUR EN TEMPS RÉEL
+// COMPOSANT - BIAFicheDetail
 // ============================================================
 const BIAFicheDetail = ({
   service,
@@ -3305,18 +3430,19 @@ const BIAFicheDetail = ({
   const [selectedProcessDetail, setSelectedProcessDetail] = useState<any>(null);
   const [processResourcesCache, setProcessResourcesCache] = useState<Record<string, any>>({});
 
-  // États pour le dialogue de gestion des liens
   const [linkManagementOpen, setLinkManagementOpen] = useState(false);
   const [linkManagementResourceId, setLinkManagementResourceId] = useState<string>("");
   const [linkManagementResourceName, setLinkManagementResourceName] = useState<string>("");
   const [linkManagementResourceType, setLinkManagementResourceType] = useState<string>("HR");
   const [linkManagementLinkedProcesses, setLinkManagementLinkedProcesses] = useState<any[]>([]);
   
-  // Récupérer les processus du département
   const departmentProcesses = useMemo(() => {
     return processes.filter(p => p.entityId === service.id || p.department === service.name);
   }, [processes, service]);
 
+  // ============================================================
+  // CHARGEMENT DES RESSOURCES BIA
+  // ============================================================
   const loadBIAResources = useCallback(async () => {
     try {
       const { data: hrBiaLinks } = await supabase
@@ -3388,6 +3514,9 @@ const BIAFicheDetail = ({
     }
   }, [service.id]);
 
+  // ============================================================
+  // AJOUT / RETRAIT DES RESSOURCES BIA
+  // ============================================================
   const addResourceToBIA = async (type: string, resourceId: string) => {
     try {
       let table = '';
@@ -3527,6 +3656,9 @@ const BIAFicheDetail = ({
     }
   };
 
+  // ============================================================
+  // CHARGEMENT CMDB
+  // ============================================================
   const loadCMDBResources = useCallback(async () => {
     try {
       const { data: hrData } = await supabase.from('ressources_humaines').select('*');
@@ -3546,6 +3678,9 @@ const BIAFicheDetail = ({
     }
   }, []);
 
+  // ============================================================
+  // CHARGEMENT DES PROCESSUS LIÉS AVEC RTO/RPO
+  // ============================================================
   const loadLinkedProcessesForResources = useCallback(async () => {
     try {
       const newLinkedMap = {
@@ -3573,7 +3708,7 @@ const BIAFicheDetail = ({
 
         const { data: equipLinks } = await supabase
           .from('processus_equipements')
-          .select('equipement_id')
+          .select('equipement_id, rto_hours')
           .eq('processus_id', p.id);
         
         if (equipLinks) {
@@ -3581,14 +3716,18 @@ const BIAFicheDetail = ({
             const id = link.equipement_id;
             if (!newLinkedMap.equipment[id]) newLinkedMap.equipment[id] = [];
             if (!newLinkedMap.equipment[id].some((x: any) => x.id === p.id)) {
-              newLinkedMap.equipment[id].push({ id: p.id, name: p.name });
+              newLinkedMap.equipment[id].push({ 
+                id: p.id, 
+                name: p.name,
+                rto_hours: link.rto_hours 
+              });
             }
           }
         }
 
         const { data: appLinks } = await supabase
           .from('processus_applications')
-          .select('application_id')
+          .select('application_id, rto_hours, rpo_hours')
           .eq('processus_id', p.id);
         
         if (appLinks) {
@@ -3596,14 +3735,19 @@ const BIAFicheDetail = ({
             const id = link.application_id;
             if (!newLinkedMap.apps[id]) newLinkedMap.apps[id] = [];
             if (!newLinkedMap.apps[id].some((x: any) => x.id === p.id)) {
-              newLinkedMap.apps[id].push({ id: p.id, name: p.name });
+              newLinkedMap.apps[id].push({ 
+                id: p.id, 
+                name: p.name,
+                rto_hours: link.rto_hours,
+                rpo_hours: link.rpo_hours
+              });
             }
           }
         }
 
         const { data: suppLinks } = await supabase
           .from('processus_fournisseurs')
-          .select('fournisseur_id')
+          .select('fournisseur_id, rto_hours')
           .eq('processus_id', p.id);
         
         if (suppLinks) {
@@ -3611,7 +3755,11 @@ const BIAFicheDetail = ({
             const id = link.fournisseur_id;
             if (!newLinkedMap.suppliers[id]) newLinkedMap.suppliers[id] = [];
             if (!newLinkedMap.suppliers[id].some((x: any) => x.id === p.id)) {
-              newLinkedMap.suppliers[id].push({ id: p.id, name: p.name });
+              newLinkedMap.suppliers[id].push({ 
+                id: p.id, 
+                name: p.name,
+                rto_hours: link.rto_hours
+              });
             }
           }
         }
@@ -3623,6 +3771,9 @@ const BIAFicheDetail = ({
     }
   }, [departmentProcesses]);
 
+  // ============================================================
+  // INITIALISATION
+  // ============================================================
   useEffect(() => {
     const loadAll = async () => {
       setIsLoading(true);
@@ -3640,7 +3791,7 @@ const BIAFicheDetail = ({
   };
 
   // ============================================================
-  // FONCTIONS DE GESTION DES LIENS AVEC RTO/RPO ET MISE À JOUR EN TEMPS RÉEL
+  // GESTION DES LIENS
   // ============================================================
   const handleLinkProcessToResource = async (
     resourceType: string, 
@@ -3687,17 +3838,16 @@ const BIAFicheDetail = ({
 
       toast({ 
         title: "Succès", 
-        description: `Ressource liée au processus avec RTO${rtoHours ? ` ${rtoHours}h` : ''}${rpoHours ? ` et RPO ${rpoHours}h` : ''}` 
+        description: `Ressource liée au processus` 
       });
       
-      // 🔄 MISE À JOUR EN TEMPS RÉEL
       await loadLinkedProcessesForResources();
-      
-      // 🔄 Recharger les ressources du processus concerné
       await getProcessResources(processId);
-      
-      // 🔄 Précharger tous les processus pour mettre à jour le cache
       await preloadAllProcesses();
+      
+      if (linkManagementOpen) {
+        await refreshLinkManagementData();
+      }
       
     } catch (error: any) {
       console.error('Erreur liaison:', error);
@@ -3740,14 +3890,13 @@ const BIAFicheDetail = ({
 
       toast({ title: "Succès", description: "Ressource dissociée du processus" });
       
-      // 🔄 MISE À JOUR EN TEMPS RÉEL
       await loadLinkedProcessesForResources();
-      
-      // 🔄 Recharger les ressources du processus concerné
       await getProcessResources(processId);
-      
-      // 🔄 Précharger tous les processus pour mettre à jour le cache
       await preloadAllProcesses();
+      
+      if (linkManagementOpen) {
+        await refreshLinkManagementData();
+      }
       
     } catch (error: any) {
       console.error('Erreur dissociation:', error);
@@ -3755,63 +3904,63 @@ const BIAFicheDetail = ({
     }
   };
 
+  const refreshLinkManagementData = useCallback(async () => {
+    if (!linkManagementResourceId || !linkManagementResourceType) return;
+    
+    let table = '';
+    let idColumn = '';
+    let selectFields = 'processus_id';
+    if (linkManagementResourceType !== 'HR') {
+      selectFields = 'processus_id, rto_hours, rpo_hours';
+    }
+
+    switch(linkManagementResourceType) {
+      case 'HR':
+        table = 'processus_ressources_humaines';
+        idColumn = 'ressource_humaine_id';
+        break;
+      case 'Equipement':
+        table = 'processus_equipements';
+        idColumn = 'equipement_id';
+        break;
+      case 'App':
+        table = 'processus_applications';
+        idColumn = 'application_id';
+        break;
+      case 'Fournisseur':
+        table = 'processus_fournisseurs';
+        idColumn = 'fournisseur_id';
+        break;
+      default: return;
+    }
+
+    const { data } = await supabase
+      .from(table)
+      .select(selectFields)
+      .eq(idColumn, linkManagementResourceId);
+
+    if (data) {
+      const linkedIds = data.map((d: any) => d.processus_id);
+      const linked = departmentProcesses
+        .filter(p => linkedIds.includes(p.id))
+        .map(p => {
+          const linkData = (data as any[]).find((d: any) => d.processus_id === p.id);
+          return {
+            ...p,
+            _linkRto: linkData?.rto_hours || 4,
+            _linkRpo: linkData?.rpo_hours || 2,
+          };
+        });
+      setLinkManagementLinkedProcesses(linked);
+    }
+  }, [linkManagementResourceId, linkManagementResourceType, departmentProcesses]);
+
   const openLinkManagement = (resourceType: string, resourceId: string, resourceName: string) => {
     setLinkManagementResourceType(resourceType);
     setLinkManagementResourceId(resourceId);
     setLinkManagementResourceName(resourceName);
-    
-    // Précharger les processus liés pour le dialogue
-    const loadLinkedForDialog = async () => {
-      let table = '';
-      let idColumn = '';
-      let selectFields = 'processus_id';
-      if (resourceType !== 'HR') {
-        selectFields = 'processus_id, rto_hours, rpo_hours';
-      }
-
-      switch(resourceType) {
-        case 'HR':
-          table = 'processus_ressources_humaines';
-          idColumn = 'ressource_humaine_id';
-          break;
-        case 'Equipement':
-          table = 'processus_equipements';
-          idColumn = 'equipement_id';
-          break;
-        case 'App':
-          table = 'processus_applications';
-          idColumn = 'application_id';
-          break;
-        case 'Fournisseur':
-          table = 'processus_fournisseurs';
-          idColumn = 'fournisseur_id';
-          break;
-        default: return;
-      }
-
-      const { data } = await supabase
-        .from(table)
-        .select(selectFields)
-        .eq(idColumn, resourceId);
-
-      if (data) {
-        const linkedIds = data.map((d: any) => d.processus_id);
-        const linked = departmentProcesses
-          .filter(p => linkedIds.includes(p.id))
-          .map(p => {
-            const linkData = (data as any[]).find((d: any) => d.processus_id === p.id);
-            return {
-              ...p,
-              _linkRto: linkData?.rto_hours || 4,
-              _linkRpo: linkData?.rpo_hours || 2,
-            };
-          });
-        setLinkManagementLinkedProcesses(linked);
-      }
-    };
-    
-    loadLinkedForDialog();
     setLinkManagementOpen(true);
+    refreshLinkManagementData();
   };
 
   const getProcessResources = useCallback(async (processId: string) => {
@@ -3982,7 +4131,6 @@ const BIAFicheDetail = ({
 
       toast({ title: "Succès", description: `Ressource liée au processus "${linkProcess.name}"` });
       
-      // 🔄 MISE À JOUR EN TEMPS RÉEL
       await loadLinkedProcessesForResources();
       await getProcessResources(linkProcess.id);
       await preloadAllProcesses();
@@ -4026,7 +4174,10 @@ const BIAFicheDetail = ({
         allResources={allHR}
         addedResourceIds={addedHR.map(r => r.id)}
         onSelect={(ids) => addMultipleResourcesToBIA('HR', ids)}
-        onAddToCMDB={() => { setShowSelectHR(false); setShowAddHR(true); }}
+        onAddToCMDB={() => { 
+          setShowSelectHR(false); 
+          setTimeout(() => setShowAddHR(true), 150);
+        }}
         title="Ajouter des collaborateurs"
         description="Sélectionnez un ou plusieurs collaborateurs depuis le référentiel pour les ajouter à la fiche BIA"
       />
@@ -4038,7 +4189,10 @@ const BIAFicheDetail = ({
         allResources={allEquipment}
         addedResourceIds={addedEquipment.map(r => r.id)}
         onSelect={(ids) => addMultipleResourcesToBIA('Equipement', ids)}
-        onAddToCMDB={() => { setShowSelectEquipment(false); setShowAddEquipment(true); }}
+        onAddToCMDB={() => { 
+          setShowSelectEquipment(false); 
+          setTimeout(() => setShowAddEquipment(true), 150);
+        }}
         title="Ajouter des équipements"
         description="Sélectionnez un ou plusieurs équipements depuis le référentiel pour les ajouter à la fiche BIA"
       />
@@ -4050,7 +4204,10 @@ const BIAFicheDetail = ({
         allResources={allApps}
         addedResourceIds={addedApps.map(r => r.id)}
         onSelect={(ids) => addMultipleResourcesToBIA('App', ids)}
-        onAddToCMDB={() => { setShowSelectApp(false); setShowAddApp(true); }}
+        onAddToCMDB={() => { 
+          setShowSelectApp(false); 
+          setTimeout(() => setShowAddApp(true), 150);
+        }}
         title="Ajouter des applications"
         description="Sélectionnez une ou plusieurs applications depuis le référentiel pour les ajouter à la fiche BIA"
       />
@@ -4062,7 +4219,10 @@ const BIAFicheDetail = ({
         allResources={allSuppliers}
         addedResourceIds={addedSuppliers.map(r => r.id)}
         onSelect={(ids) => addMultipleResourcesToBIA('Fournisseur', ids)}
-        onAddToCMDB={() => { setShowSelectSupplier(false); setShowAddSupplier(true); }}
+        onAddToCMDB={() => { 
+          setShowSelectSupplier(false); 
+          setTimeout(() => setShowAddSupplier(true), 150);
+        }}
         title="Ajouter des prestataires"
         description="Sélectionnez un ou plusieurs prestataires depuis le référentiel pour les ajouter à la fiche BIA"
       />
@@ -4099,7 +4259,6 @@ const BIAFicheDetail = ({
         departmentId={service.id}
       />
 
-      {/* Dialogue de gestion des liens avec RTO/RPO */}
       <LinkProcessDialog
         open={linkManagementOpen}
         onOpenChange={setLinkManagementOpen}
@@ -4114,6 +4273,7 @@ const BIAFicheDetail = ({
         onUnlink={(processId) => 
           handleUnlinkProcessFromResource(linkManagementResourceType, linkManagementResourceId, processId)
         }
+        onRefresh={refreshLinkManagementData}
       />
 
       <LinkResourceDialog
@@ -4191,34 +4351,42 @@ const BIAFicheDetail = ({
             1. Évaluation d'impact
           </TabsTrigger>
           <TabsTrigger 
-            value="resources"
+            value="hr"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent px-4 py-2.5 text-sm font-medium text-gray-500 data-[state=active]:text-indigo-600"
           >
-            2. Ressources requises
+            <Users className="h-4 w-4 mr-1.5" />
+            2. Collaborateurs
+          </TabsTrigger>
+          <TabsTrigger 
+            value="equipment"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent px-4 py-2.5 text-sm font-medium text-gray-500 data-[state=active]:text-indigo-600"
+          >
+            <Monitor className="h-4 w-4 mr-1.5" />
+            3. Équipements
           </TabsTrigger>
           <TabsTrigger 
             value="apps"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent px-4 py-2.5 text-sm font-medium text-gray-500 data-[state=active]:text-indigo-600"
           >
-            3. Applications IT
+            4. Applications IT
           </TabsTrigger>
           <TabsTrigger 
             value="suppliers"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent px-4 py-2.5 text-sm font-medium text-gray-500 data-[state=active]:text-indigo-600"
           >
-            4. Prestataires
+            5. Prestataires
           </TabsTrigger>
           <TabsTrigger 
             value="dependencies"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent px-4 py-2.5 text-sm font-medium text-gray-500 data-[state=active]:text-indigo-600"
           >
-            5. Dépendances
+            6. Dépendances
           </TabsTrigger>
           <TabsTrigger 
             value="workarounds"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent px-4 py-2.5 text-sm font-medium text-gray-500 data-[state=active]:text-indigo-600"
           >
-            6. Contournements de crise
+            7. Contournements de crise
           </TabsTrigger>
         </TabsList>
 
@@ -4250,6 +4418,7 @@ const BIAFicheDetail = ({
                   resourceCount={count}
                   canDelete={canDelete}
                   processResources={resources}
+                  allProcesses={departmentProcesses}
                 />
               );
             })}
@@ -4266,10 +4435,10 @@ const BIAFicheDetail = ({
           </Button>
         </TabsContent>
 
-        <TabsContent value="resources" className="pt-4">
+        <TabsContent value="hr" className="pt-4">
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div>Ressources minimales pour maintenir les processus critiques dans la première semaine après un sinistre.</div>
+            <div>Ressources humaines minimales pour maintenir les processus critiques dans la première semaine après un sinistre.</div>
           </div>
 
           <div className="flex flex-wrap gap-2 mb-4">
@@ -4281,15 +4450,6 @@ const BIAFicheDetail = ({
             >
               <Users className="h-3.5 w-3.5" />
               Ajouter un collaborateur
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="gap-1.5 border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2]"
-              onClick={() => setShowSelectEquipment(true)}
-            >
-              <Monitor className="h-3.5 w-3.5" />
-              Ajouter un équipement
             </Button>
           </div>
 
@@ -4315,9 +4475,32 @@ const BIAFicheDetail = ({
             </div>
           </div>
 
+          <div className="mt-6">
+            <TableauDeMonteeEnCharge processes={departmentProcesses} serviceName={service.name} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="equipment" className="pt-4">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800 mb-4 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div>Équipements requis pour maintenir les processus critiques dans la première semaine après un sinistre.</div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-1.5 border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2]"
+              onClick={() => setShowSelectEquipment(true)}
+            >
+              <Monitor className="h-3.5 w-3.5" />
+              Ajouter un équipement
+            </Button>
+          </div>
+
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
             <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
-              <Package className="h-4 w-4 text-[#2A5141]" />
+              <Monitor className="h-4 w-4 text-[#2A5141]" />
               <h4 className="font-medium text-[#172030] flex-1 text-sm">Équipements & infrastructure</h4>
               <span className="text-xs text-[#172030]/40">{addedEquipment.length} équipement{addedEquipment.length > 1 ? 's' : ''}</span>
             </div>
@@ -4335,10 +4518,6 @@ const BIAFicheDetail = ({
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="mt-6">
-            <TableauDeMonteeEnCharge processes={departmentProcesses} serviceName={service.name} />
           </div>
         </TabsContent>
 
@@ -4472,7 +4651,7 @@ const BIAFicheDetail = ({
 };
 
 // ============================================================
-// COMPOSANT PRINCIPAL - ProcessInventory (inchangé)
+// COMPOSANT PRINCIPAL - ProcessInventory
 // ============================================================
 export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) => void; onCreate: () => void }) => {
   const { processes, deleteProcess } = useBia();
@@ -4494,9 +4673,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   const [wizardProcessId, setWizardProcessId] = useState<string | undefined>(undefined);
   const [wizardDepartmentId, setWizardDepartmentId] = useState<string | undefined>(undefined);
 
-  // ============================================================
-  // ÉTAT POUR LE COMPTAGE DES RESSOURCES PAR PROCESSUS
-  // ============================================================
   const [resourceCountByProcess, setResourceCountByProcess] = useState<Record<string, number>>({});
   const [isLoadingResources, setIsLoadingResources] = useState(true);
 
@@ -4505,6 +4681,112 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
   const getChildren = (parentId: string) => entities.filter(e => e.parentId === parentId);
 
   const getDepartmentCount = (entityId: string) => getChildren(entityId).length;
+
+  // ============================================================
+  // SÉCURITÉ GLOBALE : CLEANUP POINTER-EVENTS
+  // ============================================================
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const cleanupPointerEvents = () => {
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      const hasVisibleDialog = Array.from(dialogs).some(
+        (el) => (el as HTMLElement).style.display !== 'none' && (el as HTMLElement).offsetParent !== null
+      );
+
+      if (!hasVisibleDialog) {
+        const body = document.body;
+        if (body.style.pointerEvents === 'none') {
+          console.log('🧹 Cleanup: pointer-events réinitialisé');
+          body.style.pointerEvents = '';
+        }
+      }
+    };
+
+    intervalId = setInterval(cleanupPointerEvents, 500);
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      document.body.style.pointerEvents = '';
+    };
+  }, []);
+
+  // ============================================================
+  // NAVIGATION DEPUIS LE DASHBOARD
+  // ============================================================
+  useEffect(() => {
+    const handleOpenProcessDetail = (event: CustomEvent) => {
+      const { processId } = event.detail || {};
+      if (!processId) return;
+
+      const process = processes.find(p => p.id === processId);
+      if (!process) return;
+
+      const entity = entities.find(e => e.id === process.entityId);
+      if (!entity) return;
+
+      const getRoot = (entityId: string): string | null => {
+        const e = entities.find(ent => ent.id === entityId);
+        if (!e) return null;
+        if (e.parentId === null) return e.id;
+        return getRoot(e.parentId);
+      };
+
+      const rootId = getRoot(entity.id);
+      if (!rootId) return;
+
+      const getDirection = (entityId: string): string | null => {
+        const e = entities.find(ent => ent.id === entityId);
+        if (!e) return null;
+        if (e.parentId === rootId) return e.id;
+        return getDirection(e.parentId || '');
+      };
+
+      const directionId = getDirection(entity.id);
+
+      const deptProcesses = processes.filter(p => p.entityId === entity.id || p.department === entity.name);
+      
+      const criticalCount = deptProcesses.filter(p => {
+        const score = computeMaxScoreFromImpacts(p.impacts);
+        return score >= 4;
+      }).length;
+      
+      let totalResources = 0;
+      for (const p of deptProcesses) {
+        totalResources += resourceCountByProcess[p.id] || 0;
+      }
+
+      const rate = deptProcesses.length > 0 ? calculateCompletionRate(deptProcesses) : 0;
+      const status = getBIAStatus(deptProcesses, entity.lastUpdated);
+
+      const service: ServiceBIA = {
+        id: entity.id,
+        name: entity.name,
+        owner: deptProcesses.length > 0 ? deptProcesses[0]?.owner || "—" : "—",
+        coordinator: "—",
+        processCount: deptProcesses.length,
+        criticalCount,
+        resources: totalResources,
+        completionRate: rate,
+        status: status as BIAStatus,
+        lastReviewed: entity.lastUpdated,
+        description: entity.description || "",
+      };
+
+      setSelectedRoot(rootId);
+      setSelectedDirection(directionId);
+      setSelectedService(service);
+      setShowBIADetail(true);
+      setViewLevel("directions");
+    };
+
+    window.addEventListener('openProcessDetail', handleOpenProcessDetail as EventListener);
+    return () => {
+      window.removeEventListener('openProcessDetail', handleOpenProcessDetail as EventListener);
+    };
+  }, [processes, entities, resourceCountByProcess]);
 
   // ============================================================
   // CHARGEMENT DU COMPTE DE RESSOURCES PAR PROCESSUS
@@ -4778,11 +5060,28 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-[#172030] flex items-center gap-2" style={{ fontFamily: "Playfair Display, serif" }}>
-              <Building2 className="h-7 w-7 text-[#2A5141]" /> Processus &amp; BIA
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-[#2A5141] hover:bg-[#F8F6F2] gap-1"
+                onClick={goToRoot}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Retour
+              </Button>
+              <div className="text-sm text-[#172030]/40 flex items-center gap-1">
+                <span>Entreprises</span>
+                <ChevronRightIcon className="h-3 w-3" />
+                <span className="font-medium text-[#172030]">{entityName(selectedRoot)}</span>
+              </div>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-[#172030] flex items-center gap-2 mt-2" style={{ fontFamily: "Playfair Display, serif" }}>
+              <Building2 className="h-7 w-7 text-[#2A5141]" /> 
+              {entityName(selectedRoot)}
             </h1>
             <p className="text-[#172030]/60 mt-1 text-sm">
-              Sélectionnez un service pour ouvrir sa fiche d'analyse d'impact. Chaque fiche recense les processus critiques, leurs ressources et leurs objectifs de reprise.
+              Processus &amp; BIA — Sélectionnez un service pour ouvrir sa fiche d'analyse d'impact.
             </p>
           </div>
         </div>

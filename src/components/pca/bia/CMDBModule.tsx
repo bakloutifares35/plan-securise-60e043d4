@@ -221,7 +221,7 @@ const SkeletonGrid = ({ count = 6 }: { count?: number }) => {
 };
 
 // ============================================================
-// COMPOSANT - ResourceRow
+// COMPOSANT - ResourceRow (AVEC RTO/RPO)
 // ============================================================
 const ResourceRow = ({ 
   resource, 
@@ -263,6 +263,120 @@ const ResourceRow = ({
     return resource.process_names || [];
   };
 
+  // ✅ RENDER DES COLONNES SPÉCIFIQUES AVEC RTO/RPO
+  const renderSpecificColumns = () => {
+    switch(type) {
+      case 'hr':
+        return (
+          <>
+            <TableCell className="py-3 text-sm text-gray-500">{resource.role || "—"}</TableCell>
+            <TableCell className="py-3 text-sm text-gray-500">{resource.email || "—"}</TableCell>
+          </>
+        );
+      case 'equipment':
+        return (
+          <>
+            <TableCell className="py-3 text-sm text-gray-500">{resource.type || "—"}</TableCell>
+            <TableCell className="py-3 text-sm text-gray-500">{resource.quantity || 1}</TableCell>
+            {/* ✅ RTO pour équipement */}
+            <TableCell className="py-3 text-sm text-center">
+              {resource.rto_hours ? (
+                <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px]">
+                  {resource.rto_hours}h
+                </Badge>
+              ) : (
+                <span className="text-xs text-gray-300">—</span>
+              )}
+            </TableCell>
+          </>
+        );
+      case 'app':
+        return (
+          <>
+            <TableCell className="py-3 text-sm text-gray-500">{resource.remplacablepar || "—"}</TableCell>
+            {/* ✅ RTO pour application */}
+            <TableCell className="py-3 text-sm text-center">
+              {resource.rto_hours ? (
+                <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px]">
+                  {resource.rto_hours}h
+                </Badge>
+              ) : (
+                <span className="text-xs text-gray-300">—</span>
+              )}
+            </TableCell>
+            {/* ✅ RPO pour application */}
+            <TableCell className="py-3 text-sm text-center">
+              {resource.rpo_hours ? (
+                <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[10px]">
+                  {resource.rpo_hours}h
+                </Badge>
+              ) : (
+                <span className="text-xs text-gray-300">—</span>
+              )}
+            </TableCell>
+          </>
+        );
+      case 'supplier':
+        return (
+          <>
+            <TableCell className="py-3 text-sm text-gray-500">{resource.service || "—"}</TableCell>
+            <TableCell className="py-3 text-sm text-gray-500">{resource.contact || "—"}</TableCell>
+            {/* ✅ RTO pour prestataire */}
+            <TableCell className="py-3 text-sm text-center">
+              {resource.rto_hours ? (
+                <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px]">
+                  {resource.rto_hours}h
+                </Badge>
+              ) : (
+                <span className="text-xs text-gray-300">—</span>
+              )}
+            </TableCell>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // ✅ RENDER DES EN-TÊTES SPÉCIFIQUES
+  const renderSpecificHeaders = () => {
+    switch(type) {
+      case 'hr':
+        return (
+          <>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3">Rôle</TableHead>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3">Email</TableHead>
+          </>
+        );
+      case 'equipment':
+        return (
+          <>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3">Type</TableHead>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3 text-center">Qté</TableHead>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3 text-center">RTO</TableHead>
+          </>
+        );
+      case 'app':
+        return (
+          <>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3">Alternative</TableHead>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3 text-center">RTO</TableHead>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3 text-center">RPO</TableHead>
+          </>
+        );
+      case 'supplier':
+        return (
+          <>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3">Service</TableHead>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3">Contact</TableHead>
+            <TableHead className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider py-3 text-center">RTO</TableHead>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <TableRow 
       className={cn(
@@ -295,27 +409,7 @@ const ResourceRow = ({
         </div>
       </TableCell>
 
-      {type === 'hr' && (
-        <>
-          <TableCell className="py-3 text-sm text-gray-500">{resource.role || "—"}</TableCell>
-          <TableCell className="py-3 text-sm text-gray-500">{resource.email || "—"}</TableCell>
-        </>
-      )}
-      {type === 'equipment' && (
-        <>
-          <TableCell className="py-3 text-sm text-gray-500">{resource.type || "—"}</TableCell>
-          <TableCell className="py-3 text-sm text-gray-500">{resource.quantity || 1}</TableCell>
-        </>
-      )}
-      {type === 'app' && (
-        <TableCell className="py-3 text-sm text-gray-500">{resource.remplacablepar || "—"}</TableCell>
-      )}
-      {type === 'supplier' && (
-        <>
-          <TableCell className="py-3 text-sm text-gray-500">{resource.service || "—"}</TableCell>
-          <TableCell className="py-3 text-sm text-gray-500">{resource.contact || "—"}</TableCell>
-        </>
-      )}
+      {renderSpecificColumns()}
 
       <TableCell className="py-3">
         <Popover open={showProcesses} onOpenChange={setShowProcesses}>
@@ -391,7 +485,7 @@ const ResourceRow = ({
 };
 
 // ============================================================
-// COMPOSANT - ResourceTable
+// COMPOSANT - ResourceTable (AVEC RTO/RPO)
 // ============================================================
 const ResourceTable = ({
   data,
@@ -408,21 +502,28 @@ const ResourceTable = ({
   onViewProcesses: (resource: any) => void;
   onClick: (resource: any) => void;
 }) => {
+  // ✅ Construction dynamique des colonnes avec RTO/RPO
   const getColumns = () => {
     const base = [{ key: 'name', label: 'Nom' }];
-    const specific = {
+    const specific: Record<ResourceType, { key: string; label: string; textAlign?: 'center' }[]> = {
       hr: [
         { key: 'role', label: 'Rôle' },
         { key: 'email', label: 'Email' },
       ],
       equipment: [
         { key: 'type', label: 'Type' },
-        { key: 'quantity', label: 'Qté' },
+        { key: 'quantity', label: 'Qté', textAlign: 'center' },
+        { key: 'rto_hours', label: 'RTO', textAlign: 'center' },
       ],
-      app: [{ key: 'remplacablepar', label: 'Alternative' }],
+      app: [
+        { key: 'remplacablepar', label: 'Alternative' },
+        { key: 'rto_hours', label: 'RTO', textAlign: 'center' },
+        { key: 'rpo_hours', label: 'RPO', textAlign: 'center' },
+      ],
       supplier: [
         { key: 'service', label: 'Service' },
         { key: 'contact', label: 'Contact' },
+        { key: 'rto_hours', label: 'RTO', textAlign: 'center' },
       ],
     };
     return [...base, ...(specific[type] || []), { key: 'usage', label: 'Utilisé par' }];
@@ -436,7 +537,13 @@ const ResourceTable = ({
         <TableHeader>
           <TableRow className="bg-gray-50/80 border-b border-gray-200">
             {columns.map((col) => (
-              <TableHead key={col.key} className="text-xs font-semibold text-gray-400 uppercase tracking-wider py-3">
+              <TableHead 
+                key={col.key} 
+                className={cn(
+                  "text-xs font-semibold text-gray-400 uppercase tracking-wider py-3",
+                  col.textAlign === 'center' && "text-center"
+                )}
+              >
                 {col.label}
               </TableHead>
             ))}
@@ -465,7 +572,7 @@ const ResourceTable = ({
 };
 
 // ============================================================
-// COMPOSANT - ResourceGridCard
+// COMPOSANT - ResourceGridCard (AVEC RTO/RPO)
 // ============================================================
 const ResourceGridCard = ({
   resource,
@@ -511,6 +618,40 @@ const ResourceGridCard = ({
   const isUsed = resource.used_by_count > 0;
   const hasCriticalImpact = resource.max_criticality === 'Critique';
 
+  // ✅ Afficher les métriques RTO/RPO selon le type
+  const renderMetrics = () => {
+    switch(type) {
+      case 'app':
+        return (
+          <div className="flex items-center gap-3 mt-1">
+            {resource.rto_hours && (
+              <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px]">
+                RTO {resource.rto_hours}h
+              </Badge>
+            )}
+            {resource.rpo_hours && (
+              <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[9px]">
+                RPO {resource.rpo_hours}h
+              </Badge>
+            )}
+          </div>
+        );
+      case 'equipment':
+      case 'supplier':
+        return (
+          <div className="flex items-center gap-3 mt-1">
+            {resource.rto_hours && (
+              <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[9px]">
+                RTO {resource.rto_hours}h
+              </Badge>
+            )}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div 
       className={cn(
@@ -542,6 +683,7 @@ const ResourceGridCard = ({
           )}
           <div className="min-w-0">
             <p className="font-medium text-gray-900 truncate">{resource.name}</p>
+            {renderMetrics()}
             {hasCriticalImpact && (
               <Badge className="mt-0.5 bg-red-100 text-red-700 border-red-200 text-[10px]">
                 <AlertOctagon className="h-3 w-3 mr-1" />
@@ -611,7 +753,7 @@ const ResourceGridCard = ({
 };
 
 // ============================================================
-// COMPOSANT - ResourceDetailSheet
+// COMPOSANT - ResourceDetailSheet (AVEC RTO/RPO)
 // ============================================================
 const ResourceDetailSheet = ({
   resource,
@@ -739,6 +881,7 @@ const ResourceDetailSheet = ({
     }
   };
 
+  // ✅ FORMULAIRES AVEC RTO/RPO
   const renderForm = () => {
     const forms = {
       hr: (
@@ -814,6 +957,20 @@ const ResourceDetailSheet = ({
               className="mt-1"
             />
           </div>
+          {/* ✅ RTO pour équipement */}
+          <div>
+            <Label className="text-sm font-medium">RTO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={formData.rto_hours || 4} 
+              onChange={(e) => setFormData({ ...formData, rto_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 4"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Délai maximal de reprise pour cet équipement</p>
+          </div>
         </div>
       ),
       app: (
@@ -836,6 +993,34 @@ const ResourceDetailSheet = ({
               className="mt-1"
               placeholder="Ex: Alternative manuelle"
             />
+          </div>
+          {/* ✅ RTO pour application */}
+          <div>
+            <Label className="text-sm font-medium">RTO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={formData.rto_hours || 4} 
+              onChange={(e) => setFormData({ ...formData, rto_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 4"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Délai maximal de reprise pour cette application</p>
+          </div>
+          {/* ✅ RPO pour application */}
+          <div>
+            <Label className="text-sm font-medium">RPO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.25}
+              step={0.25}
+              value={formData.rpo_hours || 2} 
+              onChange={(e) => setFormData({ ...formData, rpo_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 2"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Perte de données maximale acceptée</p>
           </div>
         </div>
       ),
@@ -869,6 +1054,20 @@ const ResourceDetailSheet = ({
               placeholder="Nom du contact"
             />
           </div>
+          {/* ✅ RTO pour prestataire */}
+          <div>
+            <Label className="text-sm font-medium">RTO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={formData.rto_hours || 4} 
+              onChange={(e) => setFormData({ ...formData, rto_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 4"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Délai de reprise contractuel</p>
+          </div>
         </div>
       ),
     };
@@ -877,6 +1076,41 @@ const ResourceDetailSheet = ({
   };
 
   const linkedProcesses = processes || [];
+
+  // ✅ AFFICHAGE DES MÉTRIQUES DANS LE DÉTAIL
+  const renderMetricsDisplay = () => {
+    switch(type) {
+      case 'app':
+        return (
+          <>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-500">RTO</span>
+              <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700">
+                {resource.rto_hours || 4}h
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-500">RPO</span>
+              <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700">
+                {resource.rpo_hours || 2}h
+              </Badge>
+            </div>
+          </>
+        );
+      case 'equipment':
+      case 'supplier':
+        return (
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-gray-500">RTO</span>
+            <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700">
+              {resource.rto_hours || 4}h
+            </Badge>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <Sheet open={open} onOpenChange={(newOpen) => {
@@ -1001,6 +1235,7 @@ const ResourceDetailSheet = ({
                           <span className="text-sm text-gray-500">Quantité</span>
                           <span className="text-sm text-gray-700">{resource.quantity || 1}</span>
                         </div>
+                        {renderMetricsDisplay()}
                       </>
                     )}
                     {type === 'app' && (
@@ -1009,6 +1244,7 @@ const ResourceDetailSheet = ({
                           <span className="text-sm text-gray-500">Alternative</span>
                           <span className="text-sm text-gray-700">{resource.remplacablepar || "—"}</span>
                         </div>
+                        {renderMetricsDisplay()}
                       </>
                     )}
                     {type === 'supplier' && (
@@ -1021,6 +1257,7 @@ const ResourceDetailSheet = ({
                           <span className="text-sm text-gray-500">Contact</span>
                           <span className="text-sm text-gray-700">{resource.contact || "—"}</span>
                         </div>
+                        {renderMetricsDisplay()}
                       </>
                     )}
                   </div>
@@ -1110,7 +1347,7 @@ const ResourceDetailSheet = ({
 };
 
 // ============================================================
-// COMPOSANT - ImportExcelDialog (SANS RTO/RPO)
+// COMPOSANT - ImportExcelDialog (AVEC RTO/RPO)
 // ============================================================
 const ImportExcelDialog = ({
   open,
@@ -1142,6 +1379,7 @@ const ImportExcelDialog = ({
   
   const [detectedResourceType, setDetectedResourceType] = useState<ResourceType | null>(null);
 
+  // ✅ CHAMPS AVEC RTO/RPO
   const fieldDefinitions: Record<ResourceType, { key: string; label: string; required: boolean }[]> = {
     hr: [
       { key: 'name', label: 'Nom', required: true },
@@ -1153,15 +1391,19 @@ const ImportExcelDialog = ({
       { key: 'name', label: 'Nom', required: true },
       { key: 'type', label: 'Type', required: false },
       { key: 'quantity', label: 'Quantité', required: false },
+      { key: 'rto_hours', label: 'RTO (heures)', required: false },
     ],
     app: [
       { key: 'name', label: 'Nom', required: true },
       { key: 'remplacablepar', label: 'Alternative', required: false },
+      { key: 'rto_hours', label: 'RTO (heures)', required: false },
+      { key: 'rpo_hours', label: 'RPO (heures)', required: false },
     ],
     supplier: [
       { key: 'name', label: 'Nom', required: true },
       { key: 'service', label: 'Service', required: false },
       { key: 'contact', label: 'Contact', required: false },
+      { key: 'rto_hours', label: 'RTO (heures)', required: false },
     ],
   };
 
@@ -1171,7 +1413,7 @@ const ImportExcelDialog = ({
     const typeIndicators: Record<ResourceType, string[]> = {
       hr: ['email', 'mail', '@', 'telephone', 'phone', 'mobile', 'prenom', 'prénom', 'role', 'fonction'],
       equipment: ['type', 'modele', 'modèle', 'reference', 'référence', 'quantite', 'quantité', 'serie', 'série', 'marque'],
-      app: ['alternative', 'version', 'editeur', 'éditeur', 'logiciel', 'application'],
+      app: ['alternative', 'version', 'editeur', 'éditeur', 'logiciel', 'application', 'rpo'],
       supplier: ['service', 'contact', 'siret', 'adresse', 'activite', 'activité', 'fournisseur', 'prestataire']
     };
 
@@ -1283,7 +1525,12 @@ const ImportExcelDialog = ({
           const newRow: any = {};
           for (const [header, fieldKey] of Object.entries(mapping)) {
             if (fieldKey) {
-              newRow[fieldKey] = row[header] || '';
+              let value = row[header] || '';
+              // Nettoyer les valeurs numériques pour RTO/RPO
+              if (['rto_hours', 'rpo_hours'].includes(fieldKey) && typeof value === 'string') {
+                value = parseFloat(value.replace(',', '.')) || 4;
+              }
+              newRow[fieldKey] = value;
             }
           }
           return newRow;
@@ -1349,12 +1596,13 @@ const ImportExcelDialog = ({
     toast.success('Ligne supprimée');
   };
 
+  // ✅ TEMPLATES AVEC RTO/RPO
   const generateTemplate = () => {
-    const fieldLabels = {
+    const fieldLabels: Record<ResourceType, string[]> = {
       hr: ['Nom', 'Rôle', 'Email', 'Téléphone'],
-      equipment: ['Nom', 'Type', 'Quantité'],
-      app: ['Nom', 'Alternative'],
-      supplier: ['Nom', 'Service', 'Contact'],
+      equipment: ['Nom', 'Type', 'Quantité', 'RTO (heures)'],
+      app: ['Nom', 'Alternative', 'RTO (heures)', 'RPO (heures)'],
+      supplier: ['Nom', 'Service', 'Contact', 'RTO (heures)'],
     };
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([fieldLabels[resourceType]]);
@@ -1401,9 +1649,22 @@ const ImportExcelDialog = ({
       const item: any = {};
       
       for (const [key, value] of Object.entries(row)) {
-        if (key !== '_index' && key !== '_isNew' && value !== undefined) {
-          item[key] = value;
+        if (key !== '_index' && key !== '_isNew' && value !== undefined && value !== '') {
+          // Convertir les valeurs numériques
+          if (['rto_hours', 'rpo_hours'].includes(key)) {
+            item[key] = typeof value === 'string' ? parseFloat(value.replace(',', '.')) || 4 : value;
+          } else {
+            item[key] = value;
+          }
         }
+      }
+
+      // Définir des valeurs par défaut pour RTO/RPO si absentes
+      if (['app', 'equipment', 'supplier'].includes(tableName) && item.rto_hours === undefined) {
+        item.rto_hours = 4;
+      }
+      if (tableName === 'applications_it' && item.rpo_hours === undefined) {
+        item.rpo_hours = 2;
       }
 
       if (!item.name) {
@@ -1536,7 +1797,11 @@ const ImportExcelDialog = ({
                         const newRow: any = {};
                         for (const [header, fieldKey] of Object.entries(mapping)) {
                           if (fieldKey) {
-                            newRow[fieldKey] = row[header] || '';
+                            let value = row[header] || '';
+                            if (['rto_hours', 'rpo_hours'].includes(fieldKey) && typeof value === 'string') {
+                              value = parseFloat(value.replace(',', '.')) || 4;
+                            }
+                            newRow[fieldKey] = value;
                           }
                         }
                         return newRow;
@@ -1615,13 +1880,19 @@ const ImportExcelDialog = ({
                                 {isEditing ? (
                                   <Input
                                     value={editRowData[fieldKey] || ''}
-                                    onChange={(e) => setEditRowData({ ...editRowData, [fieldKey]: e.target.value })}
+                                    onChange={(e) => {
+                                      let value = e.target.value;
+                                      if (['rto_hours', 'rpo_hours'].includes(fieldKey)) {
+                                        value = value.replace(',', '.');
+                                      }
+                                      setEditRowData({ ...editRowData, [fieldKey]: value });
+                                    }}
                                     className="h-8 text-sm border-gray-200"
                                     placeholder="..."
                                   />
                                 ) : (
                                   <span className="text-sm text-gray-700">
-                                    {row[fieldKey] || ''}
+                                    {typeof row[fieldKey] === 'number' ? row[fieldKey] : (row[fieldKey] || '')}
                                   </span>
                                 )}
                               </TableCell>
@@ -2148,7 +2419,8 @@ const CMDBModule = () => {
     openDetail(resource);
   };
 
-  const renderForm = (type: ResourceType, data: any, onChange: (d: any) => void) => {
+  // ✅ FORMULAIRE DE CRÉATION AVEC RTO/RPO
+  const renderCreateForm = (type: ResourceType, data: any, onChange: (d: any) => void) => {
     const forms = {
       hr: (
         <>
@@ -2223,6 +2495,19 @@ const CMDBModule = () => {
               className="mt-1"
             />
           </div>
+          <div>
+            <Label className="text-sm font-medium">RTO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={data.rto_hours || 4} 
+              onChange={(e) => onChange({ ...data, rto_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 4"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Délai maximal de reprise pour cet équipement</p>
+          </div>
         </>
       ),
       app: (
@@ -2245,6 +2530,32 @@ const CMDBModule = () => {
               placeholder="Ex: Backup manuel..."
               className="mt-1"
             />
+          </div>
+          <div>
+            <Label className="text-sm font-medium">RTO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={data.rto_hours || 4} 
+              onChange={(e) => onChange({ ...data, rto_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 4"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Délai maximal de reprise pour cette application</p>
+          </div>
+          <div>
+            <Label className="text-sm font-medium">RPO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.25}
+              step={0.25}
+              value={data.rpo_hours || 2} 
+              onChange={(e) => onChange({ ...data, rpo_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 2"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Perte de données maximale acceptée</p>
           </div>
         </>
       ),
@@ -2277,6 +2588,19 @@ const CMDBModule = () => {
               placeholder="Nom du contact"
               className="mt-1"
             />
+          </div>
+          <div>
+            <Label className="text-sm font-medium">RTO (heures)</Label>
+            <Input 
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={data.rto_hours || 4} 
+              onChange={(e) => onChange({ ...data, rto_hours: Number(e.target.value) })}
+              className="mt-1"
+              placeholder="Ex: 4"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Délai de reprise contractuel</p>
           </div>
         </>
       ),
@@ -2526,7 +2850,7 @@ const CMDBModule = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
-            {renderForm(activeTab, formData, setFormData)}
+            {renderCreateForm(activeTab, formData, setFormData)}
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => {
@@ -2558,7 +2882,7 @@ const CMDBModule = () => {
             </SheetDescription>
           </SheetHeader>
           <div className="space-y-4 py-4">
-            {selectedResource && renderForm(activeTab, formData, setFormData)}
+            {selectedResource && renderCreateForm(activeTab, formData, setFormData)}
           </div>
           <div className="flex gap-2 pt-4 border-t border-gray-200">
             <Button variant="outline" onClick={() => {

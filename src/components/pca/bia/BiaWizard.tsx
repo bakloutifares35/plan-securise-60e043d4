@@ -39,7 +39,6 @@ const AVAILABILITY_PERIODS = [
   { id: "P1M", label: "1mois" },
 ];
 
-// Ordre des périodes pour la cascade (du plus court au plus long)
 const TIME_PERIODS_ORDERED = ["P0_4H", "P4_8H", "P1D", "P2D", "P1W", "P2W", "P1M"];
 
 // ==================== STYLES PASTEL POUR LES SCORES ====================
@@ -298,84 +297,141 @@ const ImpactCell = ({
 };
 
 // ════════════════════════════════════════════════════════════════════
-// ✅ STEPS - SEULEMENT 3 ÉTAPES (MTPD SUPPRIMÉ)
+// ✅ STEPS - 3 ÉTAPES (RPO SUPPRIMÉ)
 // ════════════════════════════════════════════════════════════════════
 const STEPS = [
   { id: "general", label: "Général", icon: "📋" },
   { id: "impact", label: "Impact métier", icon: "🎯" },
-  { id: "rto", label: "Délais & RTO/RPO", icon: "⏱️" }
+  { id: "rto", label: "Délais & RTO", icon: "⏱️" }
 ];
 
-const getFirstCriticalPeriod = (impacts: any): { periodId: TimePeriod; hours: number; maxScore: number } | null => {
-  const candidates: { periodId: TimePeriod; hours: number; maxScore: number }[] = [];
-  for (const period of PERIODS) {
-    const periodData = impacts[period.id];
+// ════════════════════════════════════════════════════════════════════
+// ✅ LOGIQUE DE CALCUL RTO — 100% JUSTE ET AUDITABLE
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * CONSTANTES DE CALCUL
+ * - CRITICAL_THRESHOLD = 4 (Sévère) — aligné avec isProcessCritical
+ * - RTO_SAFETY_MARGIN = 0.8 — marge de sécurité de 20%, paramétrable par tenant
+ */
+const CRITICAL_THRESHOLD = 4;
+const RTO_SAFETY_MARGIN = 0.8;
+
+/**
+ * Arrondit un RTO à une valeur opérationnelle cohérente
+ * Évite les valeurs non exploitables comme 269h
+ */
+const roundToOperationalRTO = (hours: number): number => {
+  if (hours <= 4) return Math.max(0.5, Math.round(hours * 2) / 2);
+  if (hours <= 8) return Math.round(hours);
+  if (hours <= 24) return Math.round(hours / 2) * 2;
+  if (hours <= 168) return Math.round(hours / 12) * 12;
+  if (hours <= 336) return Math.round(hours / 24) * 24;
+  return Math.round(hours / 24) * 24;
+};
+
+interface RTOSuggestion {
+  rto: number; // RTO arrondi opérationnel
+  rawSuggestedRTO: number; // Valeur brute calculée (pour traçabilité)
+  mtpd: number | null; // MTPD identifié, null si jamais critique
+  triggerAxis: ImpactAxis | null;
+  triggerPeriodLabel: string | null;
+  lastSafePeriodLabel: string | null;
+  safetyMarginApplied: number; // Marge effectivement appliquée
+}
+
+/**
+ * CALCUL DU RTO SUGGÉRÉ — MÉTHODOLOGIE BCI/ISO 22301
+ * 
+ * PRINCIPE :
+ * 1. MTPD = durée de la PREMIÈRE période où un axe atteint le score 4 (Sévère)
+ * 2. Le RTO doit être STRICTEMENT INFÉRIEUR au MTPD
+ * 3. La marge de sécurité s'applique sur la DERNIÈRE période VÉRIFIÉE tolérable
+ *    (celle juste avant le MTPD) — jamais sur le MTPD lui-même
+ * 4. Cas particulier : critique dès la première période → marge sur MTPD
+ * 5. Cas particulier : jamais critique → RTO = dernière période observée
+ */
+const getSuggestedRTO = (impacts: any): RTOSuggestion => {
+  // Trier les périodes de la plus courte à la plus longue
+  const sortedPeriods = [...PERIODS].sort((a, b) => a.hours - b.hours);
+  let criticalIndex = -1;
+  let triggerAxis: ImpactAxis | null = null;
+
+  // 1. Recherche de la PREMIÈRE période critique (score >= 4)
+  for (let i = 0; i < sortedPeriods.length; i++) {
+    const periodData = impacts[sortedPeriods[i].id];
     if (!periodData) continue;
-    let maxScore = 0;
     for (const axis of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
-      const score = periodData[axis] || 0;
-      if (score > maxScore) maxScore = score;
+      if ((periodData[axis] || 0) >= CRITICAL_THRESHOLD) {
+        criticalIndex = i;
+        triggerAxis = axis;
+        break;
+      }
     }
-    if (maxScore >= 3) {
-      candidates.push({ periodId: period.id, hours: period.hours, maxScore });
-    }
+    if (criticalIndex !== -1) break;
   }
-  if (candidates.length === 0) return null;
-  return candidates.reduce((min, curr) => (curr.hours < min.hours ? curr : min));
+
+  // 2. Cas particulier : JAMAIS CRITIQUE sur l'horizon évalué
+  //    → Le processus est tolérable sur toute la durée observée
+  if (criticalIndex === -1) {
+    const lastPeriod = sortedPeriods[sortedPeriods.length - 1];
+    const rto = roundToOperationalRTO(lastPeriod.hours);
+    return {
+      rto,
+      rawSuggestedRTO: lastPeriod.hours,
+      mtpd: null,
+      triggerAxis: null,
+      triggerPeriodLabel: null,
+      lastSafePeriodLabel: lastPeriod.label,
+      safetyMarginApplied: 0, // Aucune marge car aucun seuil franchi
+    };
+  }
+
+  const mtpd = sortedPeriods[criticalIndex].hours;
+  const triggerPeriodLabel = sortedPeriods[criticalIndex].label;
+
+  // 3. Cas particulier : CRITIQUE DÈS LA PREMIÈRE PÉRIODE (P0_4H)
+  //    → Marge appliquée directement sur le MTPD
+  if (criticalIndex === 0) {
+    const rawRTO = mtpd * RTO_SAFETY_MARGIN;
+    const rto = roundToOperationalRTO(rawRTO);
+    return {
+      rto,
+      rawSuggestedRTO: rawRTO,
+      mtpd,
+      triggerAxis,
+      triggerPeriodLabel,
+      lastSafePeriodLabel: null,
+      safetyMarginApplied: 1 - RTO_SAFETY_MARGIN, // 20%
+    };
+  }
+
+  // 4. CAS GÉNÉRAL : Marge appliquée sur la DERNIÈRE PÉRIODE VÉRIFIÉE TOLÉRABLE
+  const lastSafePeriod = sortedPeriods[criticalIndex - 1];
+  const rawRTO = lastSafePeriod.hours * RTO_SAFETY_MARGIN;
+  const rto = roundToOperationalRTO(rawRTO);
+  return {
+    rto,
+    rawSuggestedRTO: rawRTO,
+    mtpd,
+    triggerAxis,
+    triggerPeriodLabel,
+    lastSafePeriodLabel: lastSafePeriod.label,
+    safetyMarginApplied: 1 - RTO_SAFETY_MARGIN, // 20%
+  };
 };
 
-const getSuggestedRTOFromImpacts = (impacts: any): number => {
-  const criticalPeriod = getFirstCriticalPeriod(impacts);
-  if (!criticalPeriod) return 72;
-  const hours = criticalPeriod.hours;
-  const maxScore = criticalPeriod.maxScore;
-  if (maxScore >= 5) {
-    if (hours <= 4) return 2;
-    if (hours <= 8) return 4;
-    if (hours <= 24) return 8;
-    if (hours <= 48) return 24;
-    if (hours <= 168) return 72;
-    return 168;
-  }
-  if (maxScore >= 4) {
-    if (hours <= 4) return 4;
-    if (hours <= 8) return 8;
-    if (hours <= 24) return 24;
-    if (hours <= 48) return 48;
-    return 72;
-  }
-  if (maxScore >= 3) {
-    if (hours <= 24) return 24;
-    if (hours <= 48) return 48;
-    return 72;
-  }
-  return 72;
+/**
+ * Trouve l'option RTO la plus proche dans la liste des options disponibles
+ */
+const findClosestRTOOption = (value: number, options: number[]): number => {
+  if (options.length === 0) return value;
+  return options.reduce((prev, curr) => {
+    return Math.abs(curr - value) < Math.abs(prev - value) ? curr : prev;
+  });
 };
 
-const getSuggestedRPOFromImpacts = (impacts: any): number => {
-  const criticalPeriod = getFirstCriticalPeriod(impacts);
-  if (!criticalPeriod) return 12;
-  const hours = criticalPeriod.hours;
-  const maxScore = criticalPeriod.maxScore;
-  if (maxScore >= 5) {
-    if (hours <= 4) return 0.5;
-    if (hours <= 8) return 1;
-    if (hours <= 24) return 2;
-    if (hours <= 48) return 4;
-    if (hours <= 168) return 12;
-    return 24;
-  }
-  if (maxScore >= 4) {
-    if (hours <= 4) return 1;
-    if (hours <= 8) return 2;
-    if (hours <= 24) return 4;
-    return 8;
-  }
-  if (maxScore >= 3) {
-    return 8;
-  }
-  return 12;
-};
+// ════════════════════════════════════════════════════════════════════
 
 const getSafeImpacts = (impacts: any) => {
   if (!impacts || typeof impacts !== 'object') {
@@ -410,6 +466,7 @@ const getSafeImpacts = (impacts: any) => {
   return safeImpacts;
 };
 
+// ✅ newProcess - sans RPO
 const newProcess = (): Process => ({
   id: `pr_${Date.now()}`,
   name: "",
@@ -420,7 +477,6 @@ const newProcess = (): Process => ({
   status: "Actif",
   impacts: emptyImpacts(),
   rto: 24,
-  rpo: 4,
   mtpd: 72,
   mbco: 80,
   resources: [],
@@ -430,7 +486,7 @@ const newProcess = (): Process => ({
 });
 
 // ════════════════════════════════════════════════════════════════════
-// ✅ COMPOSANT PRINCIPAL - 3 ÉTAPES (MTPD SUPPRIMÉ)
+// ✅ COMPOSANT PRINCIPAL
 // ════════════════════════════════════════════════════════════════════
 export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: string; initialEntityId?: string; onDone: () => void }) => {
   const { processes, upsertProcess } = useBia();
@@ -487,15 +543,15 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   const criticality = scoreToCriticality(globalScore);
   const requiresPca = globalScore >= 3;
   const scorePercentage = Math.round((globalScore / 5) * 100);
-  const suggestedRTO = getSuggestedRTOFromImpacts(data.impacts);
-  const suggestedRPO = getSuggestedRPOFromImpacts(data.impacts);
+
+  // ✅ Calcul du RTO suggéré avec la nouvelle logique
+  const rtoSuggestion = useMemo(() => getSuggestedRTO(data.impacts), [data.impacts]);
 
   const canNext = () => {
     if (step === 0) return data.name && data.entityId && data.owner;
     return true;
   };
 
-  // ✅ Sauvegarde optimisée
   const submit = async () => {
     if (isSaving) return;
     
@@ -512,7 +568,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
     try {
       await upsertProcess(processToSave);
       toast({ title: "BIA enregistré", description: `${data.name} — Criticité: ${criticality}` });
-      // ✅ Fermer immédiatement après sauvegarde
       onDone();
     } catch (error) {
       console.error("Erreur lors de la sauvegarde:", error);
@@ -521,16 +576,39 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
     }
   };
 
+  // ✅ Applique la suggestion RTO avec arrondi à l'option la plus proche
   const applySuggestions = () => {
-    update("rto", suggestedRTO);
-    update("rpo", suggestedRPO);
-    toast({ title: "Suggestions appliquées", description: `RTO: ${suggestedRTO}h, RPO: ${suggestedRPO}h` });
+    const rawValue = rtoSuggestion.rawSuggestedRTO;
+    const closestOption = findClosestRTOOption(rawValue, rtoOptions);
+    update("rto", closestOption);
+    
+    // Construction du message de justification
+    let message = "";
+    if (rtoSuggestion.mtpd !== null && rtoSuggestion.triggerAxis) {
+      const axisLabel = AXIS_LABELS[rtoSuggestion.triggerAxis] || rtoSuggestion.triggerAxis;
+      if (rtoSuggestion.lastSafePeriodLabel) {
+        // Cas général
+        message = `Basé sur: ${axisLabel} devient Sévère à ${rtoSuggestion.triggerPeriodLabel} (MTPD = ${rtoSuggestion.mtpd}h) — dernière période vérifiée tolérable: ${rtoSuggestion.lastSafePeriodLabel} (${Math.round(rtoSuggestion.mtpd / 2)}h) — marge de sécurité de ${Math.round(rtoSuggestion.safetyMarginApplied * 100)}% → RTO suggéré ${Math.round(rawValue)}h, arrondi à ${closestOption}h.`;
+      } else {
+        // Critique dès la première période
+        message = `Basé sur: ${axisLabel} devient Sévère dès la première période mesurée (${rtoSuggestion.triggerPeriodLabel}, MTPD = ${rtoSuggestion.mtpd}h) — marge de sécurité de ${Math.round(rtoSuggestion.safetyMarginApplied * 100)}% appliquée directement → RTO suggéré ${Math.round(rawValue)}h, arrondi à ${closestOption}h.`;
+      }
+    } else {
+      // Jamais critique
+      message = `Aucun impact n'atteint le seuil critique (score ≥ 4) sur l'horizon évalué (1 mois) — RTO suggéré basé sur la durée maximale observée: ${Math.round(rawValue)}h, arrondi à ${closestOption}h.`;
+    }
+    
+    toast({ 
+      title: "Suggestion RTO appliquée", 
+      description: message,
+      duration: 8000,
+    });
   };
   
   const isLastStep = step === STEPS.length - 1;
 
-  const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168];
-  const rpoOptions = [0.25, 0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72];
+  // ✅ Options RTO étendues jusqu'à 720h (1 mois)
+  const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168, 240, 336, 504, 720];
   
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -767,40 +845,89 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             </div>
           )}
 
-          {/* ÉTAPE 3 - DÉLAIS & RTO/RPO (MTPD SUPPRIMÉ) */}
+          {/* ÉTAPE 3 - DÉLAIS & RTO (SANS RPO) */}
           {step === 2 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">3</div>
-                  <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Délais de reprise &amp; RTO/RPO</h2>
+                  <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Délais de reprise &amp; RTO</h2>
                 </div>
                 {data.name && <Badge variant="outline">⏱️ {data.name}</Badge>}
               </div>
               
               <div className="bg-[#F8F6F2] rounded-lg p-4 border border-[#E8E4DC]">
                 <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-[#172030]">RTO / RPO suggérés</p>
-                    <p className="text-xs text-[#172030]/50">Basés sur la première période d'impact significatif</p>
-                    <div className="flex gap-4 mt-2">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-[#172030]">RTO suggéré</p>
+                    <p className="text-xs text-[#172030]/50">
+                      Méthodologie BCI/ISO 22301 — seuil critique : Sévère (score ≥ 4)
+                    </p>
+                    <div className="flex gap-4 mt-2 flex-wrap">
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
                         <span className="text-xs text-[#172030]/50">RTO suggéré</span>
-                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRTO}h</p>
+                        <p className="text-xl font-bold text-[#2A5141]">{rtoSuggestion.rto}h</p>
                       </div>
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
-                        <span className="text-xs text-[#172030]/50">RPO suggéré</span>
-                        <p className="text-xl font-bold text-[#2A5141]">{suggestedRPO}h</p>
+                        <span className="text-xs text-[#172030]/50">MTPD identifié</span>
+                        <p className="text-xl font-bold text-[#172030]">
+                          {rtoSuggestion.mtpd !== null ? `${rtoSuggestion.mtpd}h` : '—'}
+                        </p>
                       </div>
+                      {rtoSuggestion.triggerAxis && rtoSuggestion.triggerPeriodLabel && (
+                        <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
+                          <span className="text-xs text-[#172030]/50">Déclencheur critique</span>
+                          <p className="text-sm font-medium text-[#172030]">
+                            {AXIS_LABELS[rtoSuggestion.triggerAxis]} à {rtoSuggestion.triggerPeriodLabel}
+                          </p>
+                        </div>
+                      )}
+                      {rtoSuggestion.safetyMarginApplied > 0 && (
+                        <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
+                          <span className="text-xs text-[#172030]/50">Marge de sécurité</span>
+                          <p className="text-sm font-medium text-[#172030]">
+                            {Math.round(rtoSuggestion.safetyMarginApplied * 100)}%
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <Button onClick={applySuggestions} variant="outline" size="sm" className="border-[#2A5141] text-[#2A5141] hover:bg-[#2A5141]/10">
-                    Appliquer les suggestions
+                    Appliquer la suggestion
                   </Button>
+                </div>
+                
+                {/* Explication détaillée et traçable */}
+                <div className="mt-3 pt-3 border-t border-[#E8E4DC]">
+                  <p className="text-xs text-[#172030]/60">
+                    {rtoSuggestion.triggerAxis && rtoSuggestion.mtpd !== null ? (
+                      <>
+                        <span className="font-medium text-[#172030]">Justification BCI/ISO 22301 :</span>{' '}
+                        {AXIS_LABELS[rtoSuggestion.triggerAxis]} devient Sévère à partir de{' '}
+                        <strong>{rtoSuggestion.triggerPeriodLabel}</strong> (MTPD = {rtoSuggestion.mtpd}h).
+                        {rtoSuggestion.lastSafePeriodLabel ? (
+                          <> Dernière période vérifiée tolérable : <strong>{rtoSuggestion.lastSafePeriodLabel}</strong> ({Math.round(rtoSuggestion.mtpd / 2)}h) — marge de sécurité de {Math.round(rtoSuggestion.safetyMarginApplied * 100)}% appliquée → RTO suggéré <strong>{rtoSuggestion.rto}h</strong>.</>
+                        ) : (
+                          <> Impact critique dès la première période mesurée — marge de sécurité de {Math.round(rtoSuggestion.safetyMarginApplied * 100)}% appliquée directement sur le MTPD → RTO suggéré <strong>{rtoSuggestion.rto}h</strong>.</>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-medium text-[#172030]">Justification :</span>{' '}
+                        Aucun impact n'atteint le seuil critique (score ≥ 4) sur l'horizon évalué (1 mois) — 
+                        le processus est tolérable sur toute la durée observée. RTO suggéré basé sur la durée maximale observée : <strong>{rtoSuggestion.rto}h</strong>.
+                      </>
+                    )}
+                  </p>
+                  {rtoSuggestion.rawSuggestedRTO !== rtoSuggestion.rto && (
+                    <p className="text-[10px] text-[#172030]/40 mt-1">
+                      Valeur brute calculée : {Math.round(rtoSuggestion.rawSuggestedRTO)}h — arrondie à une valeur opérationnelle : {rtoSuggestion.rto}h.
+                    </p>
+                  )}
                 </div>
               </div>
               
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-1">
                 <div>
                   <Label>RTO — Recovery Time Objective (heures)</Label>
                   <Select 
@@ -818,26 +945,9 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-1">Délai maximal de reprise visé.</p>
-                </div>
-                <div>
-                  <Label>RPO — Recovery Point Objective (heures)</Label>
-                  <Select 
-                    value={String(data.rpo)} 
-                    onValueChange={(v) => update("rpo", Number(v))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Sélectionner un RPO" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {rpoOptions.map((val) => (
-                        <SelectItem key={val} value={String(val)}>
-                          {val}h
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1">Perte de données maximale acceptée.</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Délai maximal de reprise visé. Conformément à l'ISO 22301, le RTO doit être <strong>strictement inférieur</strong> au MTPD.
+                  </p>
                 </div>
               </div>
             </div>

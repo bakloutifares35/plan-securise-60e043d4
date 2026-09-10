@@ -46,6 +46,7 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  ArrowRight,
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -95,7 +96,7 @@ const CHART_COLORS = {
 };
 
 // ============================================================
-// FONCTIONS DE CALCUL BIA (intégrées)
+// FONCTIONS DE CALCUL BIA
 // ============================================================
 
 interface ResourceCounts {
@@ -120,9 +121,6 @@ interface BiaCompletionResult {
   }[];
 }
 
-/**
- * Vérifie si un processus a un BIA complet
- */
 const isProcessusBiaComplet = (
   processus: any,
   resourceCounts: ResourceCounts
@@ -131,7 +129,6 @@ const isProcessusBiaComplet = (
   const score = computeMaxScore(processus.impacts);
   const criticite = scoreToCriticality(score);
 
-  // 1. Vérifier les impacts
   if (!processus.impacts) {
     manquants.push("Impacts non définis");
   } else {
@@ -163,49 +160,31 @@ const isProcessusBiaComplet = (
     }
   }
 
-  // 2. Vérifier RTO et RPO
   if (!processus.rto || processus.rto <= 0) {
     manquants.push("RTO non défini");
   }
-  if (!processus.rpo || processus.rpo <= 0) {
-    manquants.push("RPO non défini");
-  }
   
-  // 3. Vérifier RTO <= MTPD
   if (processus.rto && processus.mtpd && processus.rto > processus.mtpd) {
     manquants.push(`RTO (${processus.rto}h) > MTPD (${processus.mtpd}h)`);
   }
 
-  // 4. Vérifier la criticité
   if (!criticite) {
     manquants.push("Criticité non calculée");
   }
 
-  // 5. Vérifier les ressources (Critique et Majeur uniquement)
   const res = resourceCounts[processus.id] || { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
   const isCritiqueOuMajeur = criticite === "Critique" || criticite === "Majeur";
 
   if (isCritiqueOuMajeur) {
-    if (res.hr === 0) {
-      manquants.push("Aucune ressource humaine liée");
-    }
-    if (res.app === 0) {
-      manquants.push("Aucune application IT liée");
-    }
-    if (res.equip === 0) {
-      manquants.push("Aucun équipement lié");
-    }
-    if (res.supplier === 0) {
-      manquants.push("Aucun prestataire lié");
-    }
+    if (res.hr === 0) manquants.push("Aucune ressource humaine liée");
+    if (res.app === 0) manquants.push("Aucune application IT liée");
+    if (res.equip === 0) manquants.push("Aucun équipement lié");
+    if (res.supplier === 0) manquants.push("Aucun prestataire lié");
   }
 
   return { complet: manquants.length === 0, champsManquants: manquants };
 };
 
-/**
- * Calcule le taux de couverture BIA
- */
 const calculerCouvertureBia = (
   processes: any[],
   resourceCounts: ResourceCounts
@@ -245,18 +224,8 @@ const calculerCouvertureBia = (
   };
 };
 
-// ============================================================
-// FONCTION HISTORIQUE - CALCULÉ À PARTIR DES VRAIES DONNÉES
-// ============================================================
-
-/**
- * Récupère ou CALCULE l'historique des scores BIA à partir des VRAIS processus
- * - D'abord, essaie de lire depuis la table bia_score_snapshots
- * - Si vide, calcule l'historique à partir des dates de création des processus
- */
 const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
   try {
-    // 1. Essayer de lire depuis Supabase
     const { data, error } = await (supabase as any)
       .from('bia_score_snapshots')
       .select('*')
@@ -266,20 +235,17 @@ const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
       console.error('Erreur chargement historique BIA:', error);
     }
 
-    // 2. Si des données existent dans la table, les utiliser
     if (data && data.length > 0) {
       console.log(`✅ ${data.length} snapshots trouvés dans la table`);
       return data;
     }
 
-    // 3. Sinon, CALCULER l'historique à partir des processus réels
     if (!processes || processes.length === 0) {
       return [];
     }
 
     console.log('🔄 Calcul de l\'historique depuis les VRAIS processus...');
 
-    // Grouper les processus par mois de création
     const monthlyData: Record<string, { 
       processes: any[]; 
       score_sum: number; 
@@ -288,9 +254,8 @@ const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
     }> = {};
 
     for (const p of processes) {
-      // Utiliser created_at ou lastUpdated ou date actuelle
       const createdDate = new Date(p.created_at || p.lastUpdated || Date.now());
-      const monthKey = createdDate.toISOString().slice(0, 7); // "2025-01"
+      const monthKey = createdDate.toISOString().slice(0, 7);
       
       if (!monthlyData[monthKey]) {
         monthlyData[monthKey] = {
@@ -307,12 +272,11 @@ const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
       monthlyData[monthKey].processes.push(p);
       monthlyData[monthKey].score_sum += score;
       monthlyData[monthKey].nb_processus++;
-      if (criticite === "Critique" || (criticite as string) === "Sévère") {
+      if (criticite === "Critique") {
         monthlyData[monthKey].nb_critiques++;
       }
     }
 
-    // Construire les snapshots mensuels (cumulés)
     const snapshots: any[] = [];
     const sortedKeys = Object.keys(monthlyData).sort();
     
@@ -343,7 +307,7 @@ const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
       });
     }
 
-    console.log(`✅ ${snapshots.length} mois d'historique calculés à partir des VRAIS processus`);
+    console.log(`✅ ${snapshots.length} mois d'historique calculés`);
     return snapshots;
 
   } catch (error) {
@@ -352,9 +316,6 @@ const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
   }
 };
 
-// ============================================================
-// HELPER : récupère récursivement TOUS les descendants d'une entité
-// ============================================================
 const getAllDescendantIds = (entities: any[], rootId: string): string[] => {
   const result: string[] = [];
   const stack = [rootId];
@@ -373,7 +334,11 @@ const getAllDescendantIds = (entities: any[], rootId: string): string[] => {
 // COMPOSANT PRINCIPAL
 // ============================================================
 
-export const BiaDashboard = () => {
+interface BiaDashboardProps {
+  onNavigateToProcess?: (processId: string) => void;
+}
+
+export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
   const { processes, campaigns } = useBia();
   const { entities } = useGovernance();
   const dashboardRef = useRef<HTMLDivElement>(null);
@@ -383,7 +348,6 @@ export const BiaDashboard = () => {
   const [selectedCriticality, setSelectedCriticality] = useState<string>("all");
   const [selectedDirection, setSelectedDirection] = useState<string>("all");
 
-  // État pour les ressources
   const [resourceCounts, setResourceCounts] = useState<Record<string, {
     hr: number;
     equip: number;
@@ -392,7 +356,6 @@ export const BiaDashboard = () => {
     total: number;
   }>>({});
   
-  // Totaux du référentiel
   const [referentialTotals, setReferentialTotals] = useState({
     hr: 0,
     equip: 0,
@@ -403,10 +366,40 @@ export const BiaDashboard = () => {
   const [isLoadingResources, setIsLoadingResources] = useState(true);
   const [historicalScores, setHistoricalScores] = useState<any[]>([]);
   const [isLoadingHistorical, setIsLoadingHistorical] = useState(true);
-  
-  // État pour la couverture BIA
   const [biaCoverage, setBiaCoverage] = useState<BiaCompletionResult | null>(null);
   const [isCoverageOpen, setIsCoverageOpen] = useState(false);
+
+  // ============================================================
+  // NAVIGATION VERS LA FICHE BIA
+  // ============================================================
+  const navigateToBiaDetail = (processId: string) => {
+    if (!processId) {
+      console.warn('⚠️ Aucun processId fourni pour la navigation');
+      return;
+    }
+    
+    console.log('🔍 Navigation vers le processus:', processId);
+    
+    // Méthode 1: Utiliser le callback passé par le parent
+    if (onNavigateToProcess) {
+      onNavigateToProcess(processId);
+      return;
+    }
+    
+    // Méthode 2: Dispatcher un événement personnalisé (écouté par ProcessInventory)
+    try {
+      const event = new CustomEvent('openProcessDetail', { 
+        detail: { processId } 
+      });
+      window.dispatchEvent(event);
+      console.log('✅ Événement openProcessDetail dispatché');
+    } catch (error) {
+      console.error('❌ Erreur lors du dispatch de l\'événement:', error);
+    }
+    
+    // Méthode 3: Navigation directe via l'URL (si route configurée)
+    // window.location.href = `/bia/process/${processId}`;
+  };
 
   // ============================================================
   // FILTRAGE DES PROCESSUS
@@ -543,7 +536,6 @@ export const BiaDashboard = () => {
 
         setResourceCounts(counts);
         
-        // Calculer la couverture BIA après chargement des ressources
         const coverage = calculerCouvertureBia(filteredProcesses, counts);
         setBiaCoverage(coverage);
         
@@ -563,13 +555,12 @@ export const BiaDashboard = () => {
   }, [filteredProcessIds, filteredProcesses]);
 
   // ============================================================
-  // CHARGEMENT DES DONNÉES HISTORIQUES - À PARTIR DES VRAIES DONNÉES
+  // CHARGEMENT DES DONNÉES HISTORIQUES
   // ============================================================
   useEffect(() => {
     const loadHistoricalData = async () => {
       setIsLoadingHistorical(true);
       try {
-        // 🔥 On passe les processus réels à la fonction
         const data = await getBiaHistoricalScores(processes);
         
         if (data && data.length > 0) {
@@ -585,7 +576,6 @@ export const BiaDashboard = () => {
       }
     };
     
-    // Ne charger que si des processus existent
     if (processes && processes.length > 0) {
       loadHistoricalData();
     } else {
@@ -735,7 +725,6 @@ export const BiaDashboard = () => {
     const points = [];
     const now = Date.now();
     
-    // 1. Processus sans collaborateur (RH)
     const noHR = filteredProcesses.filter(p => {
       const res = resourceCounts[p.id] || { hr: 0 };
       return res.hr === 0;
@@ -747,12 +736,11 @@ export const BiaDashboard = () => {
         bg: "bg-red-50",
         text: `${noHR.length} processus sans collaborateur`,
         action: "Voir",
-        link: `/bia/process/${noHR[0]?.id || ''}`,
+        processId: noHR[0]?.id,
         severity: "high"
       });
     }
 
-    // 2. Processus sans application IT
     const noApp = filteredProcesses.filter(p => {
       const res = resourceCounts[p.id] || { app: 0 };
       return res.app === 0;
@@ -764,12 +752,11 @@ export const BiaDashboard = () => {
         bg: "bg-purple-50",
         text: `${noApp.length} processus sans application IT`,
         action: "Voir",
-        link: `/bia/process/${noApp[0]?.id || ''}`,
+        processId: noApp[0]?.id,
         severity: "high"
       });
     }
 
-    // 3. Processus sans équipement
     const noEquip = filteredProcesses.filter(p => {
       const res = resourceCounts[p.id] || { equip: 0 };
       return res.equip === 0;
@@ -781,12 +768,11 @@ export const BiaDashboard = () => {
         bg: "bg-amber-50",
         text: `${noEquip.length} processus sans équipement`,
         action: "Voir",
-        link: `/bia/process/${noEquip[0]?.id || ''}`,
+        processId: noEquip[0]?.id,
         severity: "medium"
       });
     }
 
-    // 4. Processus sans prestataire
     const noSupplier = filteredProcesses.filter(p => {
       const res = resourceCounts[p.id] || { supplier: 0 };
       return res.supplier === 0;
@@ -798,12 +784,11 @@ export const BiaDashboard = () => {
         bg: "bg-orange-50",
         text: `${noSupplier.length} processus sans prestataire`,
         action: "Voir",
-        link: `/bia/process/${noSupplier[0]?.id || ''}`,
+        processId: noSupplier[0]?.id,
         severity: "medium"
       });
     }
 
-    // 5. PRA expirés (plus de 365 jours)
     const expiredPra = filteredProcesses.filter(p => {
       if (!p.lastUpdated) return false;
       const days = (now - new Date(p.lastUpdated).getTime()) / (1000 * 60 * 60 * 24);
@@ -816,12 +801,11 @@ export const BiaDashboard = () => {
         bg: "bg-rose-50",
         text: `${expiredPra.length} PRA expiré${expiredPra.length > 1 ? 's' : ''}`,
         action: "Voir",
-        link: `/bia/process/${expiredPra[0]?.id || ''}`,
+        processId: expiredPra[0]?.id,
         severity: "critical"
       });
     }
 
-    // 6. Processus critiques sans PCA
     const noPca = filteredProcesses.filter(p => !(p as any).hasPca && computeMaxScore(p.impacts) >= 3);
     if (noPca.length > 0) {
       points.push({
@@ -830,7 +814,7 @@ export const BiaDashboard = () => {
         bg: "bg-orange-50",
         text: `${noPca.length} processus critique${noPca.length > 1 ? 's' : ''} sans PCA`,
         action: "Voir",
-        link: `/bia/process/${noPca[0]?.id || ''}`,
+        processId: noPca[0]?.id,
         severity: "high"
       });
     }
@@ -849,7 +833,6 @@ export const BiaDashboard = () => {
     borderColor: SEVERITY_BORDER_COLORS[level as keyof typeof SEVERITY_BORDER_COLORS] || "#D1D5DB",
   })).filter((d) => d.value > 0);
 
-  // Données d'évolution - calculées à partir des VRAIS processus
   const scoreEvolutionData = useMemo(() => {
     if (historicalScores.length > 0) {
       return historicalScores.map((s) => ({
@@ -861,15 +844,6 @@ export const BiaDashboard = () => {
     }
     return [];
   }, [historicalScores]);
-
-  // ============================================================
-  // GESTIONNAIRES DE CLIC
-  // ============================================================
-  const openProcessDetail = (processId: string) => {
-    if (processId) {
-      window.dispatchEvent(new CustomEvent('openProcessDetail', { detail: { processId } }));
-    }
-  };
 
   // ============================================================
   // EXPORT PDF
@@ -985,7 +959,7 @@ export const BiaDashboard = () => {
   };
 
   // ============================================================
-  // RENDU DE LA CARTE RESSOURCES (TOTAUX DU RÉFÉRENTIEL)
+  // RENDU DE LA CARTE RESSOURCES
   // ============================================================
   const renderResourceCard = () => {
     if (isLoadingResources) {
@@ -1039,7 +1013,6 @@ export const BiaDashboard = () => {
         <div className="space-y-3">
           {resourceTypes.map((rt) => {
             const Icon = rt.icon;
-            const hasResources = rt.count > 0;
             
             return (
               <div key={rt.key} className="flex items-center justify-between">
@@ -1056,9 +1029,6 @@ export const BiaDashboard = () => {
                   <span className="text-lg font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
                     {rt.count}
                   </span>
-                  {!hasResources && (
-                    <div className="w-2 h-2 rounded-full bg-[#E65100] flex-shrink-0" />
-                  )}
                 </div>
               </div>
             );
@@ -1154,7 +1124,13 @@ export const BiaDashboard = () => {
 
         {/* ===== LIGNE 1: KPI ===== */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
+          <Card 
+            className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => {
+              setSelectedCriticality("all");
+              setSelectedDirection("all");
+            }}
+          >
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
@@ -1174,7 +1150,12 @@ export const BiaDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow">
+          <Card 
+            className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => {
+              setSelectedCriticality("Critique");
+            }}
+          >
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
@@ -1218,7 +1199,7 @@ export const BiaDashboard = () => {
             </CardContent>
           </Card>
 
-          {/* ===== CARTE COUVERTURE BIA AVEC TOOLTIP ===== */}
+          {/* ===== CARTE COUVERTURE BIA ===== */}
           <Card className="border-[#E8E4DC] shadow-sm bg-white hover:shadow-md transition-shadow relative">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
@@ -1235,7 +1216,10 @@ export const BiaDashboard = () => {
                   </div>
                   {biaCoverage && biaCoverage.processusIncomplets.length > 0 && (
                     <button
-                      onClick={() => setIsCoverageOpen(!isCoverageOpen)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsCoverageOpen(!isCoverageOpen);
+                      }}
                       className="flex items-center gap-1 text-[10px] text-[#172030]/50 hover:text-[#2A5141] mt-1 transition-colors"
                     >
                       <Info className="h-3 w-3" />
@@ -1259,7 +1243,7 @@ export const BiaDashboard = () => {
                       <div 
                         key={p.id}
                         className="flex items-start gap-2 p-2 rounded-lg bg-[#F8F6F2] hover:bg-[#F0EDE8] cursor-pointer transition-colors"
-                        onClick={() => openProcessDetail(p.id)}
+                        onClick={() => navigateToBiaDetail(p.id)}
                       >
                         <Badge className={cn(
                           "text-[8px] px-1.5 py-0.5 flex-shrink-0 mt-0.5",
@@ -1273,7 +1257,7 @@ export const BiaDashboard = () => {
                             {p.champsManquants.join(', ')}
                           </p>
                         </div>
-                        <ChevronDown className="h-3 w-3 text-[#172030]/30 flex-shrink-0" />
+                        <ArrowRight className="h-3 w-3 text-[#172030]/30 flex-shrink-0" />
                       </div>
                     ))}
                   </div>
@@ -1292,7 +1276,7 @@ export const BiaDashboard = () => {
                   <Target className="h-4 w-4 text-[#172030]/40" />
                   Top processus critiques
                 </CardTitle>
-                <span className="text-xs text-[#172030]/40">5 processus les plus critiques</span>
+                <span className="text-xs text-[#172030]/40">Cliquez pour ouvrir</span>
               </div>
             </CardHeader>
             <CardContent className="flex-1 overflow-hidden p-0 px-4 pb-4">
@@ -1312,7 +1296,7 @@ export const BiaDashboard = () => {
                         <div 
                           key={p.id || index} 
                           className="grid grid-cols-6 gap-2 py-2.5 items-center hover:bg-[#F8F6F2] rounded-lg transition-colors -mx-1 px-1 cursor-pointer"
-                          onClick={() => openProcessDetail(p.id)}
+                          onClick={() => navigateToBiaDetail(p.id)}
                         >
                           <span className="text-sm font-medium text-[#172030] truncate col-span-2">{p.name}</span>
                           <span className="text-xs text-[#172030]/50 truncate flex items-center gap-1">
@@ -1547,7 +1531,7 @@ export const BiaDashboard = () => {
                 <Zap className="h-4 w-4 text-[#E65100]" />
                 Points d'attention
               </CardTitle>
-              <span className="text-xs text-[#172030]/40">Alertes à surveiller</span>
+              <span className="text-xs text-[#172030]/40">Cliquez sur une alerte pour voir le processus</span>
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
@@ -1567,14 +1551,13 @@ export const BiaDashboard = () => {
                     <div 
                       key={index} 
                       className={cn(
-                        "flex items-center justify-between gap-2 py-2.5 px-3 rounded-lg border transition-colors cursor-pointer hover:shadow-sm",
+                        "flex items-center justify-between gap-2 py-2.5 px-3 rounded-lg border transition-all cursor-pointer hover:shadow-sm hover:scale-[1.01]",
                         sev.border,
                         sev.bg,
                       )}
                       onClick={() => {
-                        if (point.link) {
-                          const processId = point.link.split('/').pop();
-                          if (processId) openProcessDetail(processId);
+                        if (point.processId) {
+                          navigateToBiaDetail(point.processId);
                         }
                       }}
                     >
@@ -1584,7 +1567,10 @@ export const BiaDashboard = () => {
                         </div>
                         <p className="text-xs text-[#172030] break-words">{point.text}</p>
                       </div>
-                      <span className="text-xs text-[#172030]/40 flex-shrink-0">{point.action}</span>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-xs text-[#2A5141] font-medium">{point.action}</span>
+                        <ArrowRight className="h-3 w-3 text-[#2A5141]" />
+                      </div>
                     </div>
                   );
                 })
