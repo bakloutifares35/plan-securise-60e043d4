@@ -351,7 +351,7 @@ interface RTOSuggestion {
  * 4. Cas particulier : critique dès la première période → marge sur MTPD
  * 5. Cas particulier : jamais critique → RTO = dernière période observée
  */
-const getSuggestedRTO = (impacts: any): RTOSuggestion => {
+export const getSuggestedRTO = (impacts: any): RTOSuggestion => {
   // Trier les périodes de la plus courte à la plus longue
   const sortedPeriods = [...PERIODS].sort((a, b) => a.hours - b.hours);
   let criticalIndex = -1;
