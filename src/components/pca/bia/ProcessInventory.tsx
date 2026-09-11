@@ -5083,7 +5083,17 @@ const BIAFicheDetail = ({
 // ============================================================
 // COMPOSANT PRINCIPAL - ProcessInventory
 // ============================================================
-export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) => void; onCreate: () => void }) => {
+export const ProcessInventory = ({ 
+  onEdit, 
+  onCreate,
+  pendingProcessId,
+  onPendingProcessed
+}: { 
+  onEdit: (id: string) => void; 
+  onCreate: () => void;
+  pendingProcessId?: string;
+  onPendingProcessed?: () => void;
+}) => {
   const biaContext = useBia();
   const { processes, deleteProcess } = biaContext;
   const refreshProcesses = (biaContext as any).refreshProcesses as (() => Promise<void> | void) | undefined;
