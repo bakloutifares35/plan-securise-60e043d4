@@ -370,18 +370,24 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
   const [isCoverageOpen, setIsCoverageOpen] = useState(false);
 
   // ============================================================
-  // NAVIGATION VERS LA FICHE BIA
+  // ✅ NAVIGATION VERS LA FICHE BIA - VERSION AMÉLIORÉE
   // ============================================================
   const navigateToBiaDetail = (processId: string) => {
     if (!processId) {
       console.warn('⚠️ Aucun processId fourni pour la navigation');
+      toast({
+        title: "Erreur",
+        description: "Impossible de localiser le processus",
+        variant: "destructive"
+      });
       return;
     }
     
     console.log('🔍 Navigation vers le processus:', processId);
     
-    // Méthode 1: Utiliser le callback passé par le parent
+    // Méthode 1: Utiliser le callback passé par le parent (prioritaire)
     if (onNavigateToProcess) {
+      console.log('✅ Utilisation du callback onNavigateToProcess');
       onNavigateToProcess(processId);
       return;
     }
@@ -392,13 +398,15 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         detail: { processId } 
       });
       window.dispatchEvent(event);
-      console.log('✅ Événement openProcessDetail dispatché');
+      console.log('✅ Événement openProcessDetail dispatché avec processId:', processId);
     } catch (error) {
       console.error('❌ Erreur lors du dispatch de l\'événement:', error);
+      toast({
+        title: "Erreur de navigation",
+        description: "Impossible d'ouvrir la fiche BIA",
+        variant: "destructive"
+      });
     }
-    
-    // Méthode 3: Navigation directe via l'URL (si route configurée)
-    // window.location.href = `/bia/process/${processId}`;
   };
 
   // ============================================================

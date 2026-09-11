@@ -1,4 +1,7 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
+// ============================================================
+// ProcessInventory.tsx - Version complète avec fil d'Ariane + ressources améliorées
+// ============================================================
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +28,7 @@ import {
   Circle, CircleCheck, CircleDot, CircleDashed, CircleOff,
   Square, SquareCheck, SquareDot, SquareDashed, PlusCircle, FolderTree,
   MoreHorizontal as MoreHoriz, Loader2,
-  ArrowUpRight, ArrowDownLeft
+  ArrowUpRight, ArrowDownLeft, Upload
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -38,6 +41,7 @@ import { supabase } from "@/integrations/supabase/db";
 import { BiaWizard } from "./BiaWizard";
 import { TableauDeMonteeEnCharge } from "./TableauDeMonteeEnCharge";
 import ContournementsDeCriseIA from './ContournementsDeCriseIA';
+import { BiaExcelImport } from "./BiaExcelImport";
 import {
   Popover,
   PopoverContent,
@@ -781,7 +785,8 @@ const SelectFromCMDBDialog = ({
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => !isAlreadyAdded && toggleSelect(r.id)}
+                            onChange={(e) => { e.stopPropagation(); if (!isAlreadyAdded) toggleSelect(r.id); }}
+                            onClick={(e) => e.stopPropagation()}
                             disabled={isAlreadyAdded}
                             className={cn(
                               "h-4 w-4 rounded border-gray-300 text-[#2A5141] focus:ring-[#2A5141] cursor-pointer",
@@ -855,6 +860,218 @@ const SelectFromCMDBDialog = ({
 
         <DialogFooter className="gap-2 border-t pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ============================================================
+// ✅ NOUVEAU COMPOSANT - ResourceEditDialog (édition RH/Équip/App/Fournisseur avec RTO/RPO)
+// ============================================================
+const ResourceEditDialog = ({
+  open,
+  onOpenChange,
+  resourceType,
+  resource,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  resourceType: 'HR' | 'Equipement' | 'App' | 'Fournisseur';
+  resource: any;
+  onSaved?: () => void | Promise<void>;
+}) => {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [type, setType] = useState("");
+  const [service, setService] = useState("");
+  const [contact, setContact] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [rtoHours, setRtoHours] = useState<number | "">("");
+  const [rpoHours, setRpoHours] = useState<number | "">("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open && resource) {
+      setName(resource.name || "");
+      setRole(resource.role || "");
+      setEmail(resource.email || "");
+      setPhone(resource.phone || "");
+      setType(resource.type || "");
+      setService(resource.service || "");
+      setContact(resource.contact || "");
+      setQuantity(resource.quantity || 1);
+      setRtoHours(resource.rto_hours ?? "");
+      setRpoHours(resource.rpo_hours ?? "");
+    }
+  }, [open, resource]);
+
+  const getTable = () => {
+    switch (resourceType) {
+      case 'HR': return 'ressources_humaines';
+      case 'Equipement': return 'ressources_equipements';
+      case 'App': return 'applications_it';
+      case 'Fournisseur': return 'fournisseurs';
+    }
+  };
+
+  const getLabel = () => {
+    switch (resourceType) {
+      case 'HR': return 'Collaborateur';
+      case 'Equipement': return 'Équipement';
+      case 'App': return 'Application IT';
+      case 'Fournisseur': return 'Prestataire';
+    }
+  };
+
+  const getIcon = () => {
+    switch (resourceType) {
+      case 'HR': return <Users className="h-5 w-5 text-blue-600" />;
+      case 'Equipement': return <Monitor className="h-5 w-5 text-yellow-600" />;
+      case 'App': return <Server className="h-5 w-5 text-purple-600" />;
+      case 'Fournisseur': return <Handshake className="h-5 w-5 text-orange-600" />;
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!resource?.id || !name.trim()) return;
+    setIsSubmitting(true);
+    try {
+      const table = getTable();
+      const payload: Record<string, any> = { name: name.trim() };
+      switch (resourceType) {
+        case 'HR':
+          payload.role = role || null;
+          payload.email = email || null;
+          payload.phone = phone || null;
+          break;
+        case 'Equipement':
+          payload.type = type || null;
+          payload.quantity = quantity || 1;
+          payload.rto_hours = rtoHours === "" ? null : Number(rtoHours);
+          break;
+        case 'App':
+          payload.type = type || null;
+          payload.rto_hours = rtoHours === "" ? null : Number(rtoHours);
+          payload.rpo_hours = rpoHours === "" ? null : Number(rpoHours);
+          break;
+        case 'Fournisseur':
+          payload.service = service || null;
+          payload.contact = contact || null;
+          payload.rto_hours = rtoHours === "" ? null : Number(rtoHours);
+          break;
+      }
+      const { error } = await supabase.from(table).update(payload).eq('id', resource.id);
+      if (error) throw error;
+      toast({ title: "Modifié", description: `${getLabel()} "${name}" mis à jour` });
+      if (onSaved) await onSaved();
+      onOpenChange(false);
+    } catch (error: any) {
+      console.error('Erreur édition:', error);
+      toast({ title: "Erreur", description: error.message || "Impossible de modifier", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!resource) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {getIcon()}
+            Modifier le {getLabel().toLowerCase()}
+          </DialogTitle>
+          <DialogDescription>Modifiez les informations puis enregistrez</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto">
+          <div>
+            <Label className="text-sm font-medium">Nom *</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 border-[#E8E4DC]" />
+          </div>
+
+          {resourceType === 'HR' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Rôle</Label>
+                <Input value={role} onChange={(e) => setRole(e.target.value)} className="mt-1 border-[#E8E4DC]" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Email</Label>
+                <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="mt-1 border-[#E8E4DC]" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Téléphone</Label>
+                <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1 border-[#E8E4DC]" />
+              </div>
+            </>
+          )}
+
+          {resourceType === 'Equipement' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Type</Label>
+                <Input value={type} onChange={(e) => setType(e.target.value)} className="mt-1 border-[#E8E4DC]" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Quantité</Label>
+                <Input type="number" value={quantity} onChange={(e) => setQuantity(Number(e.target.value) || 1)} min="1" className="mt-1 border-[#E8E4DC]" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">RTO (heures)</Label>
+                <Input type="number" value={rtoHours} onChange={(e) => setRtoHours(e.target.value === "" ? "" : Number(e.target.value))} placeholder="Ex: 4" className="mt-1 border-[#E8E4DC]" />
+              </div>
+            </>
+          )}
+
+          {resourceType === 'App' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Type</Label>
+                <Input value={type} onChange={(e) => setType(e.target.value)} className="mt-1 border-[#E8E4DC]" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-sm font-medium">RTO (heures)</Label>
+                  <Input type="number" value={rtoHours} onChange={(e) => setRtoHours(e.target.value === "" ? "" : Number(e.target.value))} placeholder="Ex: 4" className="mt-1 border-[#E8E4DC]" />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">RPO (heures)</Label>
+                  <Input type="number" value={rpoHours} onChange={(e) => setRpoHours(e.target.value === "" ? "" : Number(e.target.value))} placeholder="Ex: 2" className="mt-1 border-[#E8E4DC]" />
+                </div>
+              </div>
+            </>
+          )}
+
+          {resourceType === 'Fournisseur' && (
+            <>
+              <div>
+                <Label className="text-sm font-medium">Service</Label>
+                <Input value={service} onChange={(e) => setService(e.target.value)} className="mt-1 border-[#E8E4DC]" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Contact</Label>
+                <Input value={contact} onChange={(e) => setContact(e.target.value)} className="mt-1 border-[#E8E4DC]" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">RTO (heures)</Label>
+                <Input type="number" value={rtoHours} onChange={(e) => setRtoHours(e.target.value === "" ? "" : Number(e.target.value))} placeholder="Ex: 4" className="mt-1 border-[#E8E4DC]" />
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting || !name.trim()} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
+            {isSubmitting ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Enregistrement...</> : "Enregistrer"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1379,16 +1596,18 @@ const LinkResourceDialog = ({
 };
 
 // ============================================================
-// COMPOSANT - PersonnelTableau AVEC GESTION DES LIENS
+// COMPOSANT - PersonnelTableau AVEC GESTION DES LIENS + Modifier
 // ============================================================
 const PersonnelTableau = ({ 
   people, 
   onDelete,
+  onEdit,
   linkedProcessesMap,
   onManageLinks
 }: { 
   people: any[];
   onDelete?: (id: string, name: string) => void;
+  onEdit?: (resource: any) => void;
   linkedProcessesMap?: Record<string, any[]>;
   onManageLinks?: (id: string, name: string) => void;
 }) => {
@@ -1477,6 +1696,18 @@ const PersonnelTableau = ({
                         Liens
                       </Button>
                     )}
+                    {onEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#172030]/60 hover:text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onEdit(person)}
+                        title="Modifier"
+                      >
+                        <EditIcon className="h-3 w-3" />
+                        Modifier
+                      </Button>
+                    )}
                     {onDelete && (
                       <Button
                         variant="ghost"
@@ -1497,7 +1728,7 @@ const PersonnelTableau = ({
         <tfoot>
           <TableRow className="bg-[#F8F6F2] border-t-2 border-[#E8E4DC]">
             <TableCell colSpan={6} className="py-3 px-3 font-semibold text-sm text-[#172030]">
-              Total collaborateurs clés : <span className="text-[#2A5141]">{people.length}</span>
+              Total collaborateurs clés : <span className="text-blue-600">{people.length}</span>
             </TableCell>
           </TableRow>
         </tfoot>
@@ -1507,16 +1738,18 @@ const PersonnelTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - EquipmentTableau (AVEC RTO DU RÉFÉRENTIEL)
+// COMPOSANT - EquipmentTableau + Modifier
 // ============================================================
 const EquipmentTableau = ({ 
   equipment, 
   onDelete,
+  onEdit,
   linkedProcessesMap,
   onManageLinks
 }: { 
   equipment: any[];
   onDelete?: (id: string, name: string) => void;
+  onEdit?: (resource: any) => void;
   linkedProcessesMap?: Record<string, any[]>;
   onManageLinks?: (id: string, name: string) => void;
 }) => {
@@ -1552,7 +1785,7 @@ const EquipmentTableau = ({
                 <TableCell className="py-2 text-sm text-[#172030]/60">{eq.type || "—"}</TableCell>
                 <TableCell className="py-2 text-center">
                   {eq.rto_hours ? (
-                    <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-medium">
+                    <Badge variant="outline" className="bg-yellow-50 border-yellow-200 text-yellow-700 text-[10px] font-medium">
                       RTO {eq.rto_hours}h
                     </Badge>
                   ) : (
@@ -1605,6 +1838,18 @@ const EquipmentTableau = ({
                         Liens
                       </Button>
                     )}
+                    {onEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#172030]/60 hover:text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onEdit(eq)}
+                        title="Modifier"
+                      >
+                        <EditIcon className="h-3 w-3" />
+                        Modifier
+                      </Button>
+                    )}
                     {onDelete && (
                       <Button
                         variant="ghost"
@@ -1628,16 +1873,18 @@ const EquipmentTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - AppTableau AVEC RTO/RPO
+// COMPOSANT - AppTableau + Modifier
 // ============================================================
 const AppTableau = ({ 
   apps, 
   onDelete,
+  onEdit,
   linkedProcessesMap,
   onManageLinks
 }: { 
   apps: any[];
   onDelete?: (id: string, name: string) => void;
+  onEdit?: (resource: any) => void;
   linkedProcessesMap?: Record<string, any[]>;
   onManageLinks?: (id: string, name: string) => void;
 }) => {
@@ -1675,7 +1922,7 @@ const AppTableau = ({
                 <TableCell className="py-2 text-sm text-[#172030]/60">{app.type || "—"}</TableCell>
                 <TableCell className="py-2 text-center">
                   {app.rto_hours ? (
-                    <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-medium">
+                    <Badge variant="outline" className="bg-purple-50 border-purple-200 text-purple-700 text-[10px] font-medium">
                       RTO {app.rto_hours}h
                     </Badge>
                   ) : (
@@ -1741,6 +1988,18 @@ const AppTableau = ({
                         Liens
                       </Button>
                     )}
+                    {onEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#172030]/60 hover:text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onEdit(app)}
+                        title="Modifier"
+                      >
+                        <EditIcon className="h-3 w-3" />
+                        Modifier
+                      </Button>
+                    )}
                     {onDelete && (
                       <Button
                         variant="ghost"
@@ -1764,16 +2023,18 @@ const AppTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - SupplierTableau AVEC RTO DU RÉFÉRENTIEL
+// COMPOSANT - SupplierTableau + Modifier
 // ============================================================
 const SupplierTableau = ({ 
   suppliers, 
   onDelete,
+  onEdit,
   linkedProcessesMap,
   onManageLinks
 }: { 
   suppliers: any[];
   onDelete?: (id: string, name: string) => void;
+  onEdit?: (resource: any) => void;
   linkedProcessesMap?: Record<string, any[]>;
   onManageLinks?: (id: string, name: string) => void;
 }) => {
@@ -1811,7 +2072,7 @@ const SupplierTableau = ({
                 <TableCell className="py-2 text-sm text-[#172030]/60">{sup.contact || "—"}</TableCell>
                 <TableCell className="py-2 text-center">
                   {sup.rto_hours ? (
-                    <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-[10px] font-medium">
+                    <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[10px] font-medium">
                       RTO {sup.rto_hours}h
                     </Badge>
                   ) : (
@@ -1864,6 +2125,18 @@ const SupplierTableau = ({
                         Liens
                       </Button>
                     )}
+                    {onEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[10px] text-[#172030]/60 hover:text-[#2A5141] hover:bg-[#F0F5F0] rounded gap-1"
+                        onClick={() => onEdit(sup)}
+                        title="Modifier"
+                      >
+                        <EditIcon className="h-3 w-3" />
+                        Modifier
+                      </Button>
+                    )}
                     {onDelete && (
                       <Button
                         variant="ghost"
@@ -1887,7 +2160,7 @@ const SupplierTableau = ({
 };
 
 // ============================================================
-// COMPOSANT - ProcessDetailView (AVEC DÉPENDANCES AMONT/AVAL)
+// COMPOSANT - ProcessDetailView (inchangé)
 // ============================================================
 const ProcessDetailView = ({ 
   process, 
@@ -1913,7 +2186,6 @@ const ProcessDetailView = ({
   const score = computeMaxScoreFromImpacts(process.impacts);
   const crit = scoreToCriticality(score);
 
-  // ✅ Calcul des dépendances amont/aval
   const upstreamDependencies = useMemo(() => {
     if (!process.depends_on || process.depends_on.length === 0) return [];
     return allProcesses.filter(p => process.depends_on.includes(p.id));
@@ -2147,7 +2419,6 @@ const ProcessDetailView = ({
               </div>
             )}
 
-            {/* ✅ DÉPENDANCES AMONT/AVAL */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
                 <p className="text-xs font-medium text-orange-700 flex items-center gap-1.5">
@@ -2247,7 +2518,7 @@ const ProcessDetailView = ({
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <Badge variant="outline" className="text-[10px]">{r.type || "—"}</Badge>
                             {r.rto_hours && (
-                              <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                              <Badge variant="outline" className="text-[10px] bg-yellow-50 border-yellow-200 text-yellow-700">
                                 RTO {r.rto_hours}h
                               </Badge>
                             )}
@@ -2282,7 +2553,7 @@ const ProcessDetailView = ({
                           <span className="truncate">{a.name}</span>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {a.rto_hours && (
-                              <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                              <Badge variant="outline" className="text-[10px] bg-purple-50 border-purple-200 text-purple-700">
                                 RTO {a.rto_hours}h
                               </Badge>
                             )}
@@ -2323,7 +2594,7 @@ const ProcessDetailView = ({
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <Badge variant="outline" className="text-[10px]">{r.service || "—"}</Badge>
                             {r.rto_hours && (
-                              <Badge variant="outline" className="text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                              <Badge variant="outline" className="text-[10px] bg-orange-50 border-orange-200 text-orange-700">
                                 RTO {r.rto_hours}h
                               </Badge>
                             )}
@@ -2354,7 +2625,7 @@ const ProcessDetailView = ({
 };
 
 // ============================================================
-// COMPOSANT - DependencyMapView (AVEC DÉPENDANCES AMONT/AVAL)
+// COMPOSANT - DependencyMapView (inchangé)
 // ============================================================
 const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { processes: any[]; serviceName: string; onProcessesUpdate?: () => void }) => {
   const [hoveredProcess, setHoveredProcess] = useState<string | null>(null);
@@ -2385,7 +2656,6 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
     return map;
   }, [processes]);
 
-  // ✅ Déterminer les dépendances amont/aval
   const edges = useMemo(() => {
     const list: { from: string; to: string; score: number; fromName: string; toName: string; isUpstream: boolean }[] = [];
     for (const p of processes) {
@@ -2399,7 +2669,7 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
           score: computeMaxScoreFromImpacts(target.impacts),
           fromName: p.name,
           toName: target.name,
-          isUpstream: true // ✅ Ce processus dépend de target (amont)
+          isUpstream: true
         });
       }
     }
@@ -2676,7 +2946,6 @@ const DependencyMapView = ({ processes, serviceName, onProcessesUpdate }: { proc
                 <div className="bg-muted/20 rounded-lg p-2 text-center"><Database className="h-4 w-4 mx-auto text-muted-foreground mb-1" /><p className="text-xs text-muted-foreground">RPO</p><p className="text-lg font-bold">{selectedProcess.rpo}h</p></div>
               </div>
 
-              {/* ✅ Dépendances amont/aval dans le dialogue */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-orange-50 rounded-lg p-2 border border-orange-200">
                   <p className="text-xs font-medium text-orange-700 flex items-center gap-1">
@@ -2904,7 +3173,7 @@ const DirectionSection = ({
 };
 
 // ============================================================
-// IMPACT MATRIX (SANS RPO POUR LES PROCESSUS)
+// IMPACT MATRIX
 // ============================================================
 const ImpactMatrix = ({ 
   impacts, 
@@ -3079,7 +3348,7 @@ const ImpactMatrix = ({
 };
 
 // ============================================================
-// PROCESS ACCORDION (AVEC DÉPENDANCES AMONT)
+// PROCESS ACCORDION avec affichage ressources amélioré + bouton Modifier
 // ============================================================
 const ProcessAccordion = ({ 
   process, 
@@ -3093,6 +3362,7 @@ const ProcessAccordion = ({
   canDelete,
   processResources,
   allProcesses,
+  onEditResource,
 }: { 
   process: any;
   index: number;
@@ -3110,6 +3380,7 @@ const ProcessAccordion = ({
     suppliers: any[];
   };
   allProcesses?: any[];
+  onEditResource?: (type: 'HR' | 'Equipement' | 'App' | 'Fournisseur', resource: any) => void;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -3132,7 +3403,6 @@ const ProcessAccordion = ({
   
   const hasAnyResource = hrResources.length > 0 || equipmentResources.length > 0 || appsResources.length > 0 || suppliersResources.length > 0;
 
-  // ✅ Dépendances amont
   const upstreamDeps = allProcesses?.filter(p => 
     process.depends_on && process.depends_on.includes(p.id)
   ) || [];
@@ -3240,7 +3510,6 @@ const ProcessAccordion = ({
             rto={process.rto}
           />
 
-          {/* ✅ Dépendances amont dans l'accordéon */}
           {upstreamDeps.length > 0 && (
             <div className="mt-3 pt-3 border-t border-[#E8E4DC]">
               <p className="text-xs font-medium text-[#172030]/50 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
@@ -3257,6 +3526,7 @@ const ProcessAccordion = ({
             </div>
           )}
 
+          {/* ✅ Bloc "Ressources associées" amélioré avec cartes colorées + bouton Modifier */}
           <div className="mt-4 pt-4 border-t border-[#E8E4DC]">
             <div className="flex items-center gap-2 mb-3">
               <LinkIcon className="h-4 w-4 text-[#2A5141]" />
@@ -3269,21 +3539,28 @@ const ProcessAccordion = ({
             {!hasAnyResource ? (
               <p className="text-sm text-[#172030]/40 italic">Aucune ressource associée à ce processus</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {hrResources.length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Users className="h-3.5 w-3.5 text-blue-600" />
-                      <span className="text-xs font-medium text-[#172030]">Ressources humaines</span>
-                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
-                        {hrResources.length}
-                      </Badge>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-5 w-5 rounded-md bg-blue-50 flex items-center justify-center"><Users className="h-3 w-3 text-blue-600" /></div>
+                      <span className="text-xs font-semibold text-[#172030] uppercase tracking-wider">Collaborateurs</span>
+                      <Badge variant="outline" className="text-[9px] bg-white border-blue-200 text-blue-700">{hrResources.length}</Badge>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
                       {hrResources.map((r, i) => (
-                        <Badge key={r.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
-                          {r.name} {r.role && `(${r.role})`}
-                        </Badge>
+                        <div key={r.id || i} className="group flex items-center gap-2 p-2 rounded-md border border-blue-100 bg-blue-50/30 hover:bg-blue-50 hover:border-blue-200 transition-colors">
+                          <div className="h-6 w-6 rounded flex items-center justify-center flex-shrink-0 bg-white"><Users className="h-3 w-3 text-blue-600" /></div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-[#172030] truncate" title={r.name}>{r.name}</p>
+                            {r.role && <p className="text-[10px] text-blue-700/60 truncate">{r.role}</p>}
+                          </div>
+                          {onEditResource && (
+                            <button onClick={(e) => { e.stopPropagation(); onEditResource('HR', r); }} className="h-6 w-6 rounded flex items-center justify-center text-[#172030]/40 hover:text-[#2A5141] hover:bg-[#F0F5F0] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" title="Modifier">
+                              <EditIcon className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -3291,21 +3568,28 @@ const ProcessAccordion = ({
 
                 {equipmentResources.length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Monitor className="h-3.5 w-3.5 text-yellow-600" />
-                      <span className="text-xs font-medium text-[#172030]">Équipements</span>
-                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
-                        {equipmentResources.length}
-                      </Badge>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-5 w-5 rounded-md bg-yellow-50 flex items-center justify-center"><Monitor className="h-3 w-3 text-yellow-600" /></div>
+                      <span className="text-xs font-semibold text-[#172030] uppercase tracking-wider">Équipements</span>
+                      <Badge variant="outline" className="text-[9px] bg-white border-yellow-200 text-yellow-700">{equipmentResources.length}</Badge>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
                       {equipmentResources.map((eq, i) => (
-                        <Badge key={eq.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
-                          {eq.name} {eq.type && `(${eq.type})`}
-                          {eq.rto_hours && (
-                            <span className="ml-1 text-[10px] text-blue-600">RTO {eq.rto_hours}h</span>
+                        <div key={eq.id || i} className="group flex items-center gap-2 p-2 rounded-md border border-yellow-100 bg-yellow-50/30 hover:bg-yellow-50 hover:border-yellow-200 transition-colors">
+                          <div className="h-6 w-6 rounded flex items-center justify-center flex-shrink-0 bg-white"><Monitor className="h-3 w-3 text-yellow-600" /></div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-[#172030] truncate" title={eq.name}>{eq.name}</p>
+                            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                              {eq.type && <span className="text-[10px] text-yellow-700/60">{eq.type}</span>}
+                              {eq.rto_hours && <Badge variant="outline" className="text-[9px] bg-yellow-50 border-yellow-200 text-yellow-700">RTO {eq.rto_hours}h</Badge>}
+                            </div>
+                          </div>
+                          {onEditResource && (
+                            <button onClick={(e) => { e.stopPropagation(); onEditResource('Equipement', eq); }} className="h-6 w-6 rounded flex items-center justify-center text-[#172030]/40 hover:text-[#2A5141] hover:bg-[#F0F5F0] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" title="Modifier">
+                              <EditIcon className="h-3 w-3" />
+                            </button>
                           )}
-                        </Badge>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -3313,24 +3597,28 @@ const ProcessAccordion = ({
 
                 {appsResources.length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Server className="h-3.5 w-3.5 text-purple-600" />
-                      <span className="text-xs font-medium text-[#172030]">Applications IT</span>
-                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
-                        {appsResources.length}
-                      </Badge>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-5 w-5 rounded-md bg-purple-50 flex items-center justify-center"><Server className="h-3 w-3 text-purple-600" /></div>
+                      <span className="text-xs font-semibold text-[#172030] uppercase tracking-wider">Applications IT</span>
+                      <Badge variant="outline" className="text-[9px] bg-white border-purple-200 text-purple-700">{appsResources.length}</Badge>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
                       {appsResources.map((app, i) => (
-                        <Badge key={app.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
-                          {app.name}
-                          {app.rto_hours && (
-                            <span className="ml-1 text-[10px] text-blue-600">RTO {app.rto_hours}h</span>
+                        <div key={app.id || i} className="group flex items-center gap-2 p-2 rounded-md border border-purple-100 bg-purple-50/30 hover:bg-purple-50 hover:border-purple-200 transition-colors">
+                          <div className="h-6 w-6 rounded flex items-center justify-center flex-shrink-0 bg-white"><Server className="h-3 w-3 text-purple-600" /></div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-[#172030] truncate" title={app.name}>{app.name}</p>
+                            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                              {app.rto_hours && <Badge variant="outline" className="text-[9px] bg-purple-50 border-purple-200 text-purple-700">RTO {app.rto_hours}h</Badge>}
+                              {app.rpo_hours && <Badge variant="outline" className="text-[9px] bg-orange-50 border-orange-200 text-orange-700">RPO {app.rpo_hours}h</Badge>}
+                            </div>
+                          </div>
+                          {onEditResource && (
+                            <button onClick={(e) => { e.stopPropagation(); onEditResource('App', app); }} className="h-6 w-6 rounded flex items-center justify-center text-[#172030]/40 hover:text-[#2A5141] hover:bg-[#F0F5F0] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" title="Modifier">
+                              <EditIcon className="h-3 w-3" />
+                            </button>
                           )}
-                          {app.rpo_hours && (
-                            <span className="ml-1 text-[10px] text-orange-600">RPO {app.rpo_hours}h</span>
-                          )}
-                        </Badge>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -3338,21 +3626,28 @@ const ProcessAccordion = ({
 
                 {suppliersResources.length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Handshake className="h-3.5 w-3.5 text-orange-600" />
-                      <span className="text-xs font-medium text-[#172030]">Prestataires</span>
-                      <Badge variant="outline" className="text-[9px] bg-[#F8F6F2] border-[#E8E4DC]">
-                        {suppliersResources.length}
-                      </Badge>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-5 w-5 rounded-md bg-orange-50 flex items-center justify-center"><Handshake className="h-3 w-3 text-orange-600" /></div>
+                      <span className="text-xs font-semibold text-[#172030] uppercase tracking-wider">Prestataires</span>
+                      <Badge variant="outline" className="text-[9px] bg-white border-orange-200 text-orange-700">{suppliersResources.length}</Badge>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
                       {suppliersResources.map((sup, i) => (
-                        <Badge key={sup.id || i} className="bg-gray-50 border-[#E8E4DC] text-[#172030] font-normal text-xs hover:bg-gray-100">
-                          {sup.name} {sup.service && `(${sup.service})`}
-                          {sup.rto_hours && (
-                            <span className="ml-1 text-[10px] text-blue-600">RTO {sup.rto_hours}h</span>
+                        <div key={sup.id || i} className="group flex items-center gap-2 p-2 rounded-md border border-orange-100 bg-orange-50/30 hover:bg-orange-50 hover:border-orange-200 transition-colors">
+                          <div className="h-6 w-6 rounded flex items-center justify-center flex-shrink-0 bg-white"><Handshake className="h-3 w-3 text-orange-600" /></div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-[#172030] truncate" title={sup.name}>{sup.name}</p>
+                            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                              {sup.service && <span className="text-[10px] text-orange-700/60 truncate max-w-[100px]" title={sup.service}>{sup.service}</span>}
+                              {sup.rto_hours && <Badge variant="outline" className="text-[9px] bg-orange-50 border-orange-200 text-orange-700">RTO {sup.rto_hours}h</Badge>}
+                            </div>
+                          </div>
+                          {onEditResource && (
+                            <button onClick={(e) => { e.stopPropagation(); onEditResource('Fournisseur', sup); }} className="h-6 w-6 rounded flex items-center justify-center text-[#172030]/40 hover:text-[#2A5141] hover:bg-[#F0F5F0] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" title="Modifier">
+                              <EditIcon className="h-3 w-3" />
+                            </button>
                           )}
-                        </Badge>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -3367,7 +3662,7 @@ const ProcessAccordion = ({
 };
 
 // ============================================================
-// COMPOSANT - BIAFicheDetail
+// BIAFicheDetail avec fil d'Ariane + toutes les améliorations
 // ============================================================
 const BIAFicheDetail = ({
   service,
@@ -3378,6 +3673,8 @@ const BIAFicheDetail = ({
   canDelete,
   entities,
   onNavigateToCMDB,
+  onImported,
+  onRefreshProcesses,
 }: {
   service: ServiceBIA;
   processes: any[];
@@ -3387,8 +3684,13 @@ const BIAFicheDetail = ({
   canDelete: boolean;
   entities: any[];
   onNavigateToCMDB?: () => void;
+  onImported?: (processIds: string[]) => void;
+  onRefreshProcesses?: () => Promise<void> | void;
 }) => {
   const [activeTab, setActiveTab] = useState("impact");
+
+  const [highlightedProcessId, setHighlightedProcessId] = useState<string | null>(null);
+  const processRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [addedHR, setAddedHR] = useState<any[]>([]);
   const [addedEquipment, setAddedEquipment] = useState<any[]>([]);
@@ -3417,6 +3719,8 @@ const BIAFicheDetail = ({
   const [showAddApp, setShowAddApp] = useState(false);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
 
+  const [editResource, setEditResource] = useState<{ type: 'HR' | 'Equipement' | 'App' | 'Fournisseur'; resource: any } | null>(null);
+
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkProcess, setLinkProcess] = useState<any>(null);
   const [linkResourceType, setLinkResourceType] = useState<string>("HR");
@@ -3439,6 +3743,42 @@ const BIAFicheDetail = ({
   const departmentProcesses = useMemo(() => {
     return processes.filter(p => p.entityId === service.id || p.department === service.name);
   }, [processes, service]);
+
+  // ✅ FIL D'ARIANE : Entreprise > Direction > Service
+  const breadcrumb = useMemo(() => {
+    const chain: { id: string; name: string }[] = [];
+    let current = entities.find(e => e.id === service.id);
+    if (!current) return chain;
+    
+    chain.unshift({ id: current.id, name: current.name });
+    
+    while (current && current.parentId) {
+      const parent = entities.find(e => e.id === current!.parentId);
+      if (!parent) break;
+      chain.unshift({ id: parent.id, name: parent.name });
+      current = parent;
+    }
+    
+    return chain;
+  }, [entities, service.id]);
+
+  // ✅ Import Excel — avec refresh + scroll
+  const handleImportSuccess = useCallback(async (processIds: string[]) => {
+    if (onImported) await onImported(processIds);
+    if (onRefreshProcesses) await onRefreshProcesses();
+
+    const firstId = processIds[0];
+    if (!firstId) return;
+
+    setTimeout(() => {
+      const el = processRefs.current[firstId];
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      setHighlightedProcessId(firstId);
+      setTimeout(() => setHighlightedProcessId(null), 2000);
+    }, 500);
+  }, [onImported, onRefreshProcesses]);
 
   // ============================================================
   // CHARGEMENT DES RESSOURCES BIA
@@ -3679,7 +4019,7 @@ const BIAFicheDetail = ({
   }, []);
 
   // ============================================================
-  // CHARGEMENT DES PROCESSUS LIÉS AVEC RTO/RPO
+  // CHARGEMENT DES PROCESSUS LIÉS
   // ============================================================
   const loadLinkedProcessesForResources = useCallback(async () => {
     try {
@@ -3952,15 +4292,39 @@ const BIAFicheDetail = ({
           };
         });
       setLinkManagementLinkedProcesses(linked);
+    } else {
+      setLinkManagementLinkedProcesses([]);
     }
   }, [linkManagementResourceId, linkManagementResourceType, departmentProcesses]);
 
-  const openLinkManagement = (resourceType: string, resourceId: string, resourceName: string) => {
+  const openLinkManagement = async (resourceType: string, resourceId: string, resourceName: string) => {
     setLinkManagementResourceType(resourceType);
     setLinkManagementResourceId(resourceId);
     setLinkManagementResourceName(resourceName);
     setLinkManagementOpen(true);
-    refreshLinkManagementData();
+    
+    let table = '', idColumn = '', selectFields = 'processus_id';
+    if (resourceType !== 'HR') selectFields = 'processus_id, rto_hours, rpo_hours';
+    switch(resourceType) {
+      case 'HR': table = 'processus_ressources_humaines'; idColumn = 'ressource_humaine_id'; break;
+      case 'Equipement': table = 'processus_equipements'; idColumn = 'equipement_id'; break;
+      case 'App': table = 'processus_applications'; idColumn = 'application_id'; break;
+      case 'Fournisseur': table = 'processus_fournisseurs'; idColumn = 'fournisseur_id'; break;
+      default: return;
+    }
+    const { data } = await supabase.from(table).select(selectFields).eq(idColumn, resourceId);
+    if (data) {
+      const linkedIds = data.map((d: any) => d.processus_id);
+      const linked = departmentProcesses
+        .filter(p => linkedIds.includes(p.id))
+        .map(p => {
+          const linkData = (data as any[]).find((d: any) => d.processus_id === p.id);
+          return { ...p, _linkRto: linkData?.rto_hours || 4, _linkRpo: linkData?.rpo_hours || 2 };
+        });
+      setLinkManagementLinkedProcesses(linked);
+    } else {
+      setLinkManagementLinkedProcesses([]);
+    }
   };
 
   const getProcessResources = useCallback(async (processId: string) => {
@@ -3980,7 +4344,7 @@ const BIAFicheDetail = ({
     
     if (hrLinks && hrLinks.length > 0) {
       const ids = hrLinks.map((l: any) => l.ressource_humaine_id);
-      const filteredIds = ids.filter(id => addedHR.some(r => r.id === id));
+      const filteredIds = ids.filter((id: string) => addedHR.some(r => r.id === id));
       if (filteredIds.length > 0) {
         const { data } = await supabase.from('ressources_humaines').select('*').in('id', filteredIds);
         if (data) result.hr = data;
@@ -3994,7 +4358,7 @@ const BIAFicheDetail = ({
     
     if (equipLinks && equipLinks.length > 0) {
       const ids = equipLinks.map((l: any) => l.equipement_id);
-      const filteredIds = ids.filter(id => addedEquipment.some(r => r.id === id));
+      const filteredIds = ids.filter((id: string) => addedEquipment.some(r => r.id === id));
       if (filteredIds.length > 0) {
         const { data } = await supabase.from('ressources_equipements').select('*').in('id', filteredIds);
         if (data) {
@@ -4013,7 +4377,7 @@ const BIAFicheDetail = ({
     
     if (appLinks && appLinks.length > 0) {
       const ids = appLinks.map((l: any) => l.application_id);
-      const filteredIds = ids.filter(id => addedApps.some(r => r.id === id));
+      const filteredIds = ids.filter((id: string) => addedApps.some(r => r.id === id));
       if (filteredIds.length > 0) {
         const { data } = await supabase.from('applications_it').select('*').in('id', filteredIds);
         if (data) {
@@ -4032,7 +4396,7 @@ const BIAFicheDetail = ({
     
     if (suppLinks && suppLinks.length > 0) {
       const ids = suppLinks.map((l: any) => l.fournisseur_id);
-      const filteredIds = ids.filter(id => addedSuppliers.some(r => r.id === id));
+      const filteredIds = ids.filter((id: string) => addedSuppliers.some(r => r.id === id));
       if (filteredIds.length > 0) {
         const { data } = await supabase.from('fournisseurs').select('*').in('id', filteredIds);
         if (data) {
@@ -4165,6 +4529,19 @@ const BIAFicheDetail = ({
     return cached.hr.length + cached.equipment.length + cached.apps.length + cached.suppliers.length;
   };
 
+  const handleEditResource = (type: 'HR' | 'Equipement' | 'App' | 'Fournisseur', resource: any) => {
+    setEditResource({ type, resource });
+  };
+
+  const handleResourceSaved = async () => {
+    await loadCMDBResources();
+    await loadBIAResources();
+    await loadLinkedProcessesForResources();
+    for (const p of departmentProcesses) {
+      await getProcessResources(p.id);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <SelectFromCMDBDialog
@@ -4259,6 +4636,16 @@ const BIAFicheDetail = ({
         departmentId={service.id}
       />
 
+      {editResource && (
+        <ResourceEditDialog
+          open={!!editResource}
+          onOpenChange={(o) => !o && setEditResource(null)}
+          resourceType={editResource.type}
+          resource={editResource.resource}
+          onSaved={handleResourceSaved}
+        />
+      )}
+
       <LinkProcessDialog
         open={linkManagementOpen}
         onOpenChange={setLinkManagementOpen}
@@ -4306,6 +4693,33 @@ const BIAFicheDetail = ({
         />
       )}
 
+      {/* ✅ FIL D'ARIANE : Entreprise > Direction > Service */}
+      <div className="flex items-center gap-2 flex-wrap text-sm">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          className="h-7 px-2 text-[#2A5141] hover:bg-[#F8F6F2] gap-1"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Retour
+        </Button>
+        <div className="flex items-center gap-1 text-[#172030]/50 flex-wrap">
+          {breadcrumb.map((node, idx) => (
+            <span key={node.id} className="flex items-center gap-1">
+              {idx > 0 && <ChevronRightIcon className="h-3 w-3 text-[#172030]/30" />}
+              <span className={cn(
+                idx === breadcrumb.length - 1 
+                  ? "font-semibold text-[#172030]" 
+                  : "text-[#172030]/50"
+              )}>
+                {node.name}
+              </span>
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
@@ -4315,11 +4729,6 @@ const BIAFicheDetail = ({
           {service.description && (
             <p className="text-sm text-gray-500 mt-1">{service.description}</p>
           )}
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onBack} className="gap-1">
-            <ArrowLeft className="h-4 w-4" /> Retour
-          </Button>
         </div>
       </div>
 
@@ -4405,34 +4814,51 @@ const BIAFicheDetail = ({
             {departmentProcesses.map((p, idx) => {
               const count = getTotalResourceCount(p);
               const resources = processResourcesCache[p.id];
+              const isHighlighted = highlightedProcessId === p.id;
               return (
-                <ProcessAccordion
+                <div
                   key={p.id}
-                  process={p}
-                  index={idx}
-                  department={service.name}
-                  onProcessClick={handleProcessClick}
-                  onLinkClick={handleLinkClick}
-                  onEditProcess={onEdit}
-                  onDeleteProcess={handleDeleteProcess}
-                  resourceCount={count}
-                  canDelete={canDelete}
-                  processResources={resources}
-                  allProcesses={departmentProcesses}
-                />
+                  ref={(el) => { processRefs.current[p.id] = el; }}
+                  data-process-id={p.id}
+                  className={cn(
+                    "rounded-lg transition-all duration-500",
+                    isHighlighted && "ring-2 ring-[#2A5141]/40 ring-offset-2 ring-offset-[#F8F6F2]"
+                  )}
+                >
+                  <ProcessAccordion
+                    process={p}
+                    index={idx}
+                    department={service.name}
+                    onProcessClick={handleProcessClick}
+                    onLinkClick={handleLinkClick}
+                    onEditProcess={onEdit}
+                    onDeleteProcess={handleDeleteProcess}
+                    resourceCount={count}
+                    canDelete={canDelete}
+                    processResources={resources}
+                    allProcesses={departmentProcesses}
+                    onEditResource={handleEditResource}
+                  />
+                </div>
               );
             })}
           </div>
 
-          <Button 
-            variant="outline" 
-            className="w-full mt-4 border-dashed text-gray-400 hover:text-gray-600"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('openBiaWizard', { detail: { departmentId: service.id } }));
-            }}
-          >
-            <Plus className="h-4 w-4 mr-2" /> Ajouter un processus
-          </Button>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <BiaExcelImport
+              service={{ id: service.id, name: service.name }}
+              onImported={handleImportSuccess}
+            />
+            <Button
+              variant="outline"
+              className="w-full bg-white border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2] font-medium"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('openBiaWizard', { detail: { departmentId: service.id } }));
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" /> Ajouter un processus
+            </Button>
+          </div>
         </TabsContent>
 
         <TabsContent value="hr" className="pt-4">
@@ -4454,16 +4880,17 @@ const BIAFicheDetail = ({
           </div>
 
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
-            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
-              <Users className="h-4 w-4 text-[#2A5141]" />
+            <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-b border-blue-100">
+              <Users className="h-4 w-4 text-blue-600" />
               <h4 className="font-medium text-[#172030] flex-1 text-sm">Collaborateurs clés</h4>
-              <span className="text-xs text-[#172030]/40">{addedHR.length} collaborateur{addedHR.length > 1 ? 's' : ''}</span>
+              <span className="text-xs text-blue-700/60">{addedHR.length} collaborateur{addedHR.length > 1 ? 's' : ''}</span>
             </div>
             <div className="p-4">
               {addedHR.length > 0 ? (
                 <PersonnelTableau 
                   people={addedHR} 
                   onDelete={(id, name) => removeResourceFromBIA('HR', id, name)}
+                  onEdit={(r) => handleEditResource('HR', r)}
                   linkedProcessesMap={linkedProcessesMap.hr}
                   onManageLinks={(id, name) => openLinkManagement('HR', id, name)}
                 />
@@ -4499,16 +4926,17 @@ const BIAFicheDetail = ({
           </div>
 
           <div className="border rounded-xl overflow-hidden bg-white mb-4">
-            <div className="flex items-center gap-3 px-4 py-3 bg-[#F8F6F2] border-b border-[#E8E4DC]">
-              <Monitor className="h-4 w-4 text-[#2A5141]" />
+            <div className="flex items-center gap-3 px-4 py-3 bg-yellow-50 border-b border-yellow-100">
+              <Monitor className="h-4 w-4 text-yellow-600" />
               <h4 className="font-medium text-[#172030] flex-1 text-sm">Équipements & infrastructure</h4>
-              <span className="text-xs text-[#172030]/40">{addedEquipment.length} équipement{addedEquipment.length > 1 ? 's' : ''}</span>
+              <span className="text-xs text-yellow-700/60">{addedEquipment.length} équipement{addedEquipment.length > 1 ? 's' : ''}</span>
             </div>
             <div className="p-4">
               {addedEquipment.length > 0 ? (
                 <EquipmentTableau 
                   equipment={addedEquipment} 
                   onDelete={(id, name) => removeResourceFromBIA('Equipement', id, name)}
+                  onEdit={(r) => handleEditResource('Equipement', r)}
                   linkedProcessesMap={linkedProcessesMap.equipment}
                   onManageLinks={(id, name) => openLinkManagement('Equipement', id, name)}
                 />
@@ -4531,9 +4959,9 @@ const BIAFicheDetail = ({
 
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">
-              <Server className="h-5 w-5 text-[#172030]" />
+              <Server className="h-5 w-5 text-purple-600" />
               <span className="text-sm font-medium text-[#172030]">Applications IT</span>
-              <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
+              <Badge variant="outline" className="bg-purple-50 border-purple-200 text-purple-700">
                 {addedApps.length}
               </Badge>
             </div>
@@ -4552,6 +4980,7 @@ const BIAFicheDetail = ({
             <AppTableau 
               apps={addedApps}
               onDelete={(id, name) => removeResourceFromBIA('App', id, name)}
+              onEdit={(r) => handleEditResource('App', r)}
               linkedProcessesMap={linkedProcessesMap.apps}
               onManageLinks={(id, name) => openLinkManagement('App', id, name)}
             />
@@ -4582,9 +5011,9 @@ const BIAFicheDetail = ({
 
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">
-              <Handshake className="h-5 w-5 text-[#172030]" />
+              <Handshake className="h-5 w-5 text-orange-600" />
               <span className="text-sm font-medium text-[#172030]">Prestataires</span>
-              <Badge variant="outline" className="bg-white border-[#E8E4DC] text-[#172030]/60">
+              <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700">
                 {addedSuppliers.length}
               </Badge>
             </div>
@@ -4603,6 +5032,7 @@ const BIAFicheDetail = ({
             <SupplierTableau 
               suppliers={addedSuppliers}
               onDelete={(id, name) => removeResourceFromBIA('Fournisseur', id, name)}
+              onEdit={(r) => handleEditResource('Fournisseur', r)}
               linkedProcessesMap={linkedProcessesMap.suppliers}
               onManageLinks={(id, name) => openLinkManagement('Fournisseur', id, name)}
             />
@@ -4654,7 +5084,9 @@ const BIAFicheDetail = ({
 // COMPOSANT PRINCIPAL - ProcessInventory
 // ============================================================
 export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) => void; onCreate: () => void }) => {
-  const { processes, deleteProcess } = useBia();
+  const biaContext = useBia();
+  const { processes, deleteProcess } = biaContext;
+  const refreshProcesses = (biaContext as any).refreshProcesses as (() => Promise<void> | void) | undefined;
   const { entities } = useGovernance();
   const { can } = useRole();
 
@@ -4682,9 +5114,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
 
   const getDepartmentCount = (entityId: string) => getChildren(entityId).length;
 
-  // ============================================================
-  // SÉCURITÉ GLOBALE : CLEANUP POINTER-EVENTS
-  // ============================================================
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -4713,9 +5142,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     };
   }, []);
 
-  // ============================================================
-  // NAVIGATION DEPUIS LE DASHBOARD
-  // ============================================================
   useEffect(() => {
     const handleOpenProcessDetail = (event: CustomEvent) => {
       const { processId } = event.detail || {};
@@ -4788,9 +5214,6 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
     };
   }, [processes, entities, resourceCountByProcess]);
 
-  // ============================================================
-  // CHARGEMENT DU COMPTE DE RESSOURCES PAR PROCESSUS
-  // ============================================================
   useEffect(() => {
     const loadResourceCounts = async () => {
       if (processes.length === 0) {
@@ -5015,6 +5438,7 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
 
   const handleWizardDone = () => {
     closeWizard();
+    if (refreshProcesses) refreshProcesses();
   };
 
   if (showWizard) {
@@ -5352,6 +5776,8 @@ export const ProcessInventory = ({ onEdit, onCreate }: { onEdit: (id: string) =>
         canDelete={can("admin")}
         entities={entities}
         onNavigateToCMDB={navigateToCMDB}
+        onImported={() => { setResourceCountByProcess(prev => ({ ...prev })); }}
+        onRefreshProcesses={refreshProcesses}
       />
     );
   }

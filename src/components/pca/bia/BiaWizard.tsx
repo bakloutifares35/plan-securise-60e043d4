@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
   ArrowLeft, ArrowRight, Check, ShieldAlert, TrendingUp, Building2, 
-  ChevronDown, AlertCircle, Info, X, Loader2
+  Info, Loader2, AlertCircle
 } from "lucide-react";
 import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
@@ -93,54 +93,42 @@ const impactDescriptions: Record<ImpactAxis, Record<number, string>> = {
 // ==================== COMPOSANT MATRICE STATIQUE ====================
 const StaticImpactMatrix = () => {
   const severityLevels = [
-    { label: "Très sévère", color: "bg-red-800 text-white", border: "border-red-900" },
-    { label: "Sévère", color: "bg-red-600 text-white", border: "border-red-700" },
-    { label: "Majeur", color: "bg-orange-500 text-white", border: "border-orange-600" },
-    { label: "Modéré", color: "bg-yellow-500 text-black", border: "border-yellow-600" },
-    { label: "Mineur", color: "bg-green-600 text-white", border: "border-green-700" },
+    { label: "Très sévère", color: "bg-red-800 text-white" },
+    { label: "Sévère", color: "bg-red-600 text-white" },
+    { label: "Majeur", color: "bg-orange-500 text-white" },
+    { label: "Modéré", color: "bg-yellow-500 text-black" },
+    { label: "Mineur", color: "bg-green-600 text-white" },
   ];
 
   const rows = [
-    {
-      category: "💰 Impact financier",
-      descriptions: [
-        "Perte financière significative pouvant mener à un résultat négatif.",
-        "Perte financière élevée, remarquable dans les résultats.",
-        "Perte financière tolérable.",
-        "Perte financière marginale.",
-        "Aucune perte financière.",
-      ],
-    },
-    {
-      category: "⚖️ Conformité / Légal",
-      descriptions: [
-        "Plainte administrative menant à une perte de licence.",
-        "Violations légales / plaintes entraînant des amendes significatives et possiblement des peines de prison.",
-        "Violations légales / plaintes entraînant des demandes de dommages ou amendes.",
-        "Violations légales / plaintes sans amendes significatives.",
-        "Aucun dommage légal.",
-      ],
-    },
-    {
-      category: "⚙️ Impact opérationnel",
-      descriptions: [
-        "Interruption sévère des processus métier.",
-        "Interruption significative des processus métier.",
-        "Dégradation acceptable de l'efficacité opérationnelle.",
-        "Impact marginal sur les processus métier.",
-        "Aucun impact significatif sur les processus.",
-      ],
-    },
-    {
-      category: "📢 Impact réputationnel",
-      descriptions: [
-        "Impact réputationnel sévère. Confiance des clients/partenaires irrémédiablement endommagée.",
-        "Impact réputationnel significatif. Couverture médiatique nationale.",
-        "Impact réputationnel tolérable. Petit article local.",
-        "Impact réputationnel marginal, sans couverture médiatique.",
-        "Aucun impact réputationnel.",
-      ],
-    },
+    { category: "💰 Impact financier", descriptions: [
+      "Perte financière significative pouvant mener à un résultat négatif.",
+      "Perte financière élevée, remarquable dans les résultats.",
+      "Perte financière tolérable.",
+      "Perte financière marginale.",
+      "Aucune perte financière.",
+    ]},
+    { category: "⚖️ Conformité / Légal", descriptions: [
+      "Plainte administrative menant à une perte de licence.",
+      "Violations légales / plaintes entraînant des amendes significatives.",
+      "Violations légales / plaintes entraînant des demandes de dommages.",
+      "Violations légales sans amendes significatives.",
+      "Aucun dommage légal.",
+    ]},
+    { category: "⚙️ Impact opérationnel", descriptions: [
+      "Interruption sévère des processus métier.",
+      "Interruption significative des processus métier.",
+      "Dégradation acceptable de l'efficacité opérationnelle.",
+      "Impact marginal sur les processus métier.",
+      "Aucun impact significatif sur les processus.",
+    ]},
+    { category: "📢 Impact réputationnel", descriptions: [
+      "Impact réputationnel sévère. Confiance irrémédiablement endommagée.",
+      "Impact réputationnel significatif. Couverture médiatique nationale.",
+      "Impact réputationnel tolérable. Petit article local.",
+      "Impact réputationnel marginal, sans couverture médiatique.",
+      "Aucun impact réputationnel.",
+    ]},
   ];
 
   return (
@@ -151,9 +139,7 @@ const StaticImpactMatrix = () => {
             <tr className="bg-muted/50">
               <th className="border p-2 text-left font-semibold">Évaluation d'impact métier</th>
               {severityLevels.map((s) => (
-                <th key={s.label} className={`border p-2 text-center font-semibold ${s.color}`}>
-                  {s.label}
-                </th>
+                <th key={s.label} className={`border p-2 text-center font-semibold ${s.color}`}>{s.label}</th>
               ))}
             </tr>
           </thead>
@@ -162,18 +148,12 @@ const StaticImpactMatrix = () => {
               <tr key={idx} className="hover:bg-muted/20">
                 <td className="border p-2 font-medium">{row.category}</td>
                 {row.descriptions.map((desc, i) => (
-                  <td key={i} className="border p-2 text-xs">
-                    {desc}
-                  </td>
+                  <td key={i} className="border p-2 text-xs">{desc}</td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
-      <div className="bg-muted/30 p-3 text-xs text-muted-foreground border-t">
-        📊 <strong>Fourchettes d'impact financier (% de l'assiette IFRS sur 3 ans)</strong> :
-        Mineur (0-0,075%) | Modéré (0,076-0,30%) | Majeur (0,31-1,20%) | Sévère (1,21-4,80%) | Très sévère (4,81%+)
       </div>
     </div>
   );
@@ -191,15 +171,10 @@ const ImpactTooltip = ({ axis }: { axis: ImpactAxis }) => {
           </button>
         </Tooltip.Trigger>
         <Tooltip.Portal>
-          <Tooltip.Content
-            className="z-50 max-w-xs rounded-md bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md border border-border"
-            sideOffset={5}
-          >
+          <Tooltip.Content className="z-50 max-w-xs rounded-md bg-popover px-3 py-2 text-xs shadow-md border" sideOffset={5}>
             <p className="font-semibold mb-1">{AXIS_LABELS[axis]}</p>
             {Object.entries(descriptions).map(([score, desc]) => (
-              <div key={score} className="mb-0.5">
-                <span className="font-medium">{score} :</span> {desc}
-              </div>
+              <div key={score} className="mb-0.5"><span className="font-medium">{score} :</span> {desc}</div>
             ))}
             <Tooltip.Arrow className="fill-border" />
           </Tooltip.Content>
@@ -211,30 +186,22 @@ const ImpactTooltip = ({ axis }: { axis: ImpactAxis }) => {
 
 // ==================== COMPOSANT CELLULE D'IMPACT AVEC POPOVER ====================
 const ImpactCell = ({
-  value,
-  axis,
-  periodId,
-  onValueChange,
+  value, axis, periodId, onValueChange,
 }: {
-  value: number;
-  axis: ImpactAxis;
-  periodId: string;
+  value: number; axis: ImpactAxis; periodId: string;
   onValueChange: (axis: ImpactAxis, periodId: string, value: number) => void;
 }) => {
   const [open, setOpen] = useState(false);
   const style = SEVERITY_PASTEL_STYLES[value] || SEVERITY_PASTEL_STYLES[0];
 
-  const handleSelect = (val: number) => {
-    onValueChange(axis, periodId, val);
-    setOpen(false);
-  };
+  const handleSelect = (val: number) => { onValueChange(axis, periodId, val); setOpen(false); };
 
   const options = [
-    { score: 1, label: "Mineur", bg: "#E8F5E9", text: "#2E7D32", border: "#A5D6A7" },
-    { score: 2, label: "Modéré", bg: "#FFF8E1", text: "#F57F17", border: "#FFE082" },
-    { score: 3, label: "Majeur", bg: "#FFF3E0", text: "#E65100", border: "#FFCC80" },
-    { score: 4, label: "Sévère", bg: "#FBE9E7", text: "#D84315", border: "#FFAB91" },
-    { score: 5, label: "Très sévère", bg: "#FFEBEE", text: "#C62828", border: "#EF9A9A" },
+    { score: 1, label: "Mineur", bg: "#E8F5E9", text: "#2E7D32" },
+    { score: 2, label: "Modéré", bg: "#FFF8E1", text: "#F57F17" },
+    { score: 3, label: "Majeur", bg: "#FFF3E0", text: "#E65100" },
+    { score: 4, label: "Sévère", bg: "#FBE9E7", text: "#D84315" },
+    { score: 5, label: "Très sévère", bg: "#FFEBEE", text: "#C62828" },
   ];
 
   return (
@@ -243,14 +210,9 @@ const ImpactCell = ({
         <button
           className={cn(
             "relative w-full min-w-[80px] px-2 py-2.5 rounded-lg border-2 text-center transition-all duration-200",
-            "hover:shadow-md hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-[#2A5141]/40 cursor-pointer",
-            "border-solid"
+            "hover:shadow-md hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-[#2A5141]/40 cursor-pointer border-solid"
           )}
-          style={{
-            backgroundColor: style.bg,
-            color: style.text,
-            borderColor: style.border,
-          }}
+          style={{ backgroundColor: style.bg, color: style.text, borderColor: style.border }}
         >
           <div className="flex flex-col items-center">
             <span className="text-xs font-medium">{style.label}</span>
@@ -258,11 +220,7 @@ const ImpactCell = ({
           </div>
         </button>
       </PopoverTrigger>
-      <PopoverContent 
-        className="w-48 p-1.5 bg-white border-[#E8E4DC] shadow-lg rounded-lg" 
-        align="center"
-        sideOffset={8}
-      >
+      <PopoverContent className="w-48 p-1.5 bg-white border-[#E8E4DC] shadow-lg rounded-lg" align="center" sideOffset={8}>
         <div className="space-y-1">
           <p className="text-[10px] font-medium text-[#172030]/50 uppercase tracking-wider px-2 pb-1 border-b border-[#E8E4DC]">
             {AXIS_LABELS[axis]} — Choisir un niveau
@@ -274,14 +232,10 @@ const ImpactCell = ({
                 key={opt.score}
                 onClick={() => handleSelect(opt.score)}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all",
-                  "hover:shadow-sm hover:scale-[1.02]",
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all hover:shadow-sm hover:scale-[1.02]",
                   isSelected && "ring-2 ring-[#2A5141] ring-offset-1"
                 )}
-                style={{
-                  backgroundColor: opt.bg,
-                  color: opt.text,
-                }}
+                style={{ backgroundColor: opt.bg, color: opt.text }}
               >
                 <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.text }} />
                 <span className="flex-1 text-left font-medium">{opt.label}</span>
@@ -297,7 +251,7 @@ const ImpactCell = ({
 };
 
 // ════════════════════════════════════════════════════════════════════
-// ✅ STEPS - 3 ÉTAPES (RPO SUPPRIMÉ)
+// ✅ STEPS - 3 ÉTAPES
 // ════════════════════════════════════════════════════════════════════
 const STEPS = [
   { id: "general", label: "Général", icon: "📋" },
@@ -306,60 +260,53 @@ const STEPS = [
 ];
 
 // ════════════════════════════════════════════════════════════════════
-// ✅ LOGIQUE DE CALCUL RTO — 100% JUSTE ET AUDITABLE
+// ✅ LOGIQUE DE CALCUL RTO — MÉTHODE RISK MANAGER (BCI / ISO 22301)
 // ════════════════════════════════════════════════════════════════════
 
 /**
- * CONSTANTES DE CALCUL
- * - CRITICAL_THRESHOLD = 4 (Sévère) — aligné avec isProcessCritical
- * - RTO_SAFETY_MARGIN = 0.8 — marge de sécurité de 20%, paramétrable par tenant
+ * MÉTHODE RISK MANAGER — différente du 0.8% fictif.
+ *
+ * 1. MTPD = 1re période (croissante) où AU MOINS UN axe atteint
+ *    le seuil critique (Sévère = 4 ou Très sévère = 5).
+ * 2. Si AUCUN axe n'atteint jamais le seuil : le processus n'est pas
+ *    critique → le RTO n'est PAS calculé automatiquement. On affiche
+ *    "à définir manuellement" et on laisse l'utilisateur décider.
+ * 3. Si MTPD existe : RTO = MTPD × RTO_COEFFICIENT (défaut 0.5).
+ *    Cette marge de 50% est le standard bancaire (au lieu de 20% qui
+ *    est cosmétique et non représentatif de la réalité opérationnelle).
+ * 4. Le RTO ne peut jamais être ≥ au MTPD.
  */
-const CRITICAL_THRESHOLD = 4;
-const RTO_SAFETY_MARGIN = 0.8;
+export const CRITICAL_THRESHOLD = 4;
+export const RTO_COEFFICIENT = 0.5; // 50% — standard bancaire, plus réaliste que 0.8
 
-/**
- * Arrondit un RTO à une valeur opérationnelle cohérente
- * Évite les valeurs non exploitables comme 269h
- */
-const roundToOperationalRTO = (hours: number): number => {
-  if (hours <= 4) return Math.max(0.5, Math.round(hours * 2) / 2);
-  if (hours <= 8) return Math.round(hours);
-  if (hours <= 24) return Math.round(hours / 2) * 2;
-  if (hours <= 168) return Math.round(hours / 12) * 12;
-  if (hours <= 336) return Math.round(hours / 24) * 24;
-  return Math.round(hours / 24) * 24;
-};
-
-interface RTOSuggestion {
-  rto: number; // RTO arrondi opérationnel
-  rawSuggestedRTO: number; // Valeur brute calculée (pour traçabilité)
-  mtpd: number | null; // MTPD identifié, null si jamais critique
+export interface RTOSuggestion {
+  /** RTO suggéré (entier, arrondi à l'heure). null si pas de MTPD. */
+  rto: number | null;
+  /** Valeur brute avant arrondi. */
+  rawSuggestedRTO: number | null;
+  /** MTPD identifié, null si jamais critique. */
+  mtpd: number | null;
+  /** Axe déclencheur du seuil critique. */
   triggerAxis: ImpactAxis | null;
+  /** Libellé de la période déclencheuse. */
   triggerPeriodLabel: string | null;
-  lastSafePeriodLabel: string | null;
-  safetyMarginApplied: number; // Marge effectivement appliquée
+  /** Marge appliquée (0.5 = 50%). */
+  coefficientApplied: number;
+  /** Phrase complète auditable. */
+  explanation: string;
+  /** true si aucun MTPD → RTO à définir manuellement par l'utilisateur. */
+  requiresManualInput: boolean;
 }
 
-/**
- * CALCUL DU RTO SUGGÉRÉ — MÉTHODOLOGIE BCI/ISO 22301
- * 
- * PRINCIPE :
- * 1. MTPD = durée de la PREMIÈRE période où un axe atteint le score 4 (Sévère)
- * 2. Le RTO doit être STRICTEMENT INFÉRIEUR au MTPD
- * 3. La marge de sécurité s'applique sur la DERNIÈRE période VÉRIFIÉE tolérable
- *    (celle juste avant le MTPD) — jamais sur le MTPD lui-même
- * 4. Cas particulier : critique dès la première période → marge sur MTPD
- * 5. Cas particulier : jamais critique → RTO = dernière période observée
- */
 export const getSuggestedRTO = (impacts: any): RTOSuggestion => {
-  // Trier les périodes de la plus courte à la plus longue
   const sortedPeriods = [...PERIODS].sort((a, b) => a.hours - b.hours);
+
   let criticalIndex = -1;
   let triggerAxis: ImpactAxis | null = null;
 
-  // 1. Recherche de la PREMIÈRE période critique (score >= 4)
+  // 1. Recherche de la 1re période critique
   for (let i = 0; i < sortedPeriods.length; i++) {
-    const periodData = impacts[sortedPeriods[i].id];
+    const periodData = impacts?.[sortedPeriods[i].id];
     if (!periodData) continue;
     for (const axis of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
       if ((periodData[axis] || 0) >= CRITICAL_THRESHOLD) {
@@ -371,102 +318,81 @@ export const getSuggestedRTO = (impacts: any): RTOSuggestion => {
     if (criticalIndex !== -1) break;
   }
 
-  // 2. Cas particulier : JAMAIS CRITIQUE sur l'horizon évalué
-  //    → Le processus est tolérable sur toute la durée observée
+  // 2. Aucun MTPD → RTO non calculable automatiquement
   if (criticalIndex === -1) {
-    const lastPeriod = sortedPeriods[sortedPeriods.length - 1];
-    const rto = roundToOperationalRTO(lastPeriod.hours);
+    const last = sortedPeriods[sortedPeriods.length - 1];
     return {
-      rto,
-      rawSuggestedRTO: lastPeriod.hours,
+      rto: null,
+      rawSuggestedRTO: null,
       mtpd: null,
       triggerAxis: null,
       triggerPeriodLabel: null,
-      lastSafePeriodLabel: lastPeriod.label,
-      safetyMarginApplied: 0, // Aucune marge car aucun seuil franchi
+      coefficientApplied: 0,
+      requiresManualInput: true,
+      explanation:
+        `Aucun axe n'atteint le seuil critique (score ≥ ${CRITICAL_THRESHOLD}) sur tout l'horizon ` +
+        `évalué (jusqu'à ${last.label}). Le processus n'est pas critique au sens BCI/ISO 22301 : ` +
+        `le RTO doit être défini manuellement selon la stratégie métier (pas de calcul automatique).`,
     };
   }
 
   const mtpd = sortedPeriods[criticalIndex].hours;
   const triggerPeriodLabel = sortedPeriods[criticalIndex].label;
+  const rawRTO = mtpd * RTO_COEFFICIENT;
+  const rto = Math.max(1, Math.round(rawRTO));
 
-  // 3. Cas particulier : CRITIQUE DÈS LA PREMIÈRE PÉRIODE (P0_4H)
-  //    → Marge appliquée directement sur le MTPD
-  if (criticalIndex === 0) {
-    const rawRTO = mtpd * RTO_SAFETY_MARGIN;
-    const rto = roundToOperationalRTO(rawRTO);
-    return {
-      rto,
-      rawSuggestedRTO: rawRTO,
-      mtpd,
-      triggerAxis,
-      triggerPeriodLabel,
-      lastSafePeriodLabel: null,
-      safetyMarginApplied: 1 - RTO_SAFETY_MARGIN, // 20%
-    };
-  }
-
-  // 4. CAS GÉNÉRAL : Marge appliquée sur la DERNIÈRE PÉRIODE VÉRIFIÉE TOLÉRABLE
-  const lastSafePeriod = sortedPeriods[criticalIndex - 1];
-  const rawRTO = lastSafePeriod.hours * RTO_SAFETY_MARGIN;
-  const rto = roundToOperationalRTO(rawRTO);
   return {
     rto,
     rawSuggestedRTO: rawRTO,
     mtpd,
     triggerAxis,
     triggerPeriodLabel,
-    lastSafePeriodLabel: lastSafePeriod.label,
-    safetyMarginApplied: 1 - RTO_SAFETY_MARGIN, // 20%
+    coefficientApplied: RTO_COEFFICIENT,
+    requiresManualInput: false,
+    explanation:
+      `${AXIS_LABELS[triggerAxis!]} atteint le seuil critique (score ≥ ${CRITICAL_THRESHOLD}) à partir de ` +
+      `${triggerPeriodLabel}. MTPD identifié = ${mtpd}h. Méthode Risk Manager : RTO = MTPD × ${RTO_COEFFICIENT} ` +
+      `(marge de sécurité de ${Math.round((1 - RTO_COEFFICIENT) * 100)}%, standard bancaire) ` +
+      `→ RTO suggéré ${rto}h.`,
   };
 };
 
 /**
- * Trouve l'option RTO la plus proche dans la liste des options disponibles
+ * Trouve l'option RTO la plus proche dans la liste des options disponibles.
  */
 const findClosestRTOOption = (value: number, options: number[]): number => {
   if (options.length === 0) return value;
-  return options.reduce((prev, curr) => {
-    return Math.abs(curr - value) < Math.abs(prev - value) ? curr : prev;
-  });
+  return options.reduce((prev, curr) =>
+    Math.abs(curr - value) < Math.abs(prev - value) ? curr : prev
+  );
 };
 
 // ════════════════════════════════════════════════════════════════════
 
 const getSafeImpacts = (impacts: any) => {
-  if (!impacts || typeof impacts !== 'object') {
-    return emptyImpacts();
-  }
+  if (!impacts || typeof impacts !== 'object') return emptyImpacts();
   const firstKey = Object.keys(impacts)[0];
   if (firstKey && (firstKey === "P0_4H" || firstKey === "P4_8H" || firstKey === "P1D")) {
-    const safeImpacts = emptyImpacts();
+    const safe = emptyImpacts();
     for (const p of PERIODS) {
       const periodData = impacts[p.id];
       if (periodData && typeof periodData === 'object') {
         for (const a of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
-          safeImpacts[p.id][a] = typeof periodData[a] === 'number' ? periodData[a] : 0;
+          safe[p.id][a] = typeof periodData[a] === 'number' ? periodData[a] : 0;
         }
       }
     }
-    return safeImpacts;
+    return safe;
   }
-  const safeImpacts = emptyImpacts();
-  const simpleScores = {
-    financial: impacts.financial || 0,
-    reputational: impacts.reputational || 0,
-    regulatory: impacts.regulatory || 0,
-    operational: impacts.operational || 0,
-    client: impacts.client || 0
-  };
+  const safe = emptyImpacts();
   for (const p of PERIODS) {
     for (const a of Object.keys(AXIS_LABELS) as ImpactAxis[]) {
-      safeImpacts[p.id][a] = simpleScores[a as keyof typeof simpleScores] || 0;
+      safe[p.id][a] = impacts[a] || 0;
     }
   }
-  return safeImpacts;
+  return safe;
 };
 
-// ✅ newProcess - sans RPO
 const newProcess = (): Process => ({
   id: `pr_${Date.now()}`,
   name: "",
@@ -492,7 +418,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   const { processes, upsertProcess } = useBia();
   const { entities } = useGovernance();
   const [isSaving, setIsSaving] = useState(false);
-  
+
   const initial = useMemo(() => {
     const found = processes.find((p) => p.id === processId);
     if (found) {
@@ -500,18 +426,13 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
     }
     return newProcess();
   }, [processId, processes]);
-  
+
   const [step, setStep] = useState(0);
-  
   const [data, setData] = useState<any>(() => {
-    if (processId && initial.entityId) {
-      return initial;
-    }
+    if (processId && initial.entityId) return initial;
     if (!processId && initialEntityId) {
       const entityExists = entities.some(e => e.id === initialEntityId);
-      if (entityExists) {
-        return { ...initial, entityId: initialEntityId };
-      }
+      if (entityExists) return { ...initial, entityId: initialEntityId };
     }
     return initial;
   });
@@ -520,9 +441,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
     setData((prev: any) => {
       const newImpacts = { ...prev.impacts };
       const startIndex = TIME_PERIODS_ORDERED.indexOf(periodId);
-
       newImpacts[periodId] = { ...newImpacts[periodId], [axis]: newValue };
-
       for (let i = startIndex + 1; i < TIME_PERIODS_ORDERED.length; i++) {
         const period = TIME_PERIODS_ORDERED[i];
         const currentValue = newImpacts[period]?.[axis] ?? 0;
@@ -530,31 +449,23 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
           newImpacts[period] = { ...newImpacts[period], [axis]: newValue };
         }
       }
-
       return { ...prev, impacts: newImpacts };
     });
   };
 
-  const update = (key: string, value: any) => {
-    setData((d: any) => ({ ...d, [key]: value }));
-  };
+  const update = (key: string, value: any) => setData((d: any) => ({ ...d, [key]: value }));
 
   const globalScore = computeMaxScore(data.impacts);
   const criticality = scoreToCriticality(globalScore);
   const requiresPca = globalScore >= 3;
   const scorePercentage = Math.round((globalScore / 5) * 100);
 
-  // ✅ Calcul du RTO suggéré avec la nouvelle logique
   const rtoSuggestion = useMemo(() => getSuggestedRTO(data.impacts), [data.impacts]);
 
-  const canNext = () => {
-    if (step === 0) return data.name && data.entityId && data.owner;
-    return true;
-  };
+  const canNext = () => step === 0 ? (data.name && data.entityId && data.owner) : true;
 
   const submit = async () => {
     if (isSaving) return;
-    
     setIsSaving(true);
     const processToSave = {
       ...data,
@@ -562,59 +473,44 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
       appsCritiques: data.appsCritiques || [],
       resources: []
     };
-    
-    console.log("💾 Sauvegarde du processus:", processToSave.name);
-    
     try {
       await upsertProcess(processToSave);
       toast({ title: "BIA enregistré", description: `${data.name} — Criticité: ${criticality}` });
       onDone();
     } catch (error) {
-      console.error("Erreur lors de la sauvegarde:", error);
+      console.error("Erreur sauvegarde:", error);
       toast({ title: "Erreur", description: "Impossible d'enregistrer le BIA", variant: "destructive" });
       setIsSaving(false);
     }
   };
 
-  // ✅ Applique la suggestion RTO avec arrondi à l'option la plus proche
+  const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168, 240, 336, 504, 720];
+
   const applySuggestions = () => {
-    const rawValue = rtoSuggestion.rawSuggestedRTO;
-    const closestOption = findClosestRTOOption(rawValue, rtoOptions);
-    update("rto", closestOption);
-    
-    // Construction du message de justification
-    let message = "";
-    if (rtoSuggestion.mtpd !== null && rtoSuggestion.triggerAxis) {
-      const axisLabel = AXIS_LABELS[rtoSuggestion.triggerAxis] || rtoSuggestion.triggerAxis;
-      if (rtoSuggestion.lastSafePeriodLabel) {
-        // Cas général
-        message = `Basé sur: ${axisLabel} devient Sévère à ${rtoSuggestion.triggerPeriodLabel} (MTPD = ${rtoSuggestion.mtpd}h) — dernière période vérifiée tolérable: ${rtoSuggestion.lastSafePeriodLabel} (${Math.round(rtoSuggestion.mtpd / 2)}h) — marge de sécurité de ${Math.round(rtoSuggestion.safetyMarginApplied * 100)}% → RTO suggéré ${Math.round(rawValue)}h, arrondi à ${closestOption}h.`;
-      } else {
-        // Critique dès la première période
-        message = `Basé sur: ${axisLabel} devient Sévère dès la première période mesurée (${rtoSuggestion.triggerPeriodLabel}, MTPD = ${rtoSuggestion.mtpd}h) — marge de sécurité de ${Math.round(rtoSuggestion.safetyMarginApplied * 100)}% appliquée directement → RTO suggéré ${Math.round(rawValue)}h, arrondi à ${closestOption}h.`;
-      }
-    } else {
-      // Jamais critique
-      message = `Aucun impact n'atteint le seuil critique (score ≥ 4) sur l'horizon évalué (1 mois) — RTO suggéré basé sur la durée maximale observée: ${Math.round(rawValue)}h, arrondi à ${closestOption}h.`;
+    if (rtoSuggestion.rto === null) {
+      toast({
+        title: "RTO non calculable",
+        description: "Ce processus n'est pas critique (aucun axe ≥ 4) — définissez le RTO manuellement.",
+        variant: "destructive",
+      });
+      return;
     }
-    
-    toast({ 
-      title: "Suggestion RTO appliquée", 
-      description: message,
+    const closestOption = findClosestRTOOption(rtoSuggestion.rto, rtoOptions);
+    update("rto", closestOption);
+    toast({
+      title: "Suggestion RTO appliquée",
+      description: rtoSuggestion.explanation + ` → Option retenue : ${closestOption}h.`,
       duration: 8000,
     });
   };
-  
+
   const isLastStep = step === STEPS.length - 1;
 
-  // ✅ Options RTO étendues jusqu'à 720h (1 mois)
-  const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168, 240, 336, 504, 720];
-  
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground" style={{ fontFamily: "Playfair Display, serif" }}>
+          <h1 className="text-2xl md:text-3xl font-bold" style={{ fontFamily: "Playfair Display, serif" }}>
             {processId ? "Modifier l'analyse d'impact" : "Nouvelle analyse d'impact métier"}
           </h1>
           <p className="text-muted-foreground mt-2">Remplissez les étapes pour évaluer la criticité de votre processus</p>
@@ -628,27 +524,15 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
         </div>
         <div className="flex gap-2">
           {STEPS.map((s, i) => (
-            <button 
-              key={s.id} 
-              onClick={() => i <= step && setStep(i)} 
-              className={`flex-1 h-2 rounded-full transition-all ${i < step ? "bg-success" : i === step ? "bg-primary" : "bg-secondary"}`} 
-              title={s.label} 
-            />
+            <button key={s.id} onClick={() => i <= step && setStep(i)}
+              className={`flex-1 h-2 rounded-full transition-all ${i < step ? "bg-success" : i === step ? "bg-primary" : "bg-secondary"}`} />
           ))}
         </div>
         <div className="flex justify-between mt-2 text-xs text-muted-foreground">
           {STEPS.map((s, i) => (
-            <span key={s.id} className={i === step ? "text-primary font-medium" : ""}>
-              {s.icon} {s.label}
-            </span>
+            <span key={s.id} className={i === step ? "text-primary font-medium" : ""}>{s.icon} {s.label}</span>
           ))}
         </div>
-        {data.name && (
-          <div className="mt-3 pt-2 border-t border-border/50 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Processus actuel</span>
-            <span className="text-sm font-bold text-primary truncate max-w-[200px]">{data.name}</span>
-          </div>
-        )}
       </div>
 
       <div className="bg-gradient-to-r from-[#2A5141]/10 to-[#2A5141]/5 rounded-xl p-6 border border-[#2A5141]/20">
@@ -660,12 +544,8 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             <div>
               <p className="text-xs font-medium text-[#172030]/50 uppercase tracking-wider">Score de criticité</p>
               <div className="flex items-baseline gap-3">
-                <span className="text-4xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>
-                  {scorePercentage}%
-                </span>
-                <Badge className={cn("text-sm px-3 py-1", criticalityColor(criticality))}>
-                  {criticality}
-                </Badge>
+                <span className="text-4xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{scorePercentage}%</span>
+                <Badge className={cn("text-sm px-3 py-1", criticalityColor(criticality))}>{criticality}</Badge>
               </div>
             </div>
           </div>
@@ -677,30 +557,21 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
           )}
         </div>
         <div className="mt-4 h-2.5 bg-[#E8E4DC] rounded-full overflow-hidden">
-          <div 
-            className="h-full rounded-full transition-all duration-500"
-            style={{ 
-              width: `${scorePercentage}%`,
-              backgroundColor: globalScore >= 4 ? "#C62828" : globalScore >= 3 ? "#E65100" : globalScore >= 2 ? "#F57F17" : "#2E7D32"
-            }}
-          />
+          <div className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${scorePercentage}%`,
+              backgroundColor: globalScore >= 4 ? "#C62828" : globalScore >= 3 ? "#E65100" : globalScore >= 2 ? "#F57F17" : "#2E7D32" }} />
         </div>
-        <p className="text-xs text-[#172030]/40 mt-2">
-          Score basé sur le maximum de tous les impacts évalués (1 = Mineur, 5 = Très sévère)
-        </p>
+        <p className="text-xs text-[#172030]/40 mt-2">Score basé sur le maximum de tous les impacts (1 = Mineur, 5 = Très sévère)</p>
       </div>
 
       <Card>
         <CardContent className="p-6 space-y-6">
-          {/* ÉTAPE 1 - GÉNÉRAL */}
+          {/* ÉTAPE 1 */}
           {step === 0 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">1</div>
-                  <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Informations générales</h2>
-                </div>
-                {data.name && <Badge variant="outline" className="text-xs">📋 {data.name}</Badge>}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">1</div>
+                <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Informations générales</h2>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
@@ -709,27 +580,16 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                 </div>
                 <div>
                   <Label>Entité *</Label>
-                  <Select 
-                    value={data.entityId} 
-                    onValueChange={(v) => update("entityId", v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner une entité" />
-                    </SelectTrigger>
+                  <Select value={data.entityId} onValueChange={(v) => update("entityId", v)}>
+                    <SelectTrigger><SelectValue placeholder="Sélectionner une entité" /></SelectTrigger>
                     <SelectContent>
                       {entities.filter(e => e.parentId !== null).map((entity) => (
                         <SelectItem key={entity.id} value={entity.id}>
-                          <span className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            {entity.name}
-                          </span>
+                          <span className="flex items-center gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{entity.name}</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Sélectionnez le département ou service concerné.
-                  </p>
                 </div>
                 <div>
                   <Label>Responsable *</Label>
@@ -743,7 +603,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             </div>
           )}
 
-          {/* ÉTAPE 2 - IMPACT */}
+          {/* ÉTAPE 2 */}
           {step === 1 && (
             <div className="space-y-6">
               <div className="flex items-center justify-between gap-2 mb-4">
@@ -753,76 +613,43 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                 </div>
                 <Dialog>
                   <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1">
-                      <span className="text-base">📊</span> Voir la matrice
-                    </Button>
+                    <Button variant="outline" size="sm" className="gap-1"><span className="text-base">📊</span> Voir la matrice</Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                    <DialogTitle className="text-lg font-semibold mb-2" style={{ fontFamily: "Playfair Display, serif" }}>
-                      Matrice d'évaluation des impacts
-                    </DialogTitle>
+                    <DialogTitle className="text-lg font-semibold mb-2">Matrice d'évaluation des impacts</DialogTitle>
                     <StaticImpactMatrix />
                   </DialogContent>
                 </Dialog>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Évaluez l'impact (1 = négligeable, 5 = catastrophique) pour chaque axe et période d'indisponibilité.
-                <span className="block text-xs text-[#2A5141] mt-1">
-                  ⚡ La sévérité se propage automatiquement vers l'avant : quand vous mettez une valeur, les périodes suivantes s'ajustent si elles sont moins graves. Vous pouvez modifier n'importe quelle cellule à tout moment.
-                </span>
-                <span className="block text-xs text-amber-600 mt-1">
-                  ⚠️ Si vous baissez une valeur sur une période, les périodes suivantes conservent leur valeur (pas de baisse automatique).
-                </span>
-              </p>
 
               <div className="bg-[#F8F6F2] rounded-lg p-3 text-center border border-[#E8E4DC]">
-                <p className="text-sm text-[#172030]">
-                  Score actuel : <strong className="text-[#2A5141]">{globalScore}/5</strong> ({criticality})
-                </p>
+                <p className="text-sm text-[#172030]">Score actuel : <strong className="text-[#2A5141]">{globalScore}/5</strong> ({criticality})</p>
               </div>
 
               <div className="overflow-auto border border-[#E8E4DC] rounded-xl bg-white">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-[#F8F6F2] border-b border-[#E8E4DC]">
-                      <TableHead className="w-36 py-3 px-4 text-xs font-semibold text-[#172030]/60 uppercase tracking-wider">
-                        Axe / Période
-                      </TableHead>
+                      <TableHead className="w-36 py-3 px-4 text-xs font-semibold text-[#172030]/60 uppercase tracking-wider">Axe / Période</TableHead>
                       {PERIODS.map((p) => (
                         <TableHead key={p.id} className="text-center min-w-[100px] py-3 px-2">
                           <div className="text-xs font-semibold text-[#172030]">{p.label}</div>
-                          <div className="text-[10px] text-[#172030]/40 font-normal">
-                            {p.hours <= 24 ? `${p.hours}h` : `${Math.round(p.hours/24)}j`}
-                          </div>
+                          <div className="text-[10px] text-[#172030]/40 font-normal">{p.hours <= 24 ? `${p.hours}h` : `${Math.round(p.hours/24)}j`}</div>
                         </TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(Object.keys(AXIS_LABELS) as ImpactAxis[]).map((axis, rowIdx) => (
-                      <TableRow 
-                        key={axis} 
-                        className={cn(
-                          "border-b border-[#E8E4DC]",
-                          rowIdx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]"
-                        )}
-                      >
+                      <TableRow key={axis} className={cn("border-b border-[#E8E4DC]", rowIdx % 2 === 0 ? "bg-white" : "bg-[#FAFAF9]")}>
                         <TableCell className="font-medium text-sm text-[#172030] py-3 px-4">
-                          <div className="flex items-center gap-1">
-                            {AXIS_LABELS[axis]}
-                            <ImpactTooltip axis={axis} />
-                          </div>
+                          <div className="flex items-center gap-1">{AXIS_LABELS[axis]}<ImpactTooltip axis={axis} /></div>
                         </TableCell>
                         {PERIODS.map((p) => {
                           const currentValue = data.impacts[p.id]?.[axis] ?? 0;
                           return (
                             <TableCell key={p.id} className="text-center p-2">
-                              <ImpactCell
-                                value={currentValue}
-                                axis={axis}
-                                periodId={p.id}
-                                onValueChange={updateImpactWithCascade}
-                              />
+                              <ImpactCell value={currentValue} axis={axis} periodId={p.id} onValueChange={updateImpactWithCascade} />
                             </TableCell>
                           );
                         })}
@@ -831,42 +658,30 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                   </TableBody>
                 </Table>
               </div>
-              
-              <div className="flex items-center gap-4 text-xs text-[#172030]/50">
-                <span className="flex items-center gap-1 text-[#2A5141]">
-                  <span>💡</span>
-                  Cliquez sur n'importe quelle cellule pour modifier la valeur
-                </span>
-                <span className="flex items-center gap-1">
-                  <span>⚡</span>
-                  La cascade s'applique automatiquement vers la droite
-                </span>
-              </div>
             </div>
           )}
 
-          {/* ÉTAPE 3 - DÉLAIS & RTO (SANS RPO) */}
+          {/* ÉTAPE 3 */}
           {step === 2 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">3</div>
-                  <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Délais de reprise &amp; RTO</h2>
-                </div>
-                {data.name && <Badge variant="outline">⏱️ {data.name}</Badge>}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="h-8 w-8 rounded-full bg-[#2A5141]/15 flex items-center justify-center text-[#2A5141]">3</div>
+                <h2 className="text-lg font-semibold" style={{ fontFamily: "Playfair Display, serif" }}>Délais de reprise &amp; RTO</h2>
               </div>
-              
+
               <div className="bg-[#F8F6F2] rounded-lg p-4 border border-[#E8E4DC]">
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex-1">
                     <p className="text-sm font-medium text-[#172030]">RTO suggéré</p>
                     <p className="text-xs text-[#172030]/50">
-                      Méthodologie BCI/ISO 22301 — seuil critique : Sévère (score ≥ 4)
+                      Méthode Risk Manager BCI/ISO 22301 — RTO = MTPD × {RTO_COEFFICIENT} (seuil critique : score ≥ {CRITICAL_THRESHOLD})
                     </p>
                     <div className="flex gap-4 mt-2 flex-wrap">
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
                         <span className="text-xs text-[#172030]/50">RTO suggéré</span>
-                        <p className="text-xl font-bold text-[#2A5141]">{rtoSuggestion.rto}h</p>
+                        <p className="text-xl font-bold text-[#2A5141]">
+                          {rtoSuggestion.rto !== null ? `${rtoSuggestion.rto}h` : "—"}
+                        </p>
                       </div>
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
                         <span className="text-xs text-[#172030]/50">MTPD identifié</span>
@@ -882,66 +697,53 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                           </p>
                         </div>
                       )}
-                      {rtoSuggestion.safetyMarginApplied > 0 && (
+                      {rtoSuggestion.coefficientApplied > 0 && (
                         <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
                           <span className="text-xs text-[#172030]/50">Marge de sécurité</span>
                           <p className="text-sm font-medium text-[#172030]">
-                            {Math.round(rtoSuggestion.safetyMarginApplied * 100)}%
+                            {Math.round((1 - rtoSuggestion.coefficientApplied) * 100)}%
                           </p>
                         </div>
                       )}
                     </div>
                   </div>
-                  <Button onClick={applySuggestions} variant="outline" size="sm" className="border-[#2A5141] text-[#2A5141] hover:bg-[#2A5141]/10">
+                  <Button
+                    onClick={applySuggestions}
+                    variant="outline"
+                    size="sm"
+                    disabled={rtoSuggestion.requiresManualInput}
+                    className="border-[#2A5141] text-[#2A5141] hover:bg-[#2A5141]/10 disabled:opacity-50"
+                  >
                     Appliquer la suggestion
                   </Button>
                 </div>
-                
-                {/* Explication détaillée et traçable */}
+
                 <div className="mt-3 pt-3 border-t border-[#E8E4DC]">
-                  <p className="text-xs text-[#172030]/60">
-                    {rtoSuggestion.triggerAxis && rtoSuggestion.mtpd !== null ? (
-                      <>
-                        <span className="font-medium text-[#172030]">Justification BCI/ISO 22301 :</span>{' '}
-                        {AXIS_LABELS[rtoSuggestion.triggerAxis]} devient Sévère à partir de{' '}
-                        <strong>{rtoSuggestion.triggerPeriodLabel}</strong> (MTPD = {rtoSuggestion.mtpd}h).
-                        {rtoSuggestion.lastSafePeriodLabel ? (
-                          <> Dernière période vérifiée tolérable : <strong>{rtoSuggestion.lastSafePeriodLabel}</strong> ({Math.round(rtoSuggestion.mtpd / 2)}h) — marge de sécurité de {Math.round(rtoSuggestion.safetyMarginApplied * 100)}% appliquée → RTO suggéré <strong>{rtoSuggestion.rto}h</strong>.</>
-                        ) : (
-                          <> Impact critique dès la première période mesurée — marge de sécurité de {Math.round(rtoSuggestion.safetyMarginApplied * 100)}% appliquée directement sur le MTPD → RTO suggéré <strong>{rtoSuggestion.rto}h</strong>.</>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-medium text-[#172030]">Justification :</span>{' '}
-                        Aucun impact n'atteint le seuil critique (score ≥ 4) sur l'horizon évalué (1 mois) — 
-                        le processus est tolérable sur toute la durée observée. RTO suggéré basé sur la durée maximale observée : <strong>{rtoSuggestion.rto}h</strong>.
-                      </>
-                    )}
-                  </p>
-                  {rtoSuggestion.rawSuggestedRTO !== rtoSuggestion.rto && (
-                    <p className="text-[10px] text-[#172030]/40 mt-1">
-                      Valeur brute calculée : {Math.round(rtoSuggestion.rawSuggestedRTO)}h — arrondie à une valeur opérationnelle : {rtoSuggestion.rto}h.
+                  {rtoSuggestion.requiresManualInput ? (
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md p-2">
+                      <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-amber-800">
+                        <span className="font-medium">RTO à définir manuellement.</span>{' '}
+                        {rtoSuggestion.explanation}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#172030]/60">
+                      <span className="font-medium text-[#172030]">Justification Risk Manager :</span>{' '}
+                      {rtoSuggestion.explanation}
                     </p>
                   )}
                 </div>
               </div>
-              
+
               <div className="grid gap-4 md:grid-cols-1">
                 <div>
                   <Label>RTO — Recovery Time Objective (heures)</Label>
-                  <Select 
-                    value={String(data.rto)} 
-                    onValueChange={(v) => update("rto", Number(v))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Sélectionner un RTO" />
-                    </SelectTrigger>
+                  <Select value={String(data.rto)} onValueChange={(v) => update("rto", Number(v))}>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Sélectionner un RTO" /></SelectTrigger>
                     <SelectContent>
                       {rtoOptions.map((val) => (
-                        <SelectItem key={val} value={String(val)}>
-                          {val}h
-                        </SelectItem>
+                        <SelectItem key={val} value={String(val)}>{val}h</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -955,7 +757,6 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
         </CardContent>
       </Card>
 
-      {/* Navigation */}
       <div className="flex justify-between">
         <Button variant="outline" disabled={step === 0 || isSaving} onClick={() => setStep(s => s - 1)}>
           <ArrowLeft className="h-4 w-4 mr-2" />Précédent
@@ -966,17 +767,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
           </Button>
         ) : (
           <Button onClick={submit} disabled={!canNext() || isSaving} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
-            {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Enregistrement...
-              </>
-            ) : (
-              <>
-                <Check className="h-4 w-4 mr-2" />
-                Enregistrer le BIA
-              </>
-            )}
+            {isSaving ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Enregistrement...</>) : (<><Check className="h-4 w-4 mr-2" />Enregistrer le BIA</>)}
           </Button>
         )}
       </div>

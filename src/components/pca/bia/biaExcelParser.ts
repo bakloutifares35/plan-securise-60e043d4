@@ -1,6 +1,5 @@
 // ============================================================
 // Parseur de fichier BIA au format BPCE (modèle standard bancaire)
-// Utilisé par BiaExcelImport.tsx
 // ============================================================
 import * as XLSX from "xlsx";
 import { emptyImpacts, type ImpactMatrix, type TimePeriod, type ImpactAxis } from "@/data/bia";
@@ -27,9 +26,6 @@ export type ParsedActivity = {
 
 export type ParseProgress = (step: string, done: number, total: number) => void;
 
-/**
- * Convertit une durée exprimée en français ("2 jours", "1 semaine") en heures.
- */
 export const parseFrenchDuration = (text: any): number | null => {
   if (text === null || text === undefined) return null;
   const raw = String(text).toLowerCase().trim();
@@ -53,7 +49,6 @@ export const parseFrenchDuration = (text: any): number | null => {
   }
 
   if (!found) {
-    // Formes sans quantité explicite : "une journée", "un mois"...
     if (/semaine/.test(raw)) return 168;
     if (/mois/.test(raw)) return 720;
     if (/jour|journ/.test(raw)) return 24;
@@ -61,11 +56,9 @@ export const parseFrenchDuration = (text: any): number | null => {
     const num = parseFloat(raw.replace(",", "."));
     return Number.isFinite(num) ? num : null;
   }
-
   return total > 0 ? total : null;
 };
 
-// Échelle fichier (0-4) -> échelle Resillia (0-5)
 const SCALE_MAP: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 5 };
 
 const parseScore = (cell: any): number | null => {
@@ -79,6 +72,58 @@ const parseScore = (cell: any): number | null => {
 const norm = (v: any) => String(v ?? "").trim();
 const lower = (v: any) => norm(v).toLowerCase();
 
+/**
+ * ✅ Nettoie un nom de ressource : tronque les descriptions longues.
+ * Ex: "Dépositaires (Envoi en automatique des messages de paiement RL titres — T ; PEE : Non ; prestation critique : Oui.)"
+ *     → name = "Dépositaires"
+ *     → detail = "Envoi en automatique des messages..."
+ */
+const cleanResourceName = (raw: string): { name: string; detail: string } => {
+  const cleaned = norm(raw);
+  if (!cleaned) return { name: "", detail: "" };
+
+  // Détecte une parenthèse avec du contenu descriptif long
+  const parenMatch = cleaned.match(/^([^(]{2,80}?)\s*\((.{10,})\)\s*$/);
+  if (parenMatch) {
+    return {
+      name: parenMatch[1].trim().slice(0, 80),
+      detail: parenMatch[2].trim().slice(0, 500),
+    };
+  }
+
+  // Détecte un tiret long " — " avec description après
+  const dashMatch = cleaned.match(/^([^—]{2,80}?)\s*—\s*(.{10,})$/);
+  if (dashMatch) {
+    return {
+      name: dashMatch[1].trim().slice(0, 80),
+      detail: dashMatch[2].trim().slice(0, 500),
+    };
+  }
+
+  // Nom "normal" : on tronque à 80 caractères max
+  if (cleaned.length > 80) {
+    const cut = cleaned.slice(0, 77);
+    const lastSpace = cut.lastIndexOf(" ");
+    return {
+      name: (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + "…",
+      detail: cleaned,
+    };
+  }
+  return { name: cleaned, detail: "" };
+};
+
+/**
+ * Filtre les ressources bidon ("Fournisseur 1", "N/A", vides...)
+ */
+const isBogusResourceName = (name: string): boolean => {
+  const n = name.trim().toLowerCase();
+  if (!n) return true;
+  if (n === "n/a" || n === "na" || n === "-" || n === "?" || n === "0") return true;
+  if (/^\d+$/.test(n)) return true;
+  if (/^(fournisseur|fourn|collaborateur|collab|ressource|prestataire|app|application)\s*\d*$/.test(n)) return true;
+  return false;
+};
+
 const sheetRows = (wb: XLSX.WorkBook, name: string): any[][] => {
   const match = wb.SheetNames.find((n) => lower(n) === lower(name)) ||
     wb.SheetNames.find((n) => lower(n).includes(lower(name).split(" ")[0]));
@@ -88,7 +133,6 @@ const sheetRows = (wb: XLSX.WorkBook, name: string): any[][] => {
   return XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "", blankrows: true });
 };
 
-// Colonnes D..J -> périodes Resillia (">1mois" ignoré)
 const DELAY_TO_PERIODS: (TimePeriod[] | null)[] = [
   ["P0_4H", "P4_8H"],
   ["P1D"],
@@ -99,14 +143,30 @@ const DELAY_TO_PERIODS: (TimePeriod[] | null)[] = [
   null,
 ];
 
-const AXIS_ROW_MAP: { match: string; axis: ImpactAxis }[] = [
-  { match: "image", axis: "reputation" },
-  { match: "financ", axis: "financial" },
-  { match: "organis", axis: "operational" },
-  { match: "juridi", axis: "regulatory" },
-  { match: "réglement", axis: "regulatory" },
-  { match: "reglement", axis: "regulatory" },
+const AXIS_ROW_MAP: { matches: string[]; axis: ImpactAxis }[] = [
+  { matches: ["image", "réputation", "reputation"], axis: "reputation" },
+  { matches: ["financ"], axis: "financial" },
+  { matches: ["organis"], axis: "operational" },
+  { matches: ["juridi", "réglement", "reglement", "conform"], axis: "regulatory" },
+  { matches: ["client"], axis: "client" },
 ];
+
+const detectAxisFromRow = (row: any[]): ImpactAxis | null => {
+  if (!row) return null;
+  const maxCols = Math.min(row.length, 7);
+  for (let c = 0; c < maxCols; c++) {
+    const cell = lower(row[c]);
+    if (!cell) continue;
+    if (/^activit/.test(cell)) continue;
+    if (/^\d+([.,]\d+)?$/.test(cell)) continue;
+    for (const mapping of AXIS_ROW_MAP) {
+      if (mapping.matches.some((m) => cell.includes(m))) {
+        return mapping.axis;
+      }
+    }
+  }
+  return null;
+};
 
 const findActivityColumn = (headerRow: any[]): number => {
   if (!headerRow) return -1;
@@ -133,7 +193,6 @@ export const parseBpceWorkbook = (buffer: ArrayBuffer, onProgress?: ParseProgres
   report("Lecture du fichier…", 1);
   const wb = XLSX.read(buffer, { type: "array" });
 
-  // ---------- 1. Identification Activité ----------
   report("Extraction des activités…", 2);
   const idRows = sheetRows(wb, "Identification Activité");
   const activities: ParsedActivity[] = [];
@@ -168,19 +227,17 @@ export const parseBpceWorkbook = (buffer: ArrayBuffer, onProgress?: ParseProgres
   if (activities.length === 0) return [];
   const names = activities.map((a) => a.name);
 
-  // ---------- 2. Matrice d'impact (Impacts IFOJR) ----------
   report("Calcul des matrices d'impact…", 3);
   const impactRows = sheetRows(wb, "Impacts IFOJR");
   const axisRows: { axis: ImpactAxis; row: any[] }[] = [];
   for (const row of impactRows) {
-    const label = lower(row?.[0]) || lower(row?.[1]) || lower(row?.[2]);
-    if (!label) continue;
-    const hit = AXIS_ROW_MAP.find((m) => label.includes(m.match));
-    if (hit) axisRows.push({ axis: hit.axis, row });
+    const axis = detectAxisFromRow(row);
+    if (axis) axisRows.push({ axis, row });
   }
 
+  const AXES_PER_ACTIVITY = 5;
   for (let a = 0; a < activities.length; a++) {
-    const block = axisRows.slice(a * 5, a * 5 + 5);
+    const block = axisRows.slice(a * AXES_PER_ACTIVITY, a * AXES_PER_ACTIVITY + AXES_PER_ACTIVITY);
     if (block.length === 0) {
       activities[a].warnings.push("Matrice d'impact non trouvée");
       continue;
@@ -202,7 +259,6 @@ export const parseBpceWorkbook = (buffer: ArrayBuffer, onProgress?: ParseProgres
     activities[a].filledCells = Math.min(filled, 28);
   }
 
-  // ---------- 3. DMIA (RTO déclaré) ----------
   report("Lecture des durées d'interruption (DMIA)…", 4);
   const dmiaRows = sheetRows(wb, "DMIA");
   const durations: number[] = [];
@@ -218,7 +274,6 @@ export const parseBpceWorkbook = (buffer: ArrayBuffer, onProgress?: ParseProgres
     if (act.rtoDeclared === null) act.warnings.push("DMIA non trouvée");
   });
 
-  // ---------- 3bis. Période critique ----------
   const critRows = sheetRows(wb, "Criticité");
   const headerIdx = critRows.findIndex((r) => (r || []).some((c) => lower(c).includes("matin")));
   if (headerIdx !== -1) {
@@ -240,16 +295,17 @@ export const parseBpceWorkbook = (buffer: ArrayBuffer, onProgress?: ParseProgres
     activities.forEach((a) => a.warnings.push("Période critique non trouvée"));
   }
 
-  // ---------- 4. Ressources ----------
   report("Détection des ressources…", 5);
 
-  // Collaborateurs (ligne 9+)
+  // Collaborateurs
   const collabRows = sheetRows(wb, "Collaborateurs");
   const collabActCol = findActivityColumn(collabRows[7] || collabRows[6] || []);
   let collabFound = false;
   for (let i = 8; i < collabRows.length; i++) {
     const row = collabRows[i] || [];
-    const nom = norm(row[1]);
+    const rawNom = norm(row[1]);
+    if (!rawNom || isBogusResourceName(rawNom)) continue;
+    const { name: nom } = cleanResourceName(rawNom);
     if (!nom) continue;
     const actRef = collabActCol >= 0 ? norm(row[collabActCol]) : "";
     const idx = actRef ? matchActivityIndex(actRef, names) : -1;
@@ -259,9 +315,8 @@ export const parseBpceWorkbook = (buffer: ArrayBuffer, onProgress?: ParseProgres
     }
     collabFound = true;
   }
-  if (!collabFound) activities.forEach((a) => a.warnings.push("Collaborateurs non trouvés"));
 
-  // Applications (ligne 7+)
+  // Applications
   const appRows = sheetRows(wb, "Applications");
   const appHeader = appRows[5] || appRows[4] || [];
   const appActCol = findActivityColumn(appHeader);
@@ -270,43 +325,45 @@ export const parseBpceWorkbook = (buffer: ArrayBuffer, onProgress?: ParseProgres
   let appFound = false;
   for (let i = 6; i < appRows.length; i++) {
     const row = appRows[i] || [];
-    const name = norm(row[0]);
+    const rawName = norm(row[0]);
+    if (!rawName || isBogusResourceName(rawName)) continue;
+    if (lower(rawName).includes("nom de l'application")) continue;
+    const { name, detail } = cleanResourceName(rawName);
     if (!name) continue;
-    if (lower(name).includes("nom de l'application")) continue;
     const actRef = appActCol >= 0 ? norm(row[appActCol]) : "";
     const idx = actRef ? matchActivityIndex(actRef, names) : -1;
     const targets = idx >= 0 ? [idx] : activities.map((_, k) => k);
     const app: ParsedApplication = {
       name,
-      description: norm(row[1]),
+      description: detail || norm(row[1]),
       rto_hours: dmidCol >= 0 ? parseFrenchDuration(row[dmidCol]) : null,
       rpo_hours: pmddCol >= 0 ? parseFrenchDuration(row[pmddCol]) : null,
     };
     for (const t of targets) activities[t].applications.push({ ...app });
     appFound = true;
   }
-  if (!appFound) activities.forEach((a) => a.warnings.push("Applications non trouvées"));
 
-  // Fournisseurs (ligne 10+)
+  // Fournisseurs — ✅ NETTOYAGE du nom (retire la description entre parenthèses)
   const suppRows = sheetRows(wb, "Fournisseurs");
   const suppActCol = findActivityColumn(suppRows[8] || suppRows[7] || []);
   let suppFound = false;
   for (let i = 9; i < suppRows.length; i++) {
     const row = suppRows[i] || [];
-    const name = norm(row[0]);
+    const rawName = norm(row[0]);
+    if (!rawName || isBogusResourceName(rawName)) continue;
+    const { name, detail } = cleanResourceName(rawName);
     if (!name) continue;
     const actRef = suppActCol >= 0 ? norm(row[suppActCol]) : "";
     const idx = actRef ? matchActivityIndex(actRef, names) : -1;
     const targets = idx >= 0 ? [idx] : activities.map((_, k) => k);
     const supp: ParsedSupplier = {
       name,
-      detail: norm(row[1]),
+      detail: detail || norm(row[1]),  // ✅ description courte séparée
       rto_hours: parseFrenchDuration(row[17]),
     };
     for (const t of targets) activities[t].suppliers.push({ ...supp });
     suppFound = true;
   }
-  if (!suppFound) activities.forEach((a) => a.warnings.push("Prestataires non trouvés"));
 
   return activities;
 };
