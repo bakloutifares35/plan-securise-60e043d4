@@ -119,6 +119,8 @@ export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string })
       {tab === "inventory" && (
         <ProcessInventory 
           key={refreshKey}
+          pendingProcessId={pendingProcessId}
+          onPendingProcessed={() => setPendingProcessId(undefined)}
           onEdit={(id) => openWizard(id)} 
           onCreate={() => openWizard()} 
         />
