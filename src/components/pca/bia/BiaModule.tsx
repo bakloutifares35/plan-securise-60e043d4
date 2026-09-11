@@ -29,6 +29,7 @@ export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string })
   const [showWizard, setShowWizard] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [previousTab, setPreviousTab] = useState<Tab>("inventory");
+  const [pendingProcessId, setPendingProcessId] = useState<string | undefined>();
 
   // ✅ CHARGER LES DONNÉES AU MONTAGE
   useEffect(() => {
@@ -42,6 +43,19 @@ export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string })
       setTab(initialTab as Tab);
     }
   }, [initialTab]);
+
+  // ✅ ÉCOUTER openProcessDetail POUR BASCULER VERS L'INVENTAIRE DES PROCESSUS
+  useEffect(() => {
+    const handleOpenProcessDetail = (event: CustomEvent) => {
+      const { processId } = event.detail || {};
+      setPendingProcessId(processId);
+      setTab("inventory");
+    };
+    window.addEventListener('openProcessDetail', handleOpenProcessDetail as EventListener);
+    return () => {
+      window.removeEventListener('openProcessDetail', handleOpenProcessDetail as EventListener);
+    };
+  }, []);
 
   const openWizard = (id?: string) => {
     setPreviousTab(tab);
@@ -105,6 +119,8 @@ export const BiaModule = ({ initialTab = "dashboard" }: { initialTab?: string })
       {tab === "inventory" && (
         <ProcessInventory 
           key={refreshKey}
+          pendingProcessId={pendingProcessId}
+          onPendingProcessed={() => setPendingProcessId(undefined)}
           onEdit={(id) => openWizard(id)} 
           onCreate={() => openWizard()} 
         />

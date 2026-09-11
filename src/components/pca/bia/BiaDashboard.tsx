@@ -409,6 +409,22 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
     }
   };
 
+  // ✅ NAVIGATION VERS L'INVENTAIRE DES PROCESSUS (sans processus cible)
+  const navigateToBiaInventory = () => {
+    try {
+      const event = new CustomEvent('openProcessDetail', { detail: {} });
+      window.dispatchEvent(event);
+      console.log('✅ Événement openProcessDetail dispatché pour ouvrir l\'inventaire');
+    } catch (error) {
+      console.error('❌ Erreur lors du dispatch de l\'événement:', error);
+      toast({
+        title: "Erreur de navigation",
+        description: "Impossible d'ouvrir l'inventaire des processus",
+        variant: "destructive"
+      });
+    }
+  };
+
   // ============================================================
   // FILTRAGE DES PROCESSUS
   // ============================================================
