@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { supabase as functionsClient } from "@/integrations/resillia/client";
-import { ChevronDown, ChevronRight, Plus, Building2, Trash2, Pencil, Save, X, ExternalLink, FileText, Loader2 } from "lucide-react";
+import {
+  ChevronDown, ChevronRight, Plus, Building2, Trash2, Pencil, Save, X,
+  ExternalLink, FileText, Loader2, PlusCircle, Landmark, Layers,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
@@ -49,13 +53,11 @@ const isFiliale = (type?: string) => {
 const validateHierarchy = (type: string, parentId: string | null, entities: Entity[]): { valid: boolean; error?: string } => {
   const normalizedType = type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   
-  // Filiale → pas de parent
   if (normalizedType === "FILIALE") {
     if (parentId) return { valid: false, error: "Une filiale ne peut pas avoir d'entité parente" };
     return { valid: true };
   }
   
-  // Direction → parent doit être une Filiale
   if (normalizedType === "DIRECTION") {
     if (!parentId) return { valid: false, error: "Une direction doit avoir une filiale parente" };
     const parent = entities.find(e => e.id === parentId);
@@ -64,7 +66,6 @@ const validateHierarchy = (type: string, parentId: string | null, entities: Enti
     return { valid: true };
   }
   
-  // Service ou Département → parent doit être une Direction
   if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
     if (!parentId) return { valid: false, error: "Un service/département doit avoir une direction parente" };
     const parent = entities.find(e => e.id === parentId);
@@ -96,18 +97,42 @@ const maturityColor = (m: number) => {
 };
 
 // ============================================================
-// NODE AMÉLIORÉ AVEC HIÉRARCHIE VISUELLE
+// NODE AMÉLIORÉ AVEC HIÉRARCHIE VISUELLE + AJOUT CONTEXTUEL
 // ============================================================
-const Node = ({ node, depth, onDelete, onSelect }: { 
-  node: Entity; depth: number; onDelete: (id: string) => void; onSelect: (id: string) => void;
+const Node = ({ 
+  node, 
+  depth, 
+  onDelete, 
+  onSelect,
+  onQuickAdd,
+}: { 
+  node: Entity; 
+  depth: number; 
+  onDelete: (id: string) => void; 
+  onSelect: (id: string) => void;
+  onQuickAdd: (parentId: string, type: EntityType) => void;
 }) => {
   const [open, setOpen] = useState(true);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const hasChildren = (node.children?.length ?? 0) > 0;
   const { can } = useRole();
   const m = node.maturity ?? defaultMaturity(node.pcaStatus);
   const isDept = isLowLevel(node.type);
   const isDir = isDirection(node.type);
   const isFil = isFiliale(node.type);
+
+  // Types d'enfants autorisés selon le type de ce nœud
+  const allowedChildTypes: { type: EntityType; label: string; icon: any }[] = 
+    isFil
+      ? [{ type: "DIRECTION" as EntityType, label: "Ajouter une direction", icon: Landmark }]
+      : isDir
+      ? [
+          { type: "SERVICE" as EntityType, label: "Ajouter un service", icon: Layers },
+          { type: "DÉPARTEMENT" as EntityType, label: "Ajouter un département", icon: Layers },
+        ]
+      : [];
+
+  const canAddChild = allowedChildTypes.length > 0 && can("write");
 
   // Couleurs par type
   const getTypeColors = (type?: string) => {
@@ -155,13 +180,11 @@ const Node = ({ node, depth, onDelete, onSelect }: {
 
   const colors = getTypeColors(node.type);
   
-  // Taille de l'icône selon le niveau
   const iconSize = isFil ? "h-5 w-5" : isDir ? "h-4.5 w-4.5" : "h-4 w-4";
   const iconContainerSize = isFil ? "h-9 w-9" : isDir ? "h-8 w-8" : "h-7 w-7";
 
   // Détection des doublons de nom au même niveau
   const getDisplayName = () => {
-    // Trouver toutes les entités au même niveau (même parentId)
     const siblingsWithSameName = node.parentId
       ? (getChildren([], node.parentId) as any).filter((e: any) => e.name === node.name && e.id !== node.id)
       : [];
@@ -174,6 +197,9 @@ const Node = ({ node, depth, onDelete, onSelect }: {
 
   // Fond alterné selon la profondeur
   const bgColor = depth % 2 === 0 ? "bg-white" : "bg-[#F8F6F2]/30";
+
+  // Highlight temporaire après création rapide
+  const highlight = typeof window !== 'undefined' && (window as any).__lastCreatedEntityId === node.id;
 
   return (
     <div className={cn("relative", bgColor)}>
@@ -191,7 +217,8 @@ const Node = ({ node, depth, onDelete, onSelect }: {
       <div
         className={cn(
           "py-3 px-3 rounded-lg hover:bg-secondary/40 transition-all duration-200 group cursor-pointer relative",
-          isFil ? "py-4" : "py-2.5"
+          isFil ? "py-4" : "py-2.5",
+          highlight && "ring-2 ring-[#2A5141]/40 ring-offset-2 bg-[#E8F5E9]/40 animate-pulse"
         )}
         style={{ paddingLeft: `${depth * 28 + 12}px` }}
         onClick={() => onSelect(node.id)}
@@ -223,7 +250,6 @@ const Node = ({ node, depth, onDelete, onSelect }: {
 
           {/* Colonnes alignées */}
           <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
-            {/* Colonne Nom */}
             <div className="flex items-center gap-2 min-w-0">
               <span className={cn(
                 "truncate",
@@ -234,7 +260,6 @@ const Node = ({ node, depth, onDelete, onSelect }: {
               </span>
             </div>
 
-            {/* Colonne Type - Badge coloré */}
             <div>
               <Badge className={cn(
                 "font-medium px-2.5 py-0.5 rounded-full text-[10px]",
@@ -246,15 +271,60 @@ const Node = ({ node, depth, onDelete, onSelect }: {
               </Badge>
             </div>
 
-            {/* Colonne Pays */}
             <span className="text-xs text-muted-foreground">{node.country || "FR"}</span>
-
-            {/* Colonne Référent */}
             <span className="text-xs truncate text-muted-foreground">{node.referent || "—"}</span>
           </div>
 
-          {/* Bouton Supprimer */}
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          {/* Actions au survol : Ajouter + Supprimer */}
+          <div 
+            className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* ✅ BOUTON AJOUT CONTEXTUEL */}
+            {canAddChild && (
+              <Popover open={addMenuOpen} onOpenChange={setAddMenuOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full text-[#2A5141] hover:bg-[#2A5141]/10 hover:text-[#2A5141]"
+                    title={
+                      isFil 
+                        ? "Ajouter une direction sous cette filiale" 
+                        : "Ajouter une sous-entité"
+                    }
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent 
+                  className="w-56 p-1.5 z-50" 
+                  align="end"
+                  side="bottom"
+                >
+                  <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border mb-1">
+                    Sous « {node.name.length > 25 ? node.name.slice(0, 25) + '…' : node.name} »
+                  </div>
+                  {allowedChildTypes.map((opt) => {
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.type}
+                        onClick={() => {
+                          setAddMenuOpen(false);
+                          onQuickAdd(node.id, opt.type);
+                        }}
+                        className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-[#F8F6F2] transition-colors text-left"
+                      >
+                        <Icon className="h-4 w-4 text-[#2A5141] flex-shrink-0" />
+                        <span className="text-[#172030] font-medium">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </PopoverContent>
+              </Popover>
+            )}
+
             {can("admin") && (
               <Button 
                 variant="ghost" 
@@ -292,6 +362,7 @@ const Node = ({ node, depth, onDelete, onSelect }: {
                 depth={depth + 1} 
                 onDelete={onDelete} 
                 onSelect={onSelect} 
+                onQuickAdd={onQuickAdd}
               />
             </div>
           ))}
@@ -336,6 +407,15 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   const [processingStep, setProcessingStep] = useState<string>("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
+  // ============================================================
+  // QUICK ADD — Création contextuelle depuis l'arbre
+  // ============================================================
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddParentId, setQuickAddParentId] = useState<string>("");
+  const [quickAddType, setQuickAddType] = useState<EntityType | "">("");
+  const [quickAddForm, setQuickAddForm] = useState<FormState>(emptyForm);
+  const [isSubmittingQuickAdd, setIsSubmittingQuickAdd] = useState(false);
+
   const tree = buildTree(entities);
   const panelEntity = entities.find((e) => e.id === panelId) || null;
   const panelParent = panelEntity ? entities.find((e) => e.id === panelEntity.parentId) : null;
@@ -346,10 +426,93 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   // Récupérer les processus de l'entité affichée
   const panelProcesses = panelEntity ? getEntityProcesses(panelEntity, processes) : [];
 
+  // ============================================================
+  // QUICK ADD — Handlers
+  // ============================================================
+  const handleQuickAdd = (parentId: string, type: EntityType) => {
+    const parent = entities.find(e => e.id === parentId);
+    setQuickAddParentId(parentId);
+    setQuickAddType(type);
+    setQuickAddForm({
+      ...emptyForm,
+      type,
+      parentId,
+      country: parent?.country || "FR",
+    });
+    setQuickAddOpen(true);
+  };
+
+  const submitQuickAdd = async () => {
+    if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
+    if (!quickAddForm.name.trim()) { toast.error("Le nom est obligatoire"); return; }
+    if (!quickAddForm.type) { toast.error("Le type est obligatoire"); return; }
+
+    const validation = validateHierarchy(quickAddForm.type, quickAddParentId || null, entities);
+    if (!validation.valid) { toast.error(validation.error); return; }
+
+    setIsSubmittingQuickAdd(true);
+    try {
+      const parent = entities.find(e => e.id === quickAddParentId);
+      const { data, error } = await (supabase as any).from('organisations').insert({
+        name: quickAddForm.name.trim(),
+        type: quickAddForm.type.toUpperCase(),
+        country_code: quickAddForm.country || parent?.country || "FR",
+        parent_id: quickAddParentId || null,
+        pca_referent: quickAddForm.referent || "—",
+        referent_contact: quickAddForm.referentContact || null,
+        referent_backup: quickAddForm.suppleant || "—",
+        referent_backup_contact: quickAddForm.suppleantContact || null,
+        pca_status: "Non démarré",
+        maturity: 20,
+        sector: "Général",
+        status: "ACTIVE",
+      }).select().single();
+
+      if (error) {
+        toast.error("Erreur: " + error.message);
+        setIsSubmittingQuickAdd(false);
+        return;
+      }
+
+      const newEntity: any = {
+        id: data.id,
+        name: quickAddForm.name.trim(),
+        type: quickAddForm.type as EntityType,
+        country: quickAddForm.country || parent?.country || "FR",
+        sector: "Général",
+        parentId: quickAddParentId || null,
+        referent: quickAddForm.referent || "—",
+        referentContact: quickAddForm.referentContact || undefined,
+        referentBackup: quickAddForm.suppleant || "—",
+        suppleantContact: quickAddForm.suppleantContact || undefined,
+        status: "Actif",
+        pcaStatus: "Non démarré",
+        maturity: 20,
+      };
+
+      setEntities([...entities, newEntity]);
+      toast.success(`✅ ${quickAddForm.type} « ${newEntity.name} » créé${quickAddForm.type === "DIRECTION" ? "e" : ""}`);
+
+      // Highlight temporaire de la nouvelle entité dans l'arbre
+      (window as any).__lastCreatedEntityId = newEntity.id;
+      setTimeout(() => {
+        (window as any).__lastCreatedEntityId = null;
+        setEntities(prev => [...prev]);
+      }, 3000);
+
+      // Reset et fermeture
+      setQuickAddOpen(false);
+      setQuickAddForm(emptyForm);
+      setQuickAddParentId("");
+      setQuickAddType("");
+    } finally {
+      setIsSubmittingQuickAdd(false);
+    }
+  };
+
   const submitInline = async () => {
     if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
     
-    // Vérifier les champs obligatoires (Nom, Type, Parent sauf pour Filiale)
     if (!form.name) { toast.error("Le nom est obligatoire"); return; }
     if (!form.type) { toast.error("Le type est obligatoire"); return; }
     
@@ -359,7 +522,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       return;
     }
     
-    // Valider la hiérarchie
     const validation = validateHierarchy(form.type, form.parentId || null, entities);
     if (!validation.valid) {
       toast.error(validation.error);
@@ -411,13 +573,11 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       return; 
     }
 
-    // Demander confirmation à l'utilisateur
     const entityName = entities.find(e => e.id === id)?.name || id;
     if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${entityName}" et toutes ses entités filles ?`)) {
       return;
     }
 
-    // 1. Récupérer les entités FRAÎCHES depuis la base pour un calcul de cascade fiable
     const { data: freshEntities, error: fetchError } = await (supabase as any)
       .from('organisations')
       .select('id, parent_id');
@@ -427,7 +587,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       return;
     }
     
-    // 2. Calculer la cascade avec les données fraîches
     const toRemove = new Set<string>([id]);
     let changed = true;
     while (changed) {
@@ -442,7 +601,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     
     console.log(`🗑️ Suppression en cascade de ${toRemove.size} entité(s):`, Array.from(toRemove));
     
-    // 3. Supprimer toutes les entités en cascade
     const { error: deleteError } = await (supabase as any)
       .from('organisations')
       .delete()
@@ -453,7 +611,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       return;
     }
     
-    // 4. Recharger l'état local depuis la base après suppression
     const { data: remainingEntities } = await (supabase as any)
       .from('organisations')
       .select('*');
@@ -475,7 +632,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       })));
     }
     
-    // 5. Fermer le panneau si l'entité supprimée était affichée
     if (panelId && toRemove.has(panelId)) { 
       setPanelId(null); 
       setEditing(false); 
@@ -513,7 +669,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     
     if (editForm.parentId === panelEntity.id) { toast.error("Une entité ne peut pas être son propre parent"); return; }
     
-    // Valider la hiérarchie
     const validation = validateHierarchy(editForm.type, editForm.parentId || null, entities.filter(e => e.id !== panelEntity.id));
     if (!validation.valid) {
       toast.error(validation.error);
@@ -538,270 +693,254 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     setEditing(false);
     toast.success("Entité mise à jour");
   };
-// ============================================================
-// FONCTION RENDERFORMGRID CORRIGÉE AVEC HIÉRARCHIE VISIBLE
-// ============================================================
-const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId?: string) => {
-  // Récupérer les filiales pour le regroupement
-  const filiales = entities.filter(e => e.id !== excludeId && isFiliale(e.type));
-  
-  // Fonction pour obtenir le chemin hiérarchique complet d'une entité
-  const getFullPath = (entityId: string): string => {
-    const entity = entities.find(e => e.id === entityId);
-    if (!entity) return "";
-    
-    const path: string[] = [entity.name];
-    let current = entity;
-    
-    // Remonter jusqu'à la racine (max 5 niveaux pour éviter les boucles)
-    let maxLevels = 5;
-    while (current.parentId && maxLevels > 0) {
-      const parent = entities.find(e => e.id === current.parentId);
-      if (parent) {
-        path.unshift(parent.name);
-        current = parent;
-      } else {
-        break;
-      }
-      maxLevels--;
-    }
-    
-    return path.join(" → ");
-  };
 
-  // Filtrer les entités parentes disponibles selon le type sélectionné
-  const getAvailableParents = () => {
-    if (!state.type) return [];
+  // ============================================================
+  // FONCTION RENDERFORMGRID CORRIGÉE AVEC HIÉRARCHIE VISIBLE
+  // ============================================================
+  const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId?: string) => {
+    const filiales = entities.filter(e => e.id !== excludeId && isFiliale(e.type));
     
-    const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    if (normalizedType === "FILIALE") {
-      return []; // Aucun parent possible
-    }
-    if (normalizedType === "DIRECTION") {
-      // Directions → parent doit être une Filiale
-      return entities.filter(e => e.id !== excludeId && isFiliale(e.type));
-    }
-    if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
-      // Services/Départements → parent doit être une Direction
-      return entities.filter(e => e.id !== excludeId && isDirection(e.type));
-    }
-    return [];
-  };
-  
-  const availableParents = getAvailableParents();
-  const showParentField = state.type && state.type.toUpperCase() !== "FILIALE";
-  
-  // Grouper les parents par filiale pour les Directions
-  const getGroupedParents = () => {
-    if (!state.type) return [];
-    
-    const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    if (normalizedType === "DIRECTION") {
-      // Grouper les filiales avec leurs directions
-      const groups: { filiale: Entity; directions: Entity[] }[] = [];
+    const getFullPath = (entityId: string): string => {
+      const entity = entities.find(e => e.id === entityId);
+      if (!entity) return "";
       
-      for (const filiale of filiales) {
-        const directions = availableParents.filter(e => {
-          const parent = entities.find(p => p.id === e.parentId);
-          return parent?.id === filiale.id;
-        });
-        if (directions.length > 0) {
-          groups.push({ filiale, directions });
+      const path: string[] = [entity.name];
+      let current = entity;
+      
+      let maxLevels = 5;
+      while (current.parentId && maxLevels > 0) {
+        const parent = entities.find(e => e.id === current.parentId);
+        if (parent) {
+          path.unshift(parent.name);
+          current = parent;
+        } else {
+          break;
         }
+        maxLevels--;
       }
       
-      // Filiales sans directions
-      const filialesWithoutDirections = filiales.filter(f => {
-        return !availableParents.some(e => {
-          const parent = entities.find(p => p.id === e.parentId);
-          return parent?.id === f.id;
-        });
-      });
-      
-      return { groups, filialesWithoutDirections };
-    }
-    
-    if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
-      // Grouper les directions par filiale
-      const groups: { filiale: Entity; directions: Entity[] }[] = [];
-      
-      for (const filiale of filiales) {
-        const directionsOfFiliale = entities.filter(e => e.id !== excludeId && isDirection(e.type) && e.parentId === filiale.id);
-        const availableDirs = directionsOfFiliale.filter(d => availableParents.some(ap => ap.id === d.id));
-        if (availableDirs.length > 0) {
-          groups.push({ filiale, directions: availableDirs });
-        }
-      }
-      
-      // Directions sans filiale (cas exceptionnel)
-      const orphanDirections = availableParents.filter(e => {
-        const parent = entities.find(p => p.id === e.parentId);
-        return !parent || !isFiliale(parent.type);
-      });
-      
-      return { groups, orphanDirections };
-    }
-    
-    return { groups: [], orphanDirections: [] };
-  };
+      return path.join(" → ");
+    };
 
-  const groupedParents = getGroupedParents();
-  
-  return (
-    <div className="grid md:grid-cols-3 gap-3">
-      <div>
-        <Label>Nom <span className="text-destructive">*</span></Label>
-        <Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" />
-      </div>
-      <div>
-        <Label>Type <span className="text-destructive">*</span></Label>
-        <Select value={state.type} onValueChange={(v) => {
-          set({ ...state, type: v as EntityType, parentId: "" });
-        }}>
-          <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
-          <SelectContent>
-            {ENTITY_TYPES_FILTERED.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <Label>Pays</Label>
-        <Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" />
-      </div>
-      <div>
-        <Label>Référent PCA</Label>
-        <Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" />
-      </div>
-      <div>
-        <Label>Coordonnées référent</Label>
-        <Input value={state.referentContact} onChange={(e) => set({ ...state, referentContact: e.target.value })} placeholder="email ou téléphone" />
-      </div>
-      <div>
-        <Label>Suppléant</Label>
-        <Input value={state.suppleant} onChange={(e) => set({ ...state, suppleant: e.target.value })} placeholder="Nom du suppléant" />
-      </div>
-      <div>
-        <Label>Coordonnées suppléant</Label>
-        <Input value={state.suppleantContact} onChange={(e) => set({ ...state, suppleantContact: e.target.value })} placeholder="email ou téléphone" />
-      </div>
-      {showParentField && (
-        <div className="md:col-span-2">
-          <Label className="flex items-center gap-2">
-            Entité parente <span className="text-destructive">*</span>
-            <span className="text-xs font-normal text-muted-foreground">
-              (doit être une {String(state.type) === "DIRECTION" ? "Filiale" : "Direction"})
-            </span>
-          </Label>
-          
-          {availableParents.length === 0 ? (
-            <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-              ⚠️ Aucune {String(state.type) === "DIRECTION" ? "filiale" : "direction"} disponible. 
-              {String(state.type) === "DIRECTION" 
-                ? " Créez d'abord une filiale." 
-                : " Créez d'abord une direction."}
-            </div>
-          ) : (
-            <Select value={state.parentId || "__root__"} onValueChange={(v) => set({ ...state, parentId: v === "__root__" ? "" : v })}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Sélectionner un parent" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
-                {groupedParents && 'groups' in groupedParents && groupedParents.groups ? (
-                  <>
-                    {groupedParents.groups.map((group, idx) => (
-                      <div key={idx}>
-                        {/* En-tête de groupe - Filiale */}
-                        <div className="px-2 py-1.5 bg-[#172030]/5 text-[#172030] text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
-                          <Building2 className="h-3.5 w-3.5 text-[#172030]/50" />
-                          <span>🏢 {group.filiale.name}</span>
-                          <span className="text-[10px] font-normal text-muted-foreground">({group.filiale.country || "FR"})</span>
-                          <span className="text-[10px] font-normal text-muted-foreground ml-auto">{group.directions.length}</span>
-                        </div>
-                        {group.directions.map((e) => (
-                          <SelectItem key={e.id} value={e.id} className="pl-8">
-                            <div className="flex items-center gap-2 w-full">
-                              <span className="truncate">{e.name}</span>
-                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                {getFullPath(e.id)}
-                              </span>
-                              <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
-                                {e.type}
-                              </Badge>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </div>
-                    ))}
-                    
-                    {/* Filiales sans directions (pour le cas où on sélectionne une Direction mais aucune direction existante) */}
-                    {groupedParents.filialesWithoutDirections && groupedParents.filialesWithoutDirections.length > 0 && (
-                      <div>
-                        <div className="px-2 py-1.5 bg-gray-50 text-muted-foreground text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
-                          <span>🏢 Filiales sans directions</span>
-                        </div>
-                        {groupedParents.filialesWithoutDirections.map((f) => (
-                          <SelectItem key={f.id} value={f.id} className="pl-8 opacity-60">
-                            <div className="flex items-center gap-2 w-full">
-                              <span className="truncate">{f.name}</span>
-                              <span className="text-[10px] text-muted-foreground">(aucune direction)</span>
-                              <Badge variant="outline" className="text-[9px] ml-auto bg-gray-100">
-                                FILIALE
-                              </Badge>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  // Fallback : affichage simple
-                  availableParents.map((e) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      <div className="flex items-center gap-2 w-full">
-                        <span className="truncate">{e.name}</span>
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                          {getFullPath(e.id)}
-                        </span>
-                        <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
-                          {e.type}
-                        </Badge>
-                      </div>
-                    </SelectItem>
-                  ))
-                )}
-                
-                {/* Option pour sélectionner une entité sans parent (root) */}
-                <div className="border-t border-[#E8E4DC] mt-1 pt-1">
-                  <SelectItem value="__root__" className="text-muted-foreground italic">
-                    — Aucun parent (entité racine) —
-                  </SelectItem>
-                </div>
-              </SelectContent>
-            </Select>
-          )}
-          
-          {/* Indicateur de la filiale parente si une entité est sélectionnée */}
-          {state.parentId && state.parentId !== "__root__" && (
-            <div className="mt-1.5 text-xs text-muted-foreground flex items-center gap-2 bg-[#F8F6F2] p-2 rounded-lg border border-[#E8E4DC]">
-              <div className="h-2 w-2 rounded-full bg-[#2A5141] flex-shrink-0"></div>
-              <span>
-                📍 Chemin : <span className="font-medium text-[#172030]">{getFullPath(state.parentId)}</span>
-              </span>
-            </div>
-          )}
+    const getAvailableParents = () => {
+      if (!state.type) return [];
+      
+      const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      
+      if (normalizedType === "FILIALE") {
+        return [];
+      }
+      if (normalizedType === "DIRECTION") {
+        return entities.filter(e => e.id !== excludeId && isFiliale(e.type));
+      }
+      if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
+        return entities.filter(e => e.id !== excludeId && isDirection(e.type));
+      }
+      return [];
+    };
+    
+    const availableParents = getAvailableParents();
+    const showParentField = state.type && state.type.toUpperCase() !== "FILIALE";
+    
+    const getGroupedParents = () => {
+      if (!state.type) return [];
+      
+      const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      
+      if (normalizedType === "DIRECTION") {
+        const groups: { filiale: Entity; directions: Entity[] }[] = [];
+        
+        for (const filiale of filiales) {
+          const directions = availableParents.filter(e => {
+            const parent = entities.find(p => p.id === e.parentId);
+            return parent?.id === filiale.id;
+          });
+          if (directions.length > 0) {
+            groups.push({ filiale, directions });
+          }
+        }
+        
+        const filialesWithoutDirections = filiales.filter(f => {
+          return !availableParents.some(e => {
+            const parent = entities.find(p => p.id === e.parentId);
+            return parent?.id === f.id;
+          });
+        });
+        
+        return { groups, filialesWithoutDirections };
+      }
+      
+      if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
+        const groups: { filiale: Entity; directions: Entity[] }[] = [];
+        
+        for (const filiale of filiales) {
+          const directionsOfFiliale = entities.filter(e => e.id !== excludeId && isDirection(e.type) && e.parentId === filiale.id);
+          const availableDirs = directionsOfFiliale.filter(d => availableParents.some(ap => ap.id === d.id));
+          if (availableDirs.length > 0) {
+            groups.push({ filiale, directions: availableDirs });
+          }
+        }
+        
+        const orphanDirections = availableParents.filter(e => {
+          const parent = entities.find(p => p.id === e.parentId);
+          return !parent || !isFiliale(parent.type);
+        });
+        
+        return { groups, orphanDirections };
+      }
+      
+      return { groups: [], orphanDirections: [] };
+    };
+
+    const groupedParents = getGroupedParents();
+    
+    return (
+      <div className="grid md:grid-cols-3 gap-3">
+        <div>
+          <Label>Nom <span className="text-destructive">*</span></Label>
+          <Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" />
         </div>
-      )}
-    </div>
-  );
-};
+        <div>
+          <Label>Type <span className="text-destructive">*</span></Label>
+          <Select value={state.type} onValueChange={(v) => {
+            set({ ...state, type: v as EntityType, parentId: "" });
+          }}>
+            <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
+            <SelectContent>
+              {ENTITY_TYPES_FILTERED.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Pays</Label>
+          <Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" />
+        </div>
+        <div>
+          <Label>Référent PCA</Label>
+          <Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" />
+        </div>
+        <div>
+          <Label>Coordonnées référent</Label>
+          <Input value={state.referentContact} onChange={(e) => set({ ...state, referentContact: e.target.value })} placeholder="email ou téléphone" />
+        </div>
+        <div>
+          <Label>Suppléant</Label>
+          <Input value={state.suppleant} onChange={(e) => set({ ...state, suppleant: e.target.value })} placeholder="Nom du suppléant" />
+        </div>
+        <div>
+          <Label>Coordonnées suppléant</Label>
+          <Input value={state.suppleantContact} onChange={(e) => set({ ...state, suppleantContact: e.target.value })} placeholder="email ou téléphone" />
+        </div>
+        {showParentField && (
+          <div className="md:col-span-2">
+            <Label className="flex items-center gap-2">
+              Entité parente <span className="text-destructive">*</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                (doit être une {String(state.type) === "DIRECTION" ? "Filiale" : "Direction"})
+              </span>
+            </Label>
+            
+            {availableParents.length === 0 ? (
+              <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                ⚠️ Aucune {String(state.type) === "DIRECTION" ? "filiale" : "direction"} disponible. 
+                {String(state.type) === "DIRECTION" 
+                  ? " Créez d'abord une filiale." 
+                  : " Créez d'abord une direction."}
+              </div>
+            ) : (
+              <Select value={state.parentId || "__root__"} onValueChange={(v) => set({ ...state, parentId: v === "__root__" ? "" : v })}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Sélectionner un parent" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {groupedParents && 'groups' in groupedParents && groupedParents.groups ? (
+                    <>
+                      {groupedParents.groups.map((group, idx) => (
+                        <div key={idx}>
+                          <div className="px-2 py-1.5 bg-[#172030]/5 text-[#172030] text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
+                            <Building2 className="h-3.5 w-3.5 text-[#172030]/50" />
+                            <span>🏢 {group.filiale.name}</span>
+                            <span className="text-[10px] font-normal text-muted-foreground">({group.filiale.country || "FR"})</span>
+                            <span className="text-[10px] font-normal text-muted-foreground ml-auto">{group.directions.length}</span>
+                          </div>
+                          {group.directions.map((e) => (
+                            <SelectItem key={e.id} value={e.id} className="pl-8">
+                              <div className="flex items-center gap-2 w-full">
+                                <span className="truncate">{e.name}</span>
+                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                  {getFullPath(e.id)}
+                                </span>
+                                <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
+                                  {e.type}
+                                </Badge>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                      
+                      {groupedParents.filialesWithoutDirections && groupedParents.filialesWithoutDirections.length > 0 && (
+                        <div>
+                          <div className="px-2 py-1.5 bg-gray-50 text-muted-foreground text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
+                            <span>🏢 Filiales sans directions</span>
+                          </div>
+                          {groupedParents.filialesWithoutDirections.map((f) => (
+                            <SelectItem key={f.id} value={f.id} className="pl-8 opacity-60">
+                              <div className="flex items-center gap-2 w-full">
+                                <span className="truncate">{f.name}</span>
+                                <span className="text-[10px] text-muted-foreground">(aucune direction)</span>
+                                <Badge variant="outline" className="text-[9px] ml-auto bg-gray-100">
+                                  FILIALE
+                                </Badge>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    availableParents.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        <div className="flex items-center gap-2 w-full">
+                          <span className="truncate">{e.name}</span>
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            {getFullPath(e.id)}
+                          </span>
+                          <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
+                            {e.type}
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
+                  
+                  <div className="border-t border-[#E8E4DC] mt-1 pt-1">
+                    <SelectItem value="__root__" className="text-muted-foreground italic">
+                      — Aucun parent (entité racine) —
+                    </SelectItem>
+                  </div>
+                </SelectContent>
+              </Select>
+            )}
+            
+            {state.parentId && state.parentId !== "__root__" && (
+              <div className="mt-1.5 text-xs text-muted-foreground flex items-center gap-2 bg-[#F8F6F2] p-2 rounded-lg border border-[#E8E4DC]">
+                <div className="h-2 w-2 rounded-full bg-[#2A5141] flex-shrink-0"></div>
+                <span>
+                  📍 Chemin : <span className="font-medium text-[#172030]">{getFullPath(state.parentId)}</span>
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ============================================================
   // MODÈLE EXCEL AVEC MISE EN FORME PROFESSIONNELLE
   // ============================================================
   const downloadTemplate = () => {
-    // Créer la première feuille avec les données
     const data = [
       ['Nom', 'Type', 'Pays', 'Référent PCA', 'Coordonnées référent', 'Suppléant', 'Coordonnées suppléant', 'Entité Parente'],
       ['Filiale 1', 'FILIALE', 'France', 'Jean Dupont', 'jean@email.com', 'Marie Martin', 'marie@email.com', ''],
@@ -816,19 +955,11 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
 
     const ws = XLSX.utils.aoa_to_sheet(data);
     
-    // Appliquer la mise en forme
     ws['!cols'] = [
-      { wch: 20 },  // Nom
-      { wch: 15 },  // Type
-      { wch: 12 },  // Pays
-      { wch: 20 },  // Référent PCA
-      { wch: 25 },  // Coordonnées référent
-      { wch: 20 },  // Suppléant
-      { wch: 25 },  // Coordonnées suppléant
-      { wch: 25 },  // Entité Parente
+      { wch: 20 }, { wch: 15 }, { wch: 12 }, { wch: 20 },
+      { wch: 25 }, { wch: 20 }, { wch: 25 }, { wch: 25 },
     ];
 
-    // Style pour l'en-tête (fond Navy, texte blanc, gras)
     const headerStyle = {
       font: { bold: true, color: { rgb: "FFFFFF" } },
       fill: { fgColor: { rgb: "172030" } },
@@ -841,7 +972,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
     };
 
-    // Appliquer le style à la première ligne
     const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0];
     if (headerRow) {
       for (let col = 0; col < (headerRow as any[]).length; col++) {
@@ -852,7 +982,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
     }
 
-    // Style pour les cellules de données (bordures)
     const dataStyle = {
       border: {
         top: { style: "thin", color: { rgb: "CCCCCC" } },
@@ -863,7 +992,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       alignment: { vertical: "center" }
     };
 
-    // Appliquer le style aux cellules de données
     for (let row = 1; row < data.length; row++) {
       for (let col = 0; col < data[row].length; col++) {
         const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
@@ -873,7 +1001,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
     }
 
-    // --- FEUILLE 2 : INSTRUCTIONS ---
     const instructionsData = [
       ['📋 INSTRUCTIONS POUR L\'IMPORT DE L\'ORGANIGRAMME'],
       [''],
@@ -907,16 +1034,12 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
     ];
 
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructionsData.map(row => [row]));
-    
-    // Largeur des colonnes pour les instructions
     wsInstructions['!cols'] = [{ wch: 90 }];
 
-    // Créer le classeur avec les deux feuilles
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Organigramme');
     XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
 
-    // Télécharger
     XLSX.writeFile(wb, 'modele_organigramme.xlsx');
     toast.success("📊 Modèle Excel téléchargé avec succès !");
   };
@@ -933,7 +1056,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       let y = 20;
       const lineHeight = 7;
 
-      // Bandeau Navy en en-tête
       doc.setFillColor(23, 32, 48);
       doc.rect(0, 0, pageWidth, 28, 'F');
       
@@ -961,7 +1083,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       doc.setLineWidth(0.2);
       y += 12;
 
-      // Exemple 1
       doc.setFontSize(13);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(23, 32, 48);
@@ -984,7 +1105,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       doc.text("       • Département Marketing", margin + 10, y);
       y += lineHeight + 8;
 
-      // Exemple 2
       doc.setFontSize(13);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(23, 32, 48);
@@ -1014,7 +1134,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       doc.line(margin, y, pageWidth - margin, y);
       y += 10;
 
-      // Bloc INSTRUCTIONS (fond Crème)
       const instructionsY = y;
       const instructionsHeight = 60;
       doc.setFillColor(248, 246, 242);
@@ -1042,7 +1161,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
       y += 3;
 
-      // Bloc AVERTISSEMENT (fond Crème)
       const warningY = y;
       const warningHeight = 30;
       doc.setFillColor(248, 246, 242);
@@ -1068,7 +1186,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
       y += 8;
 
-      // Structure hiérarchique
       doc.setFontSize(13);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(23, 32, 48);
@@ -1123,7 +1240,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       
       y += 5;
 
-      // Types d'entités
       if (y + 60 > pageHeight - 20) {
         doc.addPage();
         y = 25;
@@ -1151,7 +1267,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
       y += 5;
 
-      // Rappel final
       if (y + 30 > pageHeight - 20) {
         doc.addPage();
         y = 25;
@@ -1167,7 +1282,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       y += lineHeight;
       doc.text("   Respectez la hiérarchie : Filiale → Direction → Service/Département.", margin + 2, y);
 
-      // Pied de page
       if (y + 20 > pageHeight - 15) {
         doc.addPage();
         y = 25;
@@ -1198,7 +1312,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
   const importExcel = async (rows: any[]) => {
     console.log("📊 Excel - Lignes:", rows.length);
     
-    // 1. VALIDATION DE TOUTES LES LIGNES
     const validationErrors: string[] = [];
     const validRows: any[] = [];
     
@@ -1219,12 +1332,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
         continue;
       }
       
-      // Vérifier que le parent existe (si spécifié)
-      if (parentName) {
-        // On vérifiera après avoir les noms de toutes les lignes
-        // On stocke juste pour validation ultérieure
-      }
-      
       validRows.push({
         index: i,
         name,
@@ -1238,7 +1345,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       });
     }
     
-    // 2. VÉRIFIER QUE TOUS LES PARENTS EXISTENT
     const allNames = new Set(validRows.map(r => r.name));
     for (const row of validRows) {
       if (row.parentName && !allNames.has(row.parentName)) {
@@ -1249,7 +1355,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
     }
     
-    // 3. SI ERREURS → AFFICHER TOUT ET S'ARRÊTER
     if (validationErrors.length > 0) {
       const errorMessage = validationErrors.join('\n');
       toast.error(`❌ ${validationErrors.length} erreur(s) de validation:\n${errorMessage}`, {
@@ -1259,7 +1364,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       return;
     }
     
-    // 4. TOUT EST VALIDE → INSERTION
     const insertedEntities: any[] = [];
     const errors: string[] = [];
     
@@ -1292,7 +1396,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       });
     }
     
-    // 5. METTRE À JOUR LES PARENTS
     const allEntitiesForValidation = [
       ...entities,
       ...insertedEntities.map(e => ({
@@ -1327,7 +1430,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       }
     }
     
-    // 6. RECHARGER LES ENTITÉS
     const { data: allEntities } = await (supabase as any).from('organisations').select('*');
     if (allEntities) {
       setEntities(allEntities.map((e: any) => ({
@@ -1350,7 +1452,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Stocker le fichier pour réessayer
     setPendingFile(file);
     console.log("📁 Import du fichier:", file.name, "Type:", file.type);
     
@@ -1385,12 +1486,10 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
   // TRAITEMENT PDF AVEC GROQ (via Supabase Edge Function)
   // ============================================================
   const processFileWithAI = async (file: File) => {
-    // État de chargement
     setIsProcessingPdf(true);
     let loadingToast: string | number | undefined;
     
     try {
-      // Étape 1: Extraction du texte
       loadingToast = toast.loading("📄 Extraction du texte...");
       
       const arrayBuffer = await file.arrayBuffer();
@@ -1412,7 +1511,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       console.log(`🔵 Texte total extrait: ${extractedText.length} caractères`);
       console.log("🔵 Début du texte:", extractedText.substring(0, 500));
       
-      // OCR si pas de texte
       if (!extractedText || extractedText.trim().length < 50) {
         toast.loading("🔍 OCR en cours (document scanné)...", { id: loadingToast });
         console.log("🟡 Texte trop court → OCR sur la page 1...");
@@ -1434,7 +1532,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       
       console.log("🔵 Texte nettoyé:", cleanText.substring(0, 800));
       
-      // Étape 2: Appel à l'Edge Function Groq
       toast.loading("🧠 Analyse par l'IA en cours...", { id: loadingToast });
       console.log("🔵 Envoi à l'Edge Function Groq...");
       
@@ -1460,7 +1557,6 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       const result = { response: data.response };
       console.log("🔵 Réponse brute (début):", result.response?.substring(0, 500));
       
-      // Nettoyage du JSON
       let cleanResponse = result.response || '';
       cleanResponse = cleanResponse.replace(/```json\s*/g, '');
       cleanResponse = cleanResponse.replace(/```\s*/g, '');
@@ -1493,10 +1589,8 @@ const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId
       } catch (parseError) {
         console.error("🔴 Erreur parsing JSON:", parseError);
         
-        // SECOND APPEL EN MODE SIMPLIFIÉ
         toast.loading("🔄 Second essai d'analyse...", { id: loadingToast });
         
-        // Appel simplifié pour extraire juste les noms et niveaux
         const { data: fallbackData, error: fallbackError } = await functionsClient.functions.invoke('groq-extract', {
           body: { 
             text: `Extrais uniquement les noms d'entités et leur niveau hiérarchique du texte suivant. Retourne un JSON avec la liste des entités.
@@ -1520,7 +1614,6 @@ Ne retourne que le JSON.`
           try {
             const fallbackParsed = JSON.parse(fallbackClean);
             if (fallbackParsed && fallbackParsed.entities && fallbackParsed.entities.length > 0) {
-              // Convertir les niveaux en types
               const entities = fallbackParsed.entities.map((e: any) => {
                 let type = "SERVICE";
                 if (e.level === 1) type = "FILIALE";
@@ -1551,7 +1644,6 @@ Ne retourne que le JSON.`
         const errors = [];
         const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
         
-        // Déterminer les parents automatiquement
         let currentFiliale = null;
         let currentDirection = null;
         
@@ -1566,7 +1658,6 @@ Ne retourne que le JSON.`
             continue;
           }
           
-          // Déterminer le parent
           let parent = null;
           if (normalizedType === "FILIALE") {
             currentFiliale = entity.name;
@@ -1595,7 +1686,6 @@ Ne retourne que le JSON.`
         console.log(`🔵 ${validEntities.length} entités valides trouvées`);
         console.log("🔵 Entités:", validEntities.map(e => `${e.name} (${e.type}) -> ${e.parent || 'Racine'}`).join(', '));
         
-        // Insertion en base
         const insertedIds = new Map();
         for (const entity of validEntities) {
           const { data, error } = await (supabase as any).from('organisations').insert({
@@ -1622,7 +1712,6 @@ Ne retourne que le JSON.`
           console.log(`✅ Insertion OK: ${entity.name} → ${data.id}`);
         }
         
-        // Mise à jour des parents
         const allEntitiesForValidation = [
           ...entities,
           ...validEntities.map(e => ({
@@ -1671,7 +1760,6 @@ Ne retourne que le JSON.`
           }
         }
         
-        // Recharger les entités
         const { data: allEntities } = await (supabase as any).from('organisations').select('*');
         if (allEntities) {
           setEntities(allEntities.map((e: any) => ({
@@ -1893,18 +1981,180 @@ Ne retourne que le JSON.`
       <Card>
         <CardHeader>
           <CardTitle>Arborescence des entités</CardTitle>
-          <CardDescription>Cliquez sur une entité pour voir ses détails.</CardDescription>
+          <CardDescription>Cliquez sur une entité pour voir ses détails. Survolez une filiale ou une direction pour ajouter une sous-entité.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="hidden md:grid grid-cols-4 gap-2 px-3 pb-2 ml-12 text-xs font-semibold text-muted-foreground border-b border-border">
             <span>Entité</span><span>Type</span><span>Pays</span><span>Référent PCA</span>
           </div>
           <div className="mt-2">
-            {tree.map((n) => <Node key={n.id} node={n} depth={0} onDelete={handleDelete} onSelect={openPanel} />)}
+            {tree.map((n) => (
+              <Node 
+                key={n.id} 
+                node={n} 
+                depth={0} 
+                onDelete={handleDelete} 
+                onSelect={openPanel} 
+                onQuickAdd={handleQuickAdd}
+              />
+            ))}
           </div>
         </CardContent>
       </Card>
 
+      {/* ============================================================
+          SHEET : Création rapide contextuelle (Quick Add)
+          ============================================================ */}
+      <Sheet 
+        open={quickAddOpen} 
+        onOpenChange={(o) => { 
+          if (!o) { 
+            setQuickAddOpen(false); 
+            setQuickAddForm(emptyForm); 
+          } 
+        }}
+      >
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          {(() => {
+            const parent = entities.find(e => e.id === quickAddParentId);
+            const typeLabel = quickAddType === "DIRECTION" ? "direction" 
+              : quickAddType === "SERVICE" ? "service" 
+              : quickAddType === "DÉPARTEMENT" ? "département" 
+              : "entité";
+            
+            return (
+              <div className="space-y-5">
+                <SheetHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-[#2A5141]/15 flex items-center justify-center">
+                      <PlusCircle className="h-5 w-5 text-[#2A5141]" />
+                    </div>
+                    <div>
+                      <SheetTitle className="text-[#172030]" style={{ fontFamily: "'Playfair Display', serif" }}>
+                        Nouvelle {typeLabel}
+                      </SheetTitle>
+                      <SheetDescription className="text-xs">
+                        {parent 
+                          ? <>Sous « <span className="font-medium text-[#172030]">{parent.name}</span> » ({parent.type})</>
+                          : "Création d'une entité"
+                        }
+                      </SheetDescription>
+                    </div>
+                  </div>
+                </SheetHeader>
+
+                {/* Bandeau contexte */}
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-[#F8F6F2] border border-[#E8E4DC] text-xs text-muted-foreground">
+                  <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>
+                    Cette {typeLabel} sera automatiquement rattachée à 
+                    <span className="font-semibold text-[#172030]"> {parent?.name || "—"}</span>.
+                  </span>
+                </div>
+
+                {/* Formulaire */}
+                <div className="space-y-4">
+                  <div>
+                    <Label>Nom <span className="text-destructive">*</span></Label>
+                    <Input
+                      autoFocus
+                      value={quickAddForm.name}
+                      onChange={(e) => setQuickAddForm({ ...quickAddForm, name: e.target.value })}
+                      placeholder={
+                        quickAddType === "DIRECTION" ? "Ex: Direction Financière" 
+                        : quickAddType === "SERVICE" ? "Ex: Service Comptabilité" 
+                        : "Ex: Département Audit"
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && quickAddForm.name.trim()) submitQuickAdd();
+                      }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Type</Label>
+                      <Input value={quickAddType} disabled className="bg-muted/50" />
+                    </div>
+                    <div>
+                      <Label>Pays</Label>
+                      <Input
+                        value={quickAddForm.country}
+                        onChange={(e) => setQuickAddForm({ ...quickAddForm, country: e.target.value })}
+                        placeholder="FR"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Référent PCA</Label>
+                      <Input
+                        value={quickAddForm.referent}
+                        onChange={(e) => setQuickAddForm({ ...quickAddForm, referent: e.target.value })}
+                        placeholder="Nom du responsable"
+                      />
+                    </div>
+                    <div>
+                      <Label>Coordonnées référent</Label>
+                      <Input
+                        value={quickAddForm.referentContact}
+                        onChange={(e) => setQuickAddForm({ ...quickAddForm, referentContact: e.target.value })}
+                        placeholder="email ou téléphone"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Suppléant</Label>
+                      <Input
+                        value={quickAddForm.suppleant}
+                        onChange={(e) => setQuickAddForm({ ...quickAddForm, suppleant: e.target.value })}
+                        placeholder="Nom du suppléant"
+                      />
+                    </div>
+                    <div>
+                      <Label>Coordonnées suppléant</Label>
+                      <Input
+                        value={quickAddForm.suppleantContact}
+                        onChange={(e) => setQuickAddForm({ ...quickAddForm, suppleantContact: e.target.value })}
+                        placeholder="email ou téléphone"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer actions */}
+                <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => { setQuickAddOpen(false); setQuickAddForm(emptyForm); }}
+                    disabled={isSubmittingQuickAdd}
+                  >
+                    <X className="h-4 w-4 mr-1" /> Annuler
+                  </Button>
+                  <Button
+                    onClick={submitQuickAdd}
+                    disabled={isSubmittingQuickAdd || !quickAddForm.name.trim()}
+                    className="bg-[#2A5141] hover:bg-[#1a3329] text-white"
+                  >
+                    {isSubmittingQuickAdd ? (
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Création...</>
+                    ) : (
+                      <><Plus className="h-4 w-4 mr-1" /> Créer la {typeLabel}</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </SheetContent>
+      </Sheet>
+
+      {/* ============================================================
+          SHEET : Détail / Édition d'une entité (existant)
+          ============================================================ */}
       <Sheet open={!!panelEntity} onOpenChange={(o) => { if (!o) { setPanelId(null); setEditing(false); } }}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {panelEntity && (() => {

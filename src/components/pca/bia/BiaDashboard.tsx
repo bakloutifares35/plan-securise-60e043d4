@@ -760,7 +760,6 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         bg: "bg-red-50",
         text: `${noHR.length} processus sans collaborateur`,
         action: "Voir",
-        processId: noHR[0]?.id,
         severity: "high"
       });
     }
@@ -776,7 +775,6 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         bg: "bg-purple-50",
         text: `${noApp.length} processus sans application IT`,
         action: "Voir",
-        processId: noApp[0]?.id,
         severity: "high"
       });
     }
@@ -792,7 +790,6 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         bg: "bg-amber-50",
         text: `${noEquip.length} processus sans équipement`,
         action: "Voir",
-        processId: noEquip[0]?.id,
         severity: "medium"
       });
     }
@@ -808,7 +805,6 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         bg: "bg-orange-50",
         text: `${noSupplier.length} processus sans prestataire`,
         action: "Voir",
-        processId: noSupplier[0]?.id,
         severity: "medium"
       });
     }
@@ -825,7 +821,6 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         bg: "bg-rose-50",
         text: `${expiredPra.length} PRA expiré${expiredPra.length > 1 ? 's' : ''}`,
         action: "Voir",
-        processId: expiredPra[0]?.id,
         severity: "critical"
       });
     }
@@ -838,7 +833,6 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         bg: "bg-orange-50",
         text: `${noPca.length} processus critique${noPca.length > 1 ? 's' : ''} sans PCA`,
         action: "Voir",
-        processId: noPca[0]?.id,
         severity: "high"
       });
     }
@@ -1555,7 +1549,7 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
                 <Zap className="h-4 w-4 text-[#E65100]" />
                 Points d'attention
               </CardTitle>
-              <span className="text-xs text-[#172030]/40">Cliquez sur une alerte pour voir le processus</span>
+              <span className="text-xs text-[#172030]/40">Cliquez sur une alerte pour voir l'inventaire</span>
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
@@ -1575,15 +1569,10 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
                     <div 
                       key={index} 
                       className={cn(
-                        "flex items-center justify-between gap-2 py-2.5 px-3 rounded-lg border transition-all cursor-pointer hover:shadow-sm hover:scale-[1.01]",
+                        "flex items-center justify-between gap-2 py-2.5 px-3 rounded-lg border transition-all",
                         sev.border,
                         sev.bg,
                       )}
-                      onClick={() => {
-                        if (point.processId) {
-                          navigateToBiaDetail(point.processId);
-                        }
-                      }}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <div className={`h-7 w-7 rounded-lg ${sev.bg} flex items-center justify-center flex-shrink-0`}>
@@ -1591,10 +1580,17 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
                         </div>
                         <p className="text-xs text-[#172030] break-words">{point.text}</p>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 flex-shrink-0 cursor-pointer bg-transparent border-0 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigateToBiaInventory();
+                        }}
+                      >
                         <span className="text-xs text-[#2A5141] font-medium">{point.action}</span>
                         <ArrowRight className="h-3 w-3 text-[#2A5141]" />
-                      </div>
+                      </button>
                     </div>
                   );
                 })
