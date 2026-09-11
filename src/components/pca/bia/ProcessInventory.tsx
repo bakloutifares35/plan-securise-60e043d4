@@ -5152,77 +5152,77 @@ export const ProcessInventory = ({
     };
   }, []);
 
-  useEffect(() => {
-    const handleOpenProcessDetail = (event: CustomEvent) => {
-      const { processId } = event.detail || {};
-      if (!processId) return;
+  const handleOpenProcessDetail = useCallback((event: CustomEvent) => {
+    const { processId } = event.detail || {};
+    if (!processId) return;
 
-      const process = processes.find(p => p.id === processId);
-      if (!process) return;
+    const process = processes.find(p => p.id === processId);
+    if (!process) return;
 
-      const entity = entities.find(e => e.id === process.entityId);
-      if (!entity) return;
+    const entity = entities.find(e => e.id === process.entityId);
+    if (!entity) return;
 
-      const getRoot = (entityId: string): string | null => {
-        const e = entities.find(ent => ent.id === entityId);
-        if (!e) return null;
-        if (e.parentId === null) return e.id;
-        return getRoot(e.parentId);
-      };
-
-      const rootId = getRoot(entity.id);
-      if (!rootId) return;
-
-      const getDirection = (entityId: string): string | null => {
-        const e = entities.find(ent => ent.id === entityId);
-        if (!e) return null;
-        if (e.parentId === rootId) return e.id;
-        return getDirection(e.parentId || '');
-      };
-
-      const directionId = getDirection(entity.id);
-
-      const deptProcesses = processes.filter(p => p.entityId === entity.id || p.department === entity.name);
-      
-      const criticalCount = deptProcesses.filter(p => {
-        const score = computeMaxScoreFromImpacts(p.impacts);
-        return score >= 4;
-      }).length;
-      
-      let totalResources = 0;
-      for (const p of deptProcesses) {
-        totalResources += resourceCountByProcess[p.id] || 0;
-      }
-
-      const rate = deptProcesses.length > 0 ? calculateCompletionRate(deptProcesses) : 0;
-      const status = getBIAStatus(deptProcesses, entity.lastUpdated);
-
-      const service: ServiceBIA = {
-        id: entity.id,
-        name: entity.name,
-        owner: deptProcesses.length > 0 ? deptProcesses[0]?.owner || "—" : "—",
-        coordinator: "—",
-        processCount: deptProcesses.length,
-        criticalCount,
-        resources: totalResources,
-        completionRate: rate,
-        status: status as BIAStatus,
-        lastReviewed: entity.lastUpdated,
-        description: entity.description || "",
-      };
-
-      setSelectedRoot(rootId);
-      setSelectedDirection(directionId);
-      setSelectedService(service);
-      setShowBIADetail(true);
-      setViewLevel("directions");
+    const getRoot = (entityId: string): string | null => {
+      const e = entities.find(ent => ent.id === entityId);
+      if (!e) return null;
+      if (e.parentId === null) return e.id;
+      return getRoot(e.parentId);
     };
 
-    window.addEventListener('openProcessDetail', handleOpenProcessDetail as EventListener);
-    return () => {
-      window.removeEventListener('openProcessDetail', handleOpenProcessDetail as EventListener);
+    const rootId = getRoot(entity.id);
+    if (!rootId) return;
+
+    const getDirection = (entityId: string): string | null => {
+      const e = entities.find(ent => ent.id === entityId);
+      if (!e) return null;
+      if (e.parentId === rootId) return e.id;
+      return getDirection(e.parentId || '');
     };
+
+    const directionId = getDirection(entity.id);
+
+    const deptProcesses = processes.filter(p => p.entityId === entity.id || p.department === entity.name);
+    
+    const criticalCount = deptProcesses.filter(p => {
+      const score = computeMaxScoreFromImpacts(p.impacts);
+      return score >= 4;
+    }).length;
+    
+    let totalResources = 0;
+    for (const p of deptProcesses) {
+      totalResources += resourceCountByProcess[p.id] || 0;
+    }
+
+    const rate = deptProcesses.length > 0 ? calculateCompletionRate(deptProcesses) : 0;
+    const status = getBIAStatus(deptProcesses, entity.lastUpdated);
+
+    const service: ServiceBIA = {
+      id: entity.id,
+      name: entity.name,
+      owner: deptProcesses.length > 0 ? deptProcesses[0]?.owner || "—" : "—",
+      coordinator: "—",
+      processCount: deptProcesses.length,
+      criticalCount,
+      resources: totalResources,
+      completionRate: rate,
+      status: status as BIAStatus,
+      lastReviewed: entity.lastUpdated,
+      description: entity.description || "",
+    };
+
+    setSelectedRoot(rootId);
+    setSelectedDirection(directionId);
+    setSelectedService(service);
+    setShowBIADetail(true);
+    setViewLevel("directions");
   }, [processes, entities, resourceCountByProcess]);
+
+  // ✅ Ouvrir le processus en attente transmis par BiaModule après un changement d'onglet
+  useEffect(() => {
+    if (!pendingProcessId) return;
+    handleOpenProcessDetail({ detail: { processId: pendingProcessId } } as CustomEvent);
+    onPendingProcessed?.();
+  }, [pendingProcessId, handleOpenProcessDetail, onPendingProcessed]);
 
   useEffect(() => {
     const loadResourceCounts = async () => {
