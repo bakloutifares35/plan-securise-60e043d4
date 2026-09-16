@@ -13,7 +13,8 @@ import TenaciaVoice from "@/components/pca/bia/TenaciaVoice";
 import BIASynthesis from "@/components/pca/bia/BIASynthesis";
 import BIARecoverySequence from "@/components/pca/bia/BIARecoverySequence";
 import CMDBModule from "@/components/pca/bia/CMDBModule";
-import StrategyModule from "@/components/strategy/StrategyModule"; // ⬅️ AJOUT
+import StrategyModule from "@/components/strategy/StrategyModule";
+import WarRoomModule from "@/components/warroom/WarRoomModule"; // ✅ AJOUT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { RoleProvider } from "@/contexts/RoleContext";
@@ -42,10 +43,12 @@ const Index = () => {
       setSection("cmdb");
     } else if (path === "/tenacia-voice") {
       setSection("tenacia");
-    } else if (path === "/strategies") { // ⬅️ AJOUT
+    } else if (path === "/strategies") {
       setSection("strategies");
     } else if (path === "/plan") {
       setSection("plan");
+    } else if (path === "/warroom") {   // ✅ AJOUT
+      setSection("warroom");
     }
   }, [location]);
 
@@ -81,9 +84,10 @@ const Index = () => {
                       <SelectItem value="risk">Analyse des Risques</SelectItem>
                       <SelectItem value="form">Identification des risques</SelectItem>
                       <SelectItem value="plan">Gestion des plans</SelectItem>
+                      <SelectItem value="warroom">War Room</SelectItem> {/* ✅ AJOUT */}
                       <SelectItem value="benchmark">Benchmark</SelectItem>
                       <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem>
-                      <SelectItem value="strategies">Stratégies de continuité</SelectItem> {/* ⬅️ AJOUT */}
+                      <SelectItem value="strategies">Stratégies de continuité</SelectItem>
                     </SelectContent>
                   </Select>
                 </header>
@@ -104,7 +108,8 @@ const Index = () => {
                   {section === "cmdb" && <CMDBModule />}
                   {section === "risk" && <RiskModule />}
                   {section === "tenacia" && <TenaciaVoice />}
-                  {section === "strategies" && <StrategyModule />} {/* ⬅️ AJOUT */}
+                  {section === "strategies" && <StrategyModule />}
+                  {section === "warroom" && <WarRoomModule />} {/* ✅ AJOUT */}
                 </div>
               </main>
             </div>

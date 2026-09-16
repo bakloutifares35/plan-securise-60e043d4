@@ -14,21 +14,25 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Plus, Trash2, Pencil, Home, Building, Users, AlertTriangle, Database, ArrowRight, Shield, Lightbulb } from "lucide-react";
+import {
+  Plus, Trash2, Pencil, Home, Building, Users, AlertTriangle,
+  Database, ArrowRight, Shield, Layers, Server, Handshake, Network,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-// 🔥 AJOUT DE L'IMPORT CN ICI
-import { cn } from "@/lib/utils"; 
 import { supabase } from "@/integrations/resillia/client";
 import { StrategyData } from "../useStrategyData";
 
-// Map des icônes
+// ============================================================
+// ICÔNES DISPONIBLES
+// ============================================================
 const ICON_MAP: Record<string, any> = {
   Home, Building, Users, AlertTriangle, Database, ArrowRight,
+  Layers, Server, Handshake, Network,
 };
-const ICON_LIST = ["Home", "Building", "Users", "AlertTriangle", "Database", "ArrowRight"];
+const ICON_LIST = ["Home", "Building", "Users", "AlertTriangle", "Database", "ArrowRight", "Layers", "Server", "Handshake", "Network"];
 
 export const CatalogueTab = ({ data }: { data: StrategyData }) => {
-  // 🔥 On récupère risques via data (passé par StrategyModule), ou on fait un fetch local si pas présent
   const { 
     catalogue, 
     associations, 
@@ -42,24 +46,20 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
   const [open, setOpen] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
   
-  // Formulaire d'ajout
   const [nom, setNom] = useState("");
   const [description, setDescription] = useState("");
   const [iconName, setIconName] = useState<string>("Home");
   const [saving, setSaving] = useState(false);
 
-  // Formulaire d'édition
   const [editId, setEditId] = useState<string | null>(null);
   const [editNom, setEditNom] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editIconName, setEditIconName] = useState<string>("Home");
 
-  // 🔥 ÉTAT LOCAL POUR LES RISQUES (au cas où data.risques ne soit pas passé)
   const [localRisks, setLocalRisks] = useState<any[]>(externalRisks);
   
   useEffect(() => {
     if (externalRisks.length === 0) {
-      // Si le parent n'a pas passé les risques, on les charge ici
       const fetchRisks = async () => {
         const { data, error } = await supabase
           .from("risques")
@@ -76,16 +76,10 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     }
   }, [externalRisks]);
 
-  // 🔥 MAP POUR RÉSOUDRE LES TITRES DES RISQUES
   const riskById = useMemo(() => {
     return Object.fromEntries(localRisks.map((r) => [r.id, r]));
   }, [localRisks]);
 
-  // ============================================================
-  // LOGIQUE DE COMPTAGE
-  // ============================================================
-  
-  // 1. Comptage des processus
   const processCounts = useMemo(() => {
     const m: Record<string, Set<string>> = {};
     associations.forEach((a) => {
@@ -95,7 +89,6 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     return m;
   }, [associations]);
 
-  // 2. Comptage des Actions
   const actionCounts = useMemo(() => {
     const m: Record<string, Set<string>> = {};
     const risksByStrategy: Record<string, Set<string>> = {};
@@ -115,7 +108,6 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     return m;
   }, [associations, actionPlans]);
 
-  // 🔥 Calcul des actions orphelines (pour la section Suggestions)
   const unsuggestedActions = useMemo(() => {
     const linkedActionIds = new Set<string>();
     Object.values(actionCounts).forEach((actionSet) => {
@@ -124,7 +116,6 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     return actionPlans.filter(action => !linkedActionIds.has(action.id));
   }, [actionPlans, actionCounts]);
 
-  // Gestion de l'expansion
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const MAX_SUGGESTIONS = 4;
   const displayedSuggestions = showAllSuggestions 
@@ -132,9 +123,6 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     : unsuggestedActions.slice(0, MAX_SUGGESTIONS);
   const remainingCount = unsuggestedActions.length - MAX_SUGGESTIONS;
 
-  // ============================================================
-  // CRUD
-  // ============================================================
   const submitAdd = async () => {
     if (!nom.trim()) return;
     setSaving(true);
@@ -185,101 +173,130 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
     }
   };
 
+  const getIndexLabel = (index: number) => String(index + 1).padStart(2, "0");
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* ===== HEADER ===== */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          {/* 🔥 RENOMMAGE EN "Catalogue des options" */}
           <h3 className="font-serif text-xl font-bold text-[#172030]">Catalogue des options</h3>
-          <p className="text-sm text-[#172030]/60">Options de stratégie génériques et personnalisées disponibles.</p>
+          <p className="text-sm text-[#172030]/60">
+            Options de stratégie génériques et personnalisées disponibles.
+          </p>
         </div>
-        <Button onClick={() => setOpen(true)} className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm">
+        <Button 
+          onClick={() => setOpen(true)} 
+          className="bg-[#2A5141] hover:bg-[#1F3E32] text-white shadow-sm"
+        >
           <Plus className="h-4 w-4 mr-2" /> Nouvelle option
         </Button>
       </div>
 
       {/* ============================================================
-          SECTION SUGGESTIONS (REDESIGNÉE)
+          SECTION SUGGESTIONS — sans bordure latérale
           ============================================================ */}
       {!loadingActions && unsuggestedActions.length > 0 && (
-        <Card className="border-0 shadow-sm bg-[#F8F6F2] rounded-xl overflow-hidden border-l-4 border-l-[#2A5141]">
+        <Card 
+          className="border-0 shadow-sm rounded-xl"
+          style={{ backgroundColor: "#FBF9F5" }}
+        >
           <CardContent className="p-5">
-            <div className="flex items-start gap-4 mb-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F0EC] flex-shrink-0">
-                <Lightbulb className="h-5 w-5 text-[#2A5141]" />
+            {/* Header de la section */}
+            <div className="flex items-start gap-3 mb-4">
+              <div 
+                className="flex h-9 w-9 items-center justify-center rounded-lg flex-shrink-0"
+                style={{ backgroundColor: "#F8E8DC" }}
+              >
+                <Sparkles className="h-4 w-4" style={{ color: "#D97846" }} />
               </div>
-              <div className="space-y-1">
-                <h4 className="font-serif text-[#172030] font-bold">Suggestions — actions sans option associée</h4>
-                <p className="text-sm text-[#172030]/60">
-                  Ces actions de traitement des risques n'ont pas encore d'option de continuité associée. Créez-en une pour formaliser votre plan de réponse.
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="font-serif text-[#172030] font-bold text-base">
+                    Suggestions
+                  </h4>
+                  <span 
+                    className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded"
+                    style={{ backgroundColor: "#F8E8DC", color: "#A85A2E" }}
+                  >
+                    {unsuggestedActions.length} action{unsuggestedActions.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <p className="text-sm text-[#172030]/60 mt-1">
+                  Ces actions de traitement des risques n'ont pas encore d'option de continuité associée.
                 </p>
               </div>
             </div>
 
-            <div className="space-y-3">
+            {/* Liste des suggestions */}
+            <div className="space-y-1.5">
               {displayedSuggestions.map((act) => {
-                // 🔥 RÉSOLUTION DU NOM DU RISQUE
                 const risk = riskById[act.risque_id];
                 const riskTitle = risk?.title || "—";
 
-                // 🔥 STYLE DU BADGE D'AVANCEMENT
-                const badgeStyle = act.avancement === 100 
-                  ? { bg: "#E8F5E9", text: "#2E7D32" } 
+                const statusInfo = act.avancement === 100 
+                  ? { label: "Terminé", color: "#2E7D32", dot: "#2E7D32" }
                   : act.avancement > 0 
-                  ? { bg: "#FFF8E1", text: "#A38730" } 
-                  : { bg: "#F1EFEA", text: "#6C7A8A" };
+                  ? { label: act.statut || "En cours", color: "#A38730", dot: "#F5D061" }
+                  : { label: act.statut || "À faire", color: "#6C7A8A", dot: "#9AA6B2" };
 
                 return (
-                  <div key={act.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white rounded-lg border border-[#E5E2DD] gap-3">
+                  <div 
+                    key={act.id} 
+                    className="flex flex-col sm:flex-row sm:items-center justify-between px-3 py-2.5 bg-white rounded-lg gap-3 hover:bg-[#FDFCFA] transition-colors"
+                  >
                     <div className="flex-1 min-w-0">
-                      <span className="font-medium text-sm text-[#172030] block">{act.mesure}</span>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-xs text-[#172030]/60">
-                        {/* Badge Statut */}
-                        <span className="bg-[#F1EFEA] text-[#444441] px-2 py-0.5 rounded-full">
-                          {act.statut || "À faire"}
+                      <span className="font-medium text-sm text-[#172030] block truncate">
+                        {act.mesure}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-[#172030]/60">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span 
+                            className="w-1.5 h-1.5 rounded-full" 
+                            style={{ backgroundColor: statusInfo.dot }} 
+                          />
+                          <span style={{ color: statusInfo.color }} className="font-medium">
+                            {statusInfo.label}
+                          </span>
                         </span>
                         <span className="text-[#E5E2DD]">·</span>
-                        {/* Badge Avancement */}
-                        <span className={cn("px-2 py-0.5 rounded-full", badgeStyle.bg, `text-[${badgeStyle.text}]`)}>
+                        <span className="font-mono" style={{ color: statusInfo.color }}>
                           {act.avancement || 0}%
                         </span>
                         <span className="text-[#E5E2DD]">·</span>
-                        {/* Risque associé */}
                         <span className="text-[#172030]/60">
                           Risque : <span className="font-medium text-[#172030]">{riskTitle}</span>
                         </span>
                       </div>
                     </div>
                     
-                    {/* 🔥 BOUTON DISCRET (Outline) */}
                     <Button 
-                      variant="outline" 
+                      variant="ghost" 
                       size="sm" 
-                      className="border-[#2A5141] text-[#2A5141] hover:bg-[#F8F6F2] flex-shrink-0 h-8"
+                      className="flex-shrink-0 h-8 text-[#D97846] hover:text-[#A85A2E] hover:bg-[#F8E8DC]"
                       onClick={() => {
                         setNom(`Option pour : ${act.mesure}`);
                         setDescription(`Créée à partir de l'action du plan de traitement : "${act.mesure}"`);
                         setOpen(true);
                       }}
                     >
-                      <Plus className="h-3.5 w-3.5 mr-1.5" /> Créer une option
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Créer
                     </Button>
                   </div>
                 );
               })}
             </div>
 
-            {/* Bouton pour voir plus */}
             {unsuggestedActions.length > MAX_SUGGESTIONS && (
               <Button 
                 variant="ghost" 
                 size="sm" 
-                className="mt-3 text-[#2A5141] hover:text-[#1F3E32] hover:bg-[#E8F0EC]"
+                className="mt-2 text-[#D97846] hover:text-[#A85A2E] hover:bg-[#F8E8DC] text-xs"
                 onClick={() => setShowAllSuggestions(!showAllSuggestions)}
               >
                 {showAllSuggestions 
                   ? "Réduire la liste" 
-                  : `+ ${remainingCount} autre${remainingCount > 1 ? 's' : ''} action${remainingCount > 1 ? 's' : ''} sans option`
+                  : `+ ${remainingCount} autre${remainingCount > 1 ? 's' : ''} action${remainingCount > 1 ? 's' : ''}`
                 }
               </Button>
             )}
@@ -288,12 +305,11 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
       )}
 
       {/* ============================================================
-          GRILLE DES OPTIONS (CARTES REDESIGNÉES)
+          GRILLE DES OPTIONS — cartes neutres, sans couleur, sans bordure
           ============================================================ */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {catalogue.map((s) => {
-          // 🔥 Si 's.type' existe, on affiche son icône. Sinon, icône par défaut "Home".
-          const Icon = ICON_MAP[s.type as string] || Home; 
+        {catalogue.map((s, index) => {
+          const Icon = ICON_MAP[s.type as string] || Home;
           const processCount = processCounts[s.id]?.size ?? 0;
           const actionCount = actionCounts[s.id]?.size ?? 0;
           
@@ -305,83 +321,149 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
           return (
             <Card 
               key={s.id} 
-              // 🔥 EFFET DE SURVOL AVEC BORDURE ET OMBRE
-              className="border border-[#E5E2DD] shadow-sm bg-white rounded-xl relative group transition-all duration-200 hover:shadow-md hover:border-[#2A5141]"
+              className="border-0 shadow-none bg-white rounded-xl relative group transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
             >
               <CardContent className="p-5 flex flex-col h-full gap-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E8F0EC]">
-                      <Icon className="h-4 w-4 text-[#2A5141]" />
-                    </span>
-                    <div>
-                      <p className="font-serif font-bold text-[#172030] leading-tight">{s.nom}</p>
-                      {/* 🔥 SOUS-TITRE PLUS DISCRET */}
-                      <p className="text-[10px] uppercase tracking-wider text-[#172030]/30 mt-0.5">{s.type || "Générique"}</p>
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className="relative flex-shrink-0">
+                      <span 
+                        className="flex h-11 w-11 items-center justify-center rounded-xl"
+                        style={{ backgroundColor: "#F1EFEA" }}
+                      >
+                        <Icon className="h-5 w-5" style={{ color: "#172030" }} />
+                      </span>
+                      <span 
+                        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full text-[9px] font-bold flex items-center justify-center text-white shadow-sm"
+                        style={{ backgroundColor: "#172030" }}
+                      >
+                        {getIndexLabel(index)}
+                      </span>
+                    </div>
+                    
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className="font-serif font-bold text-[#172030] leading-tight truncate">
+                        {s.nom}
+                      </p>
+                      <span 
+                        className="inline-block mt-1.5 text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded"
+                        style={{ 
+                          backgroundColor: "#F1EFEA", 
+                          color: "#172030" 
+                        }}
+                      >
+                        {s.type || "Générique"}
+                      </span>
                     </div>
                   </div>
                   
-                  <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openEditDialog(s)} className="p-1 text-[#172030]/30 hover:text-[#2A5141] transition-colors">
-                      <Pencil className="h-4 w-4" />
+                  <div 
+                    className="flex gap-0.5 rounded-lg p-0.5 bg-white/80 backdrop-blur shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                  >
+                    <button 
+                      onClick={() => openEditDialog(s)} 
+                      className="p-1.5 rounded-md text-[#172030]/50 hover:text-[#172030] hover:bg-[#F1EFEA] transition-colors"
+                      title="Modifier"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => handleDelete(s.id, s.nom)} className="p-1 text-[#172030]/30 hover:text-[#B91C1C] transition-colors">
-                      <Trash2 className="h-4 w-4" />
+                    <button 
+                      onClick={() => handleDelete(s.id, s.nom)} 
+                      className="p-1.5 rounded-md text-[#172030]/50 hover:text-[#B91C1C] hover:bg-[#FBE9E7] transition-colors"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
                 
-                <p className="text-sm text-[#172030]/60 flex-1">{s.description}</p>
+                <p 
+                  className="text-sm flex-1 leading-relaxed"
+                  style={{ color: "rgba(23,32,48,0.65)" }}
+                >
+                  {s.description}
+                </p>
                 
-                <div className="flex flex-wrap items-center gap-2 mt-auto">
-                  {/* 🔥 BADGE PROCESSUS (Harmonisé) */}
-                  <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-[#F1EFEA] text-[#172030]">
+                <div className="flex flex-wrap items-center gap-2 mt-auto pt-2">
+                  <span 
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+                    style={{ 
+                      backgroundColor: "#F1EFEA", 
+                      color: "#172030" 
+                    }}
+                  >
+                    <span 
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: processCount > 0 ? "#2A5141" : "#C0C5CC" }}
+                    />
                     {processCount} processus lié{processCount > 1 ? "s" : ""}
                   </span>
                   
-                  {/* Badge Actions liées (existant) */}
                   {loadingActions ? (
-                    <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-[#F8F6F2] text-[#172030]/30 animate-pulse">
+                    <span 
+                      className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium animate-pulse"
+                      style={{ 
+                        backgroundColor: "#F1EFEA", 
+                        color: "#17203080" 
+                      }}
+                    >
                       Chargement...
                     </span>
                   ) : actionCount > 0 ? (
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button 
-                          variant="secondary" 
-                          className="h-6 rounded-full px-2.5 py-1 text-xs font-medium bg-[#E5F0EB] text-[#1F4E39] hover:bg-[#C0D8CF] transition-colors gap-1"
+                        <button 
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors hover:opacity-90"
+                          style={{ 
+                            backgroundColor: "#E8F0EC", 
+                            color: "#2A5141" 
+                          }}
                         >
                           <Shield className="h-3 w-3" />
-                          {actionCount} action{actionCount > 1 ? "s" : ""} liée{actionCount > 1 ? "s" : ""}
-                        </Button>
+                          {actionCount} action{actionCount > 1 ? "s" : ""}
+                        </button>
                       </PopoverTrigger>
                       <PopoverContent className="w-80 p-0 border-[#E5E2DD] bg-white shadow-lg rounded-xl overflow-hidden">
-                        <div className="p-3 border-b border-[#E5E2DD] bg-[#F8F6F2]">
-                          <p className="text-xs font-semibold text-[#172030] font-sans uppercase tracking-wider">Actions du plan de traitement</p>
-                          <p className="text-[10px] text-[#172030]/40 mt-0.5">Liées aux risques de cette option</p>
+                        <div 
+                          className="p-3 border-b border-[#E5E2DD]"
+                          style={{ backgroundColor: "#F8F6F2" }}
+                        >
+                          <p className="text-xs font-semibold text-[#172030] font-sans uppercase tracking-wider">
+                            Actions du plan de traitement
+                          </p>
+                          <p className="text-[10px] text-[#172030]/40 mt-0.5">
+                            Liées aux risques de cette option
+                          </p>
                         </div>
                         <div className="max-h-[200px] overflow-y-auto p-2 space-y-1.5">
                           {actionsForPopover.length === 0 ? (
-                            <div className="p-3 text-center text-xs text-[#172030]/40">Aucune action trouvée.</div>
+                            <div className="p-3 text-center text-xs text-[#172030]/40">
+                              Aucune action trouvée.
+                            </div>
                           ) : (
                             actionsForPopover.map((act) => (
-                              <div key={act.id} className="flex flex-col p-2.5 rounded-lg hover:bg-[#F8F6F2] border border-transparent hover:border-[#E5E2DD] transition-colors">
+                              <div 
+                                key={act.id} 
+                                className="flex flex-col p-2.5 rounded-lg hover:bg-[#F8F6F2] transition-colors"
+                              >
                                 <div className="flex items-start justify-between gap-2">
-                                  <span className="text-sm font-medium text-[#172030] flex-1 leading-tight">{act.mesure}</span>
-                                  <div className="flex items-center gap-1 flex-shrink-0">
-                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                                  <span className="text-sm font-medium text-[#172030] flex-1 leading-tight">
+                                    {act.mesure}
+                                  </span>
+                                  <span 
+                                    className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
                                       act.avancement === 100 ? "bg-[#E8F5E9] text-[#2E7D32]" :
                                       act.avancement > 0 ? "bg-[#FFF8E1] text-[#A38730]" :
                                       "bg-[#F1EFEA] text-[#6C7A8A]"
-                                    }`}>
-                                      {act.avancement || 0}%
-                                    </span>
-                                  </div>
+                                    }`}
+                                  >
+                                    {act.avancement || 0}%
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-2 mt-1 text-[10px] text-[#172030]/50">
-                                  <span className="flex items-center gap-1">{act.responsable || "—"}</span>
+                                  <span>{act.responsable || "—"}</span>
                                   <span className="w-1 h-1 rounded-full bg-[#E5E2DD]" />
-                                  <span className="flex items-center gap-1">{act.statut || "À faire"}</span>
+                                  <span>{act.statut || "À faire"}</span>
                                 </div>
                               </div>
                             ))
@@ -397,7 +479,9 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
         })}
       </div>
 
-      {/* Dialogue d'ajout */}
+      {/* ============================================================
+          DIALOGUE D'AJOUT
+          ============================================================ */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -433,7 +517,9 @@ export const CatalogueTab = ({ data }: { data: StrategyData }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Dialogue d'édition */}
+      {/* ============================================================
+          DIALOGUE D'ÉDITION
+          ============================================================ */}
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
         <DialogContent>
           <DialogHeader>

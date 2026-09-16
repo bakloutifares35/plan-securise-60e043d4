@@ -72,16 +72,18 @@ export const IncidentDeclarationForm = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-lg max-h-[92vh] overflow-y-auto"
+        className="!max-w-lg w-[calc(100vw-2rem)] sm:w-full max-h-[92vh] !p-0 !gap-0 overflow-hidden flex flex-col"
         style={{ backgroundColor: RESILLIA.cream }}
       >
-        <DialogHeader>
+        {/* Header fixe */}
+        <DialogHeader className="px-6 pt-6 pb-3 shrink-0">
           <DialogTitle style={{ fontFamily: "'Playfair Display', serif", color: RESILLIA.navy }}>
             Déclarer un incident
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5">
+        {/* Contenu scrollable */}
+        <div className="space-y-5 px-6 pb-4 overflow-y-auto overflow-x-hidden flex-1">
           <div className="space-y-1.5">
             <Label style={{ color: RESILLIA.navy }}>Type d'incident</Label>
             <Select value={type} onValueChange={setType}>
@@ -120,7 +122,7 @@ export const IncidentDeclarationForm = ({
                     key={s}
                     type="button"
                     onClick={() => setSeverite(s)}
-                    className="rounded-lg py-3 text-sm font-semibold transition-all"
+                    className="rounded-lg py-3 text-sm font-semibold transition-all min-w-0"
                     style={{
                       backgroundColor: active ? SEVERITE_COLORS[s] : "#FFFFFF",
                       color: active ? "#FFFFFF" : RESILLIA.navy,
@@ -128,7 +130,7 @@ export const IncidentDeclarationForm = ({
                     }}
                   >
                     {s}
-                    <span className="block text-[10px] font-normal opacity-80">
+                    <span className="block text-[10px] font-normal opacity-80 truncate">
                       {SEVERITE_LABELS[s].split("— ")[1]}
                     </span>
                   </button>
@@ -150,7 +152,7 @@ export const IncidentDeclarationForm = ({
               />
             </div>
             <div
-              className="mt-2 max-h-44 overflow-y-auto rounded-lg bg-white divide-y"
+              className="mt-2 max-h-44 overflow-y-auto overflow-x-hidden rounded-lg bg-white divide-y"
               style={{ border: `1px solid ${RESILLIA.border}` }}
             >
               {filtered.length === 0 && (
@@ -166,7 +168,7 @@ export const IncidentDeclarationForm = ({
                     className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-[#F1EFE8]"
                     style={{ color: RESILLIA.navy }}
                   >
-                    <span className="truncate">
+                    <span className="truncate min-w-0">
                       {p.name}
                       {p.direction ? <span className="text-[#172030]/40"> · {p.direction}</span> : null}
                     </span>
@@ -206,8 +208,16 @@ export const IncidentDeclarationForm = ({
           </div>
         </div>
 
-        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} style={{ borderColor: RESILLIA.border }}>
+        {/* Footer fixe */}
+        <div
+          className="px-6 py-4 border-t flex flex-col-reverse sm:flex-row sm:justify-end gap-2 shrink-0"
+          style={{ borderColor: RESILLIA.border, backgroundColor: RESILLIA.cream }}
+        >
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            style={{ borderColor: RESILLIA.border }}
+          >
             Annuler
           </Button>
           <Button

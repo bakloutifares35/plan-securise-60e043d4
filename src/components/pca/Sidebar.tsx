@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Database,
   Layers,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
@@ -45,8 +46,8 @@ export type Section =
   | "exercices"
   | "ressources"
   | "rapports"
-  | "scenarios"
-  | "strategies";
+  | "strategies"
+  | "warroom";  // ✅ AJOUT
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard; subItems?: { id: Section; label: string }[] }[] }[] = [
   {
@@ -66,9 +67,11 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
       },
       { id: "cmdb", label: "Référentiel des ressources", icon: Database },
       { id: "risk", label: "Risques", icon: AlertTriangle },
-      { id: "scenarios", label: "Scénarios", icon: GitBranch },
+      // ❌ "Scénarios" retiré comme demandé
       { id: "strategies", label: "Stratégies de continuité", icon: Layers },
       { id: "plan", label: "Gestion des plans", icon: ListChecks },
+      // ✅ AJOUT — War Room juste après "Gestion des plans"
+      { id: "warroom", label: "War Room", icon: ShieldAlert },
       { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
       { id: "ressources", label: "Ressources", icon: Users },
       { id: "rapports", label: "Rapports", icon: FileBarChart },
@@ -122,10 +125,10 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     if (path === "/exercices") return "exercices";
     if (path === "/ressources") return "ressources";
     if (path === "/rapports") return "rapports";
-    if (path === "/scenarios") return "scenarios";
     if (path === "/strategies") return "strategies";
     if (path === "/form") return "form";
     if (path === "/ai") return "ai";
+    if (path === "/warroom") return "warroom";  // ✅ AJOUT
     return "dashboard";
   };
 
@@ -171,6 +174,9 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         case 'strategies':
           navigate('/strategies');
           break;
+        case 'warroom':
+          navigate('/warroom');
+          break;
         default:
           navigate(`/${item.id}`);
       }
@@ -214,6 +220,8 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         return path === '/tenacia-voice';
       case 'strategies':
         return path === '/strategies';
+      case 'warroom':
+        return path === '/warroom';
       default:
         return path === `/${item.id}`;
     }

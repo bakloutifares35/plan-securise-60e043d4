@@ -49,12 +49,14 @@ function App() {
                         <Route path="/exercices" element={<Index />} />
                         <Route path="/ressources" element={<Index />} />
                         <Route path="/rapports" element={<Index />} />
-                        <Route path="/scenarios" element={<Index />} />
                         <Route path="/form" element={<Index />} />
                         <Route path="/ai" element={<Index />} />
                         
                         {/* Route Stratégies */}
                         <Route path="/strategies" element={<Index />} />
+                        
+                        {/* ✅ Route War Room (module M6) */}
+                        <Route path="/warroom" element={<Index />} />
                         
                         {/* 404 */}
                         <Route path="*" element={<NotFound />} />
