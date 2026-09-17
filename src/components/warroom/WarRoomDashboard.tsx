@@ -1,7 +1,4 @@
 // src/components/warroom/WarRoomDashboard.tsx
-// ⚠️ EXCEPTION URGENCE ASSUMÉE : le rouge d'urgence #E24B4A n'est utilisé
-// QUE pour : bouton "Déclarer un incident", badge ALERTE P1.
-// Toute la palette du reste respecte la charte Resillia sobre et pastel.
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,45 +8,146 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Clock, ChevronRight, ShieldAlert,
-  Flame, Activity, CheckCircle2, ListChecks, Search, Building2,
+  Plus, Clock, ChevronRight, ShieldAlert, Flame, Activity,
+  CheckCircle2, ListChecks, Search, Building2, Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  RESILLIA, SEVERITES,
-  elapsedSince, formatDateTime,
-  type Incident, type Severite, type ProcessLite, type IncidentAction,
-} from "./types";
+  COLORS, SEV_PASTEL, severityRank, elapsedSince, formatDateTime,
+  getInitials, getAvatarColor,
+  type Severite,
+} from "./warroomHelpers";
 
-const severityRank = (s: Severite): number =>
-  s === "P1" ? 0 : s === "P2" ? 1 : s === "P3" ? 2 : 3;
-
-// Teintes pastel par sévérité
-const SEV_PASTEL: Record<Severite, { bg: string; border: string; text: string; dot: string }> = {
-  P1: { bg: "#FBE9E7", border: "#F5C6C2", text: "#B83A39", dot: "#E24B4A" },
-  P2: { bg: "#FFF3E0", border: "#FFD9B0", text: "#B76E1D", dot: "#EF9F27" },
-  P3: { bg: "#FFF8E1", border: "#FCE9A8", text: "#A18530", dot: "#F5D061" },
-  P4: { bg: "#E8F5E9", border: "#C8E6C9", text: "#4B7718", dot: "#639922" },
+type Incident = {
+  id: string;
+  type: string | null;
+  titre: string;
+  date_heure_debut: string;
+  date_heure_fin: string | null;
+  niveau_severite: Severite;
+  statut: string;
+  declarant: string | null;
+  description: string | null;
 };
 
-// ✅ Palette des 4 KPI (chacun sa couleur pastel)
-const KPI_STYLE = {
-  priority: { bg: "#FBE9E7", iconBg: "#F5C6C2", iconColor: "#B83A39", accent: "#E24B4A" },
-  duration: { bg: "#EDF2F7", iconBg: "#D6E0EA", iconColor: "#38536F", accent: "#5B7896" },
-  actions:  { bg: "#FFF3E0", iconBg: "#FFE0B2", iconColor: "#B76E1D", accent: "#EF9F27" },
-  closed:   { bg: "#E8F5E9", iconBg: "#C8E6C9", iconColor: "#4B7718", accent: "#639922" },
+type IncidentAction = {
+  id: string;
+  incident_id: string;
+  description: string;
+  statut: string;
 };
 
+// ============================================================
+// KPI CARD — Fond neutre par défaut, couleur sémantique sur icône + chiffre
+// Exception : "Crises prioritaires" passe en rouge uniquement si valeur > 0
+// ============================================================
+const KpiCard = ({
+  label, value, suffix, icon: Icon, iconColor, valueColor,
+  hint, active, onClick, pulse, alertBg,
+}: {
+  label: string;
+  value: string | number;
+  suffix?: string;
+  icon: any;
+  iconColor: string;    // couleur de l'icône
+  valueColor: string;   // couleur du chiffre
+  hint?: string;
+  active?: boolean;
+  onClick?: () => void;
+  pulse?: boolean;
+  alertBg?: string;     // si défini → fond d'alerte (uniquement Crises prioritaires)
+}) => {
+  const isAlert = !!alertBg;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "text-left rounded-xl p-4 transition-all duration-200 relative overflow-hidden border",
+        onClick && "cursor-pointer hover:-translate-y-0.5 hover:shadow-md",
+        active && "ring-2 ring-offset-2"
+      )}
+      style={{
+        backgroundColor: isAlert ? alertBg : "#FFFFFF",
+        borderColor: active ? valueColor : COLORS.border,
+        ...(active ? { boxShadow: `0 0 0 3px ${valueColor}22` } : {}),
+      }}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: COLORS.navy + "80" }}
+          >
+            {label}
+          </p>
+          <p
+            className="text-3xl font-bold mt-1 flex items-baseline gap-1.5"
+            style={{ fontFamily: "'Playfair Display', serif", color: valueColor }}
+          >
+            {value}
+            {suffix && <span className="text-base font-normal opacity-60">{suffix}</span>}
+          </p>
+          {hint && (
+            <p className="text-[11px] mt-1 font-medium" style={{ color: COLORS.navy + "70" }}>
+              {hint}
+            </p>
+          )}
+        </div>
+        <div
+          className={cn(
+            "h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0",
+            pulse && "animate-pulse"
+          )}
+          style={{ backgroundColor: iconColor + "15" }}
+        >
+          <Icon className="h-4 w-4" style={{ color: iconColor }} />
+        </div>
+      </div>
+      {active && (
+        <div
+          className="absolute bottom-0 left-0 right-0 h-0.5"
+          style={{ backgroundColor: valueColor }}
+        />
+      )}
+    </button>
+  );
+};
+
+// ============================================================
+// AVATAR
+// ============================================================
+const Avatar = ({ name, size = 36 }: { name?: string | null; size?: number }) => {
+  const color = getAvatarColor(name);
+  return (
+    <div
+      className="rounded-full flex items-center justify-center font-semibold flex-shrink-0"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: color.bg,
+        color: color.text,
+        fontSize: size * 0.38,
+        fontFamily: "'Inter', sans-serif",
+      }}
+      title={name || ""}
+    >
+      {getInitials(name)}
+    </div>
+  );
+};
+
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 export const WarRoomDashboard = ({
   incidents,
-  processus,
   incidentProcessus,
   actions,
   onOpenIncident,
   onDeclare,
 }: {
   incidents: Incident[];
-  processus: ProcessLite[];
   incidentProcessus: { incident_id: string; processus_id: string }[];
   actions?: IncidentAction[];
   onOpenIncident: (id: string) => void;
@@ -58,6 +156,7 @@ export const WarRoomDashboard = ({
   const [tab, setTab] = useState<"active" | "closed">("active");
   const [severityFilter, setSeverityFilter] = useState<"all" | Severite>("all");
   const [search, setSearch] = useState("");
+  const [kpiFilter, setKpiFilter] = useState<"none" | "p1" | "actions" | "closed">("none");
 
   const procCountByIncident = useMemo(() => {
     const map: Record<string, number> = {};
@@ -92,6 +191,8 @@ export const WarRoomDashboard = ({
     if (severityFilter !== "all") out = out.filter((i) => i.niveau_severite === severityFilter);
     const q = search.trim().toLowerCase();
     if (q) out = out.filter((i) => i.titre.toLowerCase().includes(q));
+    if (kpiFilter === "p1") out = out.filter((i) => i.niveau_severite === "P1");
+    if (kpiFilter === "closed") out = out.filter((i) => i.statut === "Clôturé");
     return out;
   };
 
@@ -150,6 +251,12 @@ export const WarRoomDashboard = ({
       )
     : null;
 
+  const toggleKpiFilter = (filter: "p1" | "actions" | "closed") => {
+    setKpiFilter((prev) => (prev === filter ? "none" : filter));
+    if (filter === "closed") setTab("closed");
+    else setTab("active");
+  };
+
   return (
     <div className="space-y-6">
       {/* ===== HEADER ===== */}
@@ -157,202 +264,96 @@ export const WarRoomDashboard = ({
         <div>
           <h1
             className="text-2xl md:text-3xl font-bold flex items-center gap-3"
-            style={{ color: RESILLIA.navy, fontFamily: "'Playfair Display', serif" }}
+            style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
           >
             <span
               className="inline-flex items-center justify-center h-11 w-11 rounded-xl"
-              style={{ backgroundColor: RESILLIA.urgence + "15" }}
+              style={{ backgroundColor: COLORS.danger + "15" }}
             >
-              <ShieldAlert className="h-6 w-6" style={{ color: RESILLIA.urgence }} />
+              <ShieldAlert className="h-6 w-6" style={{ color: COLORS.danger }} />
             </span>
             War Room
           </h1>
-          <p className="text-sm mt-1.5" style={{ color: RESILLIA.navy + "80" }}>
+          <p className="text-sm mt-1.5" style={{ color: COLORS.navy + "80" }}>
             Gestion opérationnelle des crises · {allActive.length} crise{allActive.length > 1 ? "s" : ""} active{allActive.length > 1 ? "s" : ""}
           </p>
         </div>
 
-        {/* ⚠️ EXCEPTION URGENCE : seule action rouge du dashboard */}
         <Button
           onClick={onDeclare}
           className="h-11 px-5 font-semibold text-white shadow-sm hover:opacity-95"
-          style={{ backgroundColor: RESILLIA.urgence }}
+          style={{ backgroundColor: COLORS.danger }}
         >
           <Plus className="h-4 w-4 mr-2" />
           Déclarer un incident
         </Button>
       </div>
 
-      {/* ===== KPI CHIFFRÉS — chaque carte a sa couleur pastel ===== */}
+      {/* ===== KPI ===== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* KPI 1 : Crises prioritaires — pastel rouge */}
-        <Card
-          className="border-0 shadow-sm"
-          style={{ backgroundColor: KPI_STYLE.priority.bg }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p
-                  className="text-[10px] font-semibold uppercase tracking-wider"
-                  style={{ color: KPI_STYLE.priority.iconColor + "CC" }}
-                >
-                  Crises prioritaires
-                </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{
-                    fontFamily: "'Playfair Display', serif",
-                    color: KPI_STYLE.priority.iconColor,
-                  }}
-                >
-                  {kpi.p1Active}
-                  <span className="text-base font-normal ml-2 opacity-70">P1</span>
-                </p>
-                {kpi.p2Active > 0 && (
-                  <p className="text-[11px] mt-0.5 font-medium" style={{ color: SEV_PASTEL.P2.text }}>
-                    + {kpi.p2Active} P2 en cours
-                  </p>
-                )}
-              </div>
-              <div
-                className={cn(
-                  "h-9 w-9 rounded-lg flex items-center justify-center",
-                  kpi.p1Active > 0 && "animate-pulse"
-                )}
-                style={{ backgroundColor: KPI_STYLE.priority.iconBg }}
-              >
-                <Flame className="h-4 w-4" style={{ color: KPI_STYLE.priority.iconColor }} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* KPI 1 — Crises prioritaires : alerte uniquement si > 0 */}
+        <KpiCard
+          label="Crises prioritaires"
+          value={kpi.p1Active}
+          suffix="P1"
+          icon={Flame}
+          iconColor={kpi.p1Active > 0 ? COLORS.danger : COLORS.navy + "80"}
+          valueColor={kpi.p1Active > 0 ? COLORS.danger : COLORS.navy}
+          hint={kpi.p1Active > 0 ? "⚠ Action immédiate" : "Aucune urgence"}
+          pulse={kpi.p1Active > 0}
+          alertBg={kpi.p1Active > 0 ? "#FBE9E7" : undefined}
+          active={kpiFilter === "p1"}
+          onClick={() => toggleKpiFilter("p1")}
+        />
 
-        {/* KPI 2 : Durée moyenne — pastel bleu-gris */}
-        <Card
-          className="border-0 shadow-sm"
-          style={{ backgroundColor: KPI_STYLE.duration.bg }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p
-                  className="text-[10px] font-semibold uppercase tracking-wider"
-                  style={{ color: KPI_STYLE.duration.iconColor + "CC" }}
-                >
-                  Durée moyenne
-                </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{
-                    fontFamily: "'Playfair Display', serif",
-                    color: KPI_STYLE.duration.iconColor,
-                  }}
-                >
-                  {kpi.avgDurationLabel}
-                </p>
-                <p className="text-[11px] mt-0.5 font-medium" style={{ color: KPI_STYLE.duration.iconColor + "AA" }}>
-                  crises en cours
-                </p>
-              </div>
-              <div
-                className="h-9 w-9 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: KPI_STYLE.duration.iconBg }}
-              >
-                <Clock className="h-4 w-4" style={{ color: KPI_STYLE.duration.iconColor }} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* KPI 2 — Durée moyenne : neutre */}
+        <KpiCard
+          label="Durée moyenne"
+          value={kpi.avgDurationLabel}
+          icon={Clock}
+          iconColor="#5B7896"
+          valueColor={COLORS.navy}
+          hint={`${allActive.length} crise${allActive.length > 1 ? "s" : ""} en cours`}
+        />
 
-        {/* KPI 3 : Actions en cours — pastel orange */}
-        <Card
-          className="border-0 shadow-sm"
-          style={{ backgroundColor: KPI_STYLE.actions.bg }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p
-                  className="text-[10px] font-semibold uppercase tracking-wider"
-                  style={{ color: KPI_STYLE.actions.iconColor + "CC" }}
-                >
-                  Actions en cours
-                </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{
-                    fontFamily: "'Playfair Display', serif",
-                    color: KPI_STYLE.actions.iconColor,
-                  }}
-                >
-                  {kpi.actionsInProgress}
-                </p>
-                <p className="text-[11px] mt-0.5 font-medium" style={{ color: KPI_STYLE.actions.iconColor + "AA" }}>
-                  à suivre
-                </p>
-              </div>
-              <div
-                className="h-9 w-9 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: KPI_STYLE.actions.iconBg }}
-              >
-                <ListChecks className="h-4 w-4" style={{ color: KPI_STYLE.actions.iconColor }} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* KPI 3 — Actions en cours : neutre, icône orange */}
+        <KpiCard
+          label="Actions en cours"
+          value={kpi.actionsInProgress}
+          icon={ListChecks}
+          iconColor="#EF9F27"
+          valueColor={COLORS.navy}
+          hint={kpi.actionsInProgress > 0 ? "À suivre" : "Aucune action"}
+          active={kpiFilter === "actions"}
+          onClick={() => toggleKpiFilter("actions")}
+        />
 
-        {/* KPI 4 : Clôturées — pastel vert */}
-        <Card
-          className="border-0 shadow-sm"
-          style={{ backgroundColor: KPI_STYLE.closed.bg }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p
-                  className="text-[10px] font-semibold uppercase tracking-wider"
-                  style={{ color: KPI_STYLE.closed.iconColor + "CC" }}
-                >
-                  Clôturées · 30 j
-                </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{
-                    fontFamily: "'Playfair Display', serif",
-                    color: KPI_STYLE.closed.iconColor,
-                  }}
-                >
-                  {kpi.closed30d}
-                </p>
-                <p className="text-[11px] mt-0.5 font-medium" style={{ color: KPI_STYLE.closed.iconColor + "AA" }}>
-                  incidents résolus
-                </p>
-              </div>
-              <div
-                className="h-9 w-9 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: KPI_STYLE.closed.iconBg }}
-              >
-                <CheckCircle2 className="h-4 w-4" style={{ color: KPI_STYLE.closed.iconColor }} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* KPI 4 — Clôturées : neutre, icône verte */}
+        <KpiCard
+          label="Clôturées · 30 j"
+          value={kpi.closed30d}
+          icon={CheckCircle2}
+          iconColor={COLORS.forest}
+          valueColor={COLORS.navy}
+          hint="Incidents résolus"
+          active={kpiFilter === "closed"}
+          onClick={() => toggleKpiFilter("closed")}
+        />
       </div>
 
       {/* ===== ONGLETS + FILTRES ===== */}
       <div
         className="flex flex-col md:flex-row md:items-center gap-3 border-b"
-        style={{ borderColor: RESILLIA.border }}
+        style={{ borderColor: COLORS.border }}
       >
         <div className="flex gap-1">
           <button
-            onClick={() => setTab("active")}
+            onClick={() => { setTab("active"); setKpiFilter("none"); }}
             className="px-4 py-2.5 text-sm font-medium transition-colors relative"
             style={{
-              color: tab === "active" ? RESILLIA.navy : RESILLIA.navy + "60",
+              color: tab === "active" ? COLORS.navy : COLORS.navy + "60",
               borderBottom:
-                tab === "active" ? `2px solid ${RESILLIA.forest}` : "2px solid transparent",
+                tab === "active" ? `2px solid ${COLORS.forest}` : "2px solid transparent",
               marginBottom: -1,
             }}
           >
@@ -360,12 +361,12 @@ export const WarRoomDashboard = ({
             Actives ({allActive.length})
           </button>
           <button
-            onClick={() => setTab("closed")}
+            onClick={() => { setTab("closed"); setKpiFilter("none"); }}
             className="px-4 py-2.5 text-sm font-medium transition-colors"
             style={{
-              color: tab === "closed" ? RESILLIA.navy : RESILLIA.navy + "60",
+              color: tab === "closed" ? COLORS.navy : COLORS.navy + "60",
               borderBottom:
-                tab === "closed" ? `2px solid ${RESILLIA.forest}` : "2px solid transparent",
+                tab === "closed" ? `2px solid ${COLORS.forest}` : "2px solid transparent",
               marginBottom: -1,
             }}
           >
@@ -378,30 +379,30 @@ export const WarRoomDashboard = ({
           <div className="relative sm:w-56">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5"
-              style={{ color: RESILLIA.navy + "60" }}
+              style={{ color: COLORS.navy + "60" }}
             />
             <Input
               placeholder="Rechercher un titre…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-9 pl-9 text-sm bg-white"
-              style={{ borderColor: RESILLIA.border }}
+              style={{ borderColor: COLORS.border }}
             />
           </div>
           <Select value={severityFilter} onValueChange={(v) => setSeverityFilter(v as any)}>
             <SelectTrigger
-              className="h-9 sm:w-40 text-sm bg-white"
-              style={{ borderColor: RESILLIA.border }}
+              className="h-9 sm:w-44 text-sm bg-white"
+              style={{ borderColor: COLORS.border }}
             >
+              <Filter className="h-3.5 w-3.5 mr-1" style={{ color: COLORS.navy + "60" }} />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Toutes sévérités</SelectItem>
-              {SEVERITES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
+              <SelectItem value="P1">P1 — Critique</SelectItem>
+              <SelectItem value="P2">P2 — Sévère</SelectItem>
+              <SelectItem value="P3">P3 — Majeur</SelectItem>
+              <SelectItem value="P4">P4 — Modéré</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -411,58 +412,47 @@ export const WarRoomDashboard = ({
       <div className="space-y-3">
         {displayed.length === 0 ? (
           tab === "active" ? (
-            /* ===== ÉTAT VIDE ENRICHI ===== */
-            <Card style={{ backgroundColor: "#FFFFFF", borderColor: RESILLIA.border }}>
+            <Card style={{ backgroundColor: "#FFFFFF", borderColor: COLORS.border }}>
               <CardContent className="p-10 text-center">
                 <div
                   className="inline-flex items-center justify-center h-16 w-16 rounded-full mb-4"
-                  style={{ backgroundColor: SEV_PASTEL.P4.bg }}
+                  style={{ backgroundColor: "#E8F5E9" }}
                 >
-                  <CheckCircle2 className="h-8 w-8" style={{ color: SEV_PASTEL.P4.dot }} />
+                  <CheckCircle2 className="h-8 w-8" style={{ color: COLORS.forest }} />
                 </div>
-                <p className="font-semibold text-lg" style={{ color: RESILLIA.navy }}>
+                <p className="font-semibold text-lg" style={{ color: COLORS.navy }}>
                   Aucune crise active en ce moment
                 </p>
-                <p className="text-sm mt-1.5 max-w-md mx-auto" style={{ color: RESILLIA.navy + "80" }}>
-                  Votre dispositif est au repos. Utilisez le bouton rouge ci-dessus en cas de
-                  nouvel incident.
+                <p className="text-sm mt-1.5 max-w-md mx-auto" style={{ color: COLORS.navy + "80" }}>
+                  Votre dispositif est au repos. Utilisez le bouton rouge ci-dessus en cas de nouvel incident.
                 </p>
-
                 {(lastClosed || kpi.actionsInProgress > 0) && (
                   <div
                     className="mt-6 pt-6 border-t flex flex-col sm:flex-row gap-6 justify-center items-start sm:items-center text-left"
-                    style={{ borderColor: RESILLIA.border }}
+                    style={{ borderColor: COLORS.border }}
                   >
                     {lastClosed && (
                       <div>
-                        <p
-                          className="text-[10px] font-semibold uppercase tracking-wider"
-                          style={{ color: RESILLIA.navy + "60" }}
-                        >
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.navy + "60" }}>
                           Dernier incident
                         </p>
-                        <p className="mt-1 text-sm font-medium" style={{ color: RESILLIA.navy }}>
+                        <p className="mt-1 text-sm font-medium" style={{ color: COLORS.navy }}>
                           {lastClosed.titre}
                         </p>
-                        <p className="mt-0.5 text-xs" style={{ color: RESILLIA.navy + "70" }}>
-                          Clôturé il y a {daysSinceLastClosed} jour
-                          {daysSinceLastClosed !== 1 ? "s" : ""}
+                        <p className="mt-0.5 text-xs" style={{ color: COLORS.navy + "70" }}>
+                          Clôturé il y a {daysSinceLastClosed} jour{daysSinceLastClosed !== 1 ? "s" : ""}
                         </p>
                       </div>
                     )}
                     {kpi.actionsInProgress > 0 && (
                       <div>
-                        <p
-                          className="text-[10px] font-semibold uppercase tracking-wider"
-                          style={{ color: RESILLIA.navy + "60" }}
-                        >
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.navy + "60" }}>
                           Suivi en cours
                         </p>
-                        <p className="mt-1 text-sm font-medium" style={{ color: RESILLIA.navy }}>
-                          {kpi.actionsInProgress} action{kpi.actionsInProgress > 1 ? "s" : ""}{" "}
-                          corrective{kpi.actionsInProgress > 1 ? "s" : ""}
+                        <p className="mt-1 text-sm font-medium" style={{ color: COLORS.navy }}>
+                          {kpi.actionsInProgress} action{kpi.actionsInProgress > 1 ? "s" : ""} corrective{kpi.actionsInProgress > 1 ? "s" : ""}
                         </p>
-                        <p className="mt-0.5 text-xs" style={{ color: RESILLIA.navy + "70" }}>
+                        <p className="mt-0.5 text-xs" style={{ color: COLORS.navy + "70" }}>
                           Issue{kpi.actionsInProgress > 1 ? "s" : ""} des RETEX
                         </p>
                       </div>
@@ -472,17 +462,16 @@ export const WarRoomDashboard = ({
               </CardContent>
             </Card>
           ) : (
-            <Card style={{ backgroundColor: "#FFFFFF", borderColor: RESILLIA.border }}>
+            <Card style={{ backgroundColor: "#FFFFFF", borderColor: COLORS.border }}>
               <CardContent className="p-8 text-center">
-                <p className="text-sm" style={{ color: RESILLIA.navy + "70" }}>
-                  Aucun incident clôturé{" "}
-                  {search || severityFilter !== "all" ? "ne correspond aux filtres" : "pour le moment"}.
+                <p className="text-sm" style={{ color: COLORS.navy + "70" }}>
+                  Aucun incident clôturé
+                  {search || severityFilter !== "all" ? " ne correspond aux filtres" : " pour le moment"}.
                 </p>
               </CardContent>
             </Card>
           )
         ) : tab === "active" ? (
-          /* ===== CARTES ACTIVES — sans bordure gauche ===== */
           displayed.map((inc) => {
             const sev = SEV_PASTEL[inc.niveau_severite];
             const processCount = procCountByIncident[inc.id] || 0;
@@ -490,17 +479,17 @@ export const WarRoomDashboard = ({
             return (
               <div
                 key={inc.id}
+                onClick={() => onOpenIncident(inc.id)}
                 className={cn(
-                  "rounded-xl transition-all hover:shadow-md flex flex-col md:flex-row md:items-center gap-4 p-4 border",
+                  "rounded-xl transition-all cursor-pointer hover:shadow-md flex flex-col md:flex-row md:items-center gap-4 p-4 bg-white border",
                   isP1 && "ring-2 ring-offset-1"
                 )}
                 style={{
-                  backgroundColor: "#FFFFFF",
-                  borderColor: sev.border,
-                  ...(isP1 ? { boxShadow: `0 0 0 3px ${RESILLIA.urgence}22` } : {}),
+                  borderColor: COLORS.border,
+                  borderLeft: `4px solid ${sev.dot}`,
+                  ...(isP1 ? { boxShadow: `0 0 0 3px ${COLORS.danger}22` } : {}),
                 }}
               >
-                {/* Badge sévérité pastel */}
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <span
                     className="inline-flex items-center justify-center h-12 w-12 rounded-xl font-bold text-sm"
@@ -511,39 +500,37 @@ export const WarRoomDashboard = ({
                   {isP1 && (
                     <Badge
                       className="animate-pulse text-white border-0 text-[10px] font-bold tracking-wide"
-                      style={{ backgroundColor: RESILLIA.urgence }}
+                      style={{ backgroundColor: COLORS.danger }}
                     >
                       ⚠ ALERTE
                     </Badge>
                   )}
                 </div>
 
-                {/* Infos */}
+                <Avatar name={inc.declarant} size={40} />
+
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-base truncate" style={{ color: RESILLIA.navy }}>
+                    <span className="font-semibold text-base truncate" style={{ color: COLORS.navy }}>
                       {inc.titre}
                     </span>
                     {inc.type && (
                       <span
                         className="text-[10px] font-medium px-2 py-0.5 rounded-md"
-                        style={{ backgroundColor: RESILLIA.cream, color: RESILLIA.navy + "AA" }}
+                        style={{ backgroundColor: COLORS.cream, color: COLORS.navy + "AA" }}
                       >
                         {inc.type}
                       </span>
                     )}
                     <span
                       className="text-[10px] font-medium px-2 py-0.5 rounded-md"
-                      style={{ backgroundColor: RESILLIA.cream, color: RESILLIA.navy + "AA" }}
+                      style={{ backgroundColor: COLORS.cream, color: COLORS.navy + "AA" }}
                     >
                       {inc.statut}
                     </span>
                   </div>
 
-                  <div
-                    className="flex items-center gap-4 mt-2 text-xs flex-wrap"
-                    style={{ color: RESILLIA.navy + "70" }}
-                  >
+                  <div className="flex items-center gap-4 mt-2 text-xs flex-wrap" style={{ color: COLORS.navy + "70" }}>
                     <span className="inline-flex items-center gap-1.5">
                       <Clock className="h-3.5 w-3.5" />
                       Déclaré il y a {elapsedSince(inc.date_heure_debut)}
@@ -558,13 +545,10 @@ export const WarRoomDashboard = ({
                   </div>
                 </div>
 
-                {/* Bouton ouvrir — Vert Forêt par défaut, rouge si P1 */}
                 <Button
-                  onClick={() => onOpenIncident(inc.id)}
+                  onClick={(e) => { e.stopPropagation(); onOpenIncident(inc.id); }}
                   className="h-10 px-5 font-semibold flex-shrink-0 text-white shadow-sm"
-                  style={{
-                    backgroundColor: isP1 ? RESILLIA.urgence : RESILLIA.forest,
-                  }}
+                  style={{ backgroundColor: isP1 ? COLORS.danger : COLORS.forest }}
                 >
                   Ouvrir la war room
                   <ChevronRight className="h-4 w-4 ml-1" />
@@ -573,10 +557,9 @@ export const WarRoomDashboard = ({
             );
           })
         ) : (
-          /* ===== LISTE HISTORIQUE COMPACTE ===== */
           <div
             className="rounded-xl border divide-y overflow-hidden bg-white"
-            style={{ borderColor: RESILLIA.border }}
+            style={{ borderColor: COLORS.border }}
           >
             {displayed.map((inc) => {
               const sev = SEV_PASTEL[inc.niveau_severite];
@@ -586,23 +569,15 @@ export const WarRoomDashboard = ({
                   onClick={() => onOpenIncident(inc.id)}
                   className="w-full flex items-center gap-3 p-3.5 text-left hover:bg-[#FAFAF9] transition-colors"
                 >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: sev.dot }}
-                  />
-                  <span className="flex-1 text-sm font-medium truncate" style={{ color: RESILLIA.navy }}>
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: sev.dot }} />
+                  <Avatar name={inc.declarant} size={32} />
+                  <span className="flex-1 text-sm font-medium truncate" style={{ color: COLORS.navy }}>
                     {inc.titre}
                   </span>
-                  <span
-                    className="text-xs hidden md:inline"
-                    style={{ color: RESILLIA.navy + "70" }}
-                  >
+                  <span className="text-xs hidden md:inline" style={{ color: COLORS.navy + "70" }}>
                     {formatDateTime(inc.date_heure_debut)}
                   </span>
-                  <Badge
-                    className="text-[10px] border-0"
-                    style={{ backgroundColor: sev.bg, color: sev.text }}
-                  >
+                  <Badge className="text-[10px] border-0" style={{ backgroundColor: sev.bg, color: sev.text }}>
                     {inc.niveau_severite}
                   </Badge>
                 </button>

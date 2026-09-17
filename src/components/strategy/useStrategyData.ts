@@ -32,21 +32,20 @@ export const useStrategyData = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    
+
     const { data: catData, error: catError } = await supabase
       .from("strategies_catalogue")
       .select("*")
       .order("nom");
-    
+
     const { data: assocData, error: assocError } = await supabase
       .from("strategies_association")
       .select("*")
       .order("created_at", { ascending: false });
-    
-    // 🔥 CORRECTION ICI : On ajoute 'impacts' pour que l'IA et les KPIs calculent la vraie criticité
+
     const { data: procData, error: procError } = await supabase
       .from("processus_metier")
-      .select("id, name, direction, owner, description, criticality_level, rto_hours, rpo_hours, status, is_critical, impacts") 
+      .select("id, name, direction, owner, description, criticality_level, rto_hours, rpo_hours, status, is_critical, impacts")
       .order("name");
 
     if (catError && catError.code !== MISSING_TABLE) {
@@ -117,8 +116,14 @@ export const useStrategyData = () => {
       lien_pca_id: rest.lien_pca_id || null,
       contrat_reference: rest.contrat_reference || null,
       sla_reference: rest.sla_reference || null,
+      // ✅ Nouveaux champs — null par défaut si non renseignés
+      effort: rest.effort || null,
+      rto_atteignable: rest.rto_atteignable ?? null,
+      validateur: rest.validateur || null,
+      date_validation: rest.date_validation || null,
+      updated_at: new Date().toISOString(),
     };
-    
+
     if (body.statut === "Retenue" && body.processus_id) {
       const { data: existing } = await supabase
         .from("strategies_association")
@@ -127,14 +132,14 @@ export const useStrategyData = () => {
         .eq("scenario_id", body.scenario_id || '')
         .eq("statut", "Retenue")
         .neq("id", id || '');
-      
+
       if (existing && existing.length > 0) {
         const confirm = window.confirm(`Une stratégie est déjà retenue pour ce processus. Voulez-vous la remplacer ?`);
         if (!confirm) return false;
         await supabase.from("strategies_association").update({ statut: "Proposée" }).in("id", existing.map(e => e.id));
       }
     }
-    
+
     const query = id
       ? supabase.from("strategies_association").update(body).eq("id", id)
       : supabase.from("strategies_association").insert(body);
@@ -167,7 +172,7 @@ export const useStrategyData = () => {
       .eq("scenario_id", scenarioId || '')
       .eq("statut", "Retenue")
       .neq("id", keepId || '');
-    
+
     if (rivals && rivals.length > 0) {
       await supabase.from("strategies_association").update({ statut: "Proposée" }).in("id", rivals.map(r => r.id));
     }
