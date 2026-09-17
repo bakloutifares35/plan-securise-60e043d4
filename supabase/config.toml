@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.risk-actions-suggester]
 verify_jwt = false
+
+[functions.groq-warroom-assist]
+verify_jwt = false

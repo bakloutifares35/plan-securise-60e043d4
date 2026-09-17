@@ -79,6 +79,20 @@ export const WarRoomModule = () => {
     [incidents, currentIncidentId]
   );
 
+  const impactedProcessus = useMemo(() => {
+    if (!currentIncidentId) return [];
+    const ids = incidentProcessus
+      .filter((ip) => ip.incident_id === currentIncidentId)
+      .map((ip) => ip.processus_id);
+    return processus
+      .filter((p) => ids.includes(p.id))
+      .map((p: any) => ({
+        nom: p.name,
+        criticite: p.criticite ?? null,
+        rto: p.rto ?? null,
+      }));
+  }, [incidentProcessus, currentIncidentId, processus]);
+
   const processCount = useMemo(() => {
     if (!currentIncidentId) return 0;
     return incidentProcessus.filter((ip) => ip.incident_id === currentIncidentId).length;
