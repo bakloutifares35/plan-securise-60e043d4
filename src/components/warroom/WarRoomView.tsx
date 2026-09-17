@@ -25,6 +25,7 @@ import {
   formatDateTime, elapsedSince, getInitials, getAvatarColor,
   type Severite, type EntryType, type CommType, type CellRole,
 } from "./warroomHelpers";
+import { AiCrisisRecommendations, type AiProcessContext } from "./AiCrisisRecommendations";
 
 // ============================================================
 // TYPES
@@ -176,6 +177,7 @@ export const WarRoomView = ({
   plansModuleAvailable,
   plans,
   processCount,
+  impactedProcessus,
   currentUser,
   onBack,
   onOpenRetex,
@@ -200,6 +202,7 @@ export const WarRoomView = ({
   plansModuleAvailable: boolean;
   plans: any[];
   processCount: number;
+  impactedProcessus?: AiProcessContext[];
   currentUser?: string;
   onBack: () => void;
   onOpenRetex: () => void;
@@ -687,6 +690,20 @@ export const WarRoomView = ({
               </CardContent>
             </Card>
           )}
+
+          {/* Recommandations IA */}
+          <AiCrisisRecommendations
+            incidentId={incident.id}
+            typeIncident={incident.type}
+            severite={incident.niveau_severite}
+            titre={incident.titre}
+            description={incident.description}
+            processus={impactedProcessus ?? []}
+            plans={(plans ?? []).map((p: any) => ({ id: p.id, titre: p.titre }))}
+            disabled={isClosed}
+            onAddAction={(p) => addAction(p as Partial<IncidentAction>)}
+            onAddPlan={addPlan}
+          />
 
           {/* Actions */}
           <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
