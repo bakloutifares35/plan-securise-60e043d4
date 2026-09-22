@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -15,7 +14,7 @@ import {
 import {
   ArrowLeft, Send, Plus, CheckCircle2, Circle, Clock, FileText,
   MessageSquare, Target, Layers, Lock, AlertTriangle, Megaphone, Trash2,
-  Users, ChevronRight, Edit3, Building2, User, Calendar,
+  Users, Edit3, Building2, User, Calendar, Info, Check, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -100,9 +99,9 @@ type Retex = {
 };
 
 // ============================================================
-// FRISE CHRONOLOGIQUE HORIZONTALE
+// RAIL DE PROGRESSION
 // ============================================================
-const CrisisTimeline = ({
+const CrisisRail = ({
   hasEntries, hasActions, hasComms, isClosed,
 }: {
   hasEntries: boolean;
@@ -111,54 +110,201 @@ const CrisisTimeline = ({
   isClosed: boolean;
 }) => {
   const steps = [
-    { label: "Déclaration", done: true },
-    { label: "Actions", done: hasActions },
-    { label: "Communication", done: hasComms },
-    { label: "Clôture", done: isClosed },
+    { label: "Déclaration", sub: "Tracé", done: true },
+    { label: "Actions", sub: hasActions ? "En cours" : "À lancer", done: hasActions },
+    { label: "Communication", sub: hasComms ? "Émise" : "À rédiger", done: hasComms },
+    { label: "Clôture", sub: isClosed ? "Clôturé" : "RETEX requis", done: isClosed },
   ];
 
   const currentIdx = steps.findIndex((s) => !s.done);
   const activeIdx = currentIdx === -1 ? steps.length - 1 : currentIdx;
 
   return (
-    <div className="flex items-center gap-1 w-full">
-      {steps.map((s, i) => {
-        const isActive = i === activeIdx;
-        const isDone = s.done;
-        return (
-          <div key={s.label} className="flex items-center gap-1 flex-1 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <div
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 transition-all"
-                )}
-                style={{
-                  backgroundColor: isDone ? COLORS.forest : isActive ? COLORS.forest : "#FFFFFF",
-                  color: isDone || isActive ? "#FFFFFF" : COLORS.navy + "60",
-                  border: isDone || isActive ? "none" : `1.5px solid ${COLORS.border}`,
-                  ...(isActive ? { boxShadow: `0 0 0 2px ${COLORS.forest}33` } : {}),
-                }}
-              >
-                {isDone ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+    <div className="relative">
+      <div className="flex items-stretch gap-0 w-full">
+        {steps.map((s, i) => {
+          const isActive = i === activeIdx && !s.done;
+          const isDone = s.done;
+          return (
+            <div key={s.label} className="flex-1 flex items-stretch min-w-0">
+              <div className="flex-1 flex flex-col items-start gap-2 min-w-0">
+                <div className="flex items-center gap-3 w-full">
+                  <div
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold flex-shrink-0 transition-all relative",
+                      isActive && "animate-pulse"
+                    )}
+                    style={{
+                      backgroundColor: isDone ? COLORS.forest : isActive ? COLORS.forest : "#FFFFFF",
+                      color: isDone || isActive ? "#FFFFFF" : COLORS.navy + "60",
+                      border: isDone || isActive ? "none" : `1.5px solid ${COLORS.border}`,
+                      boxShadow: isActive ? `0 0 0 4px ${COLORS.forest}22` : "none",
+                    }}
+                  >
+                    {isDone ? <Check className="h-3.5 w-3.5" /> : <span>{i + 1}</span>}
+                  </div>
+                  {i < steps.length - 1 && (
+                    <div
+                      className="flex-1 h-1 rounded-full relative overflow-hidden"
+                      style={{ backgroundColor: COLORS.border }}
+                    >
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                        style={{
+                          backgroundColor: isDone ? COLORS.forest : COLORS.forest + "40",
+                          width: isDone ? "100%" : "0%",
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="pl-0.5 -mt-0.5">
+                  <p
+                    className="text-[11px] font-semibold leading-tight"
+                    style={{
+                      color: isActive ? COLORS.navy : isDone ? COLORS.forest : COLORS.navy + "40",
+                    }}
+                  >
+                    {s.label}
+                  </p>
+                  <p
+                    className="text-[9.5px] leading-tight mt-0.5"
+                    style={{ color: isActive ? COLORS.forest : COLORS.navy + "40" }}
+                  >
+                    {s.sub}
+                  </p>
+                </div>
               </div>
-              <span
-                className="text-xs font-medium truncate hidden md:block"
-                style={{
-                  color: isActive ? COLORS.navy : isDone ? COLORS.forest : COLORS.navy + "60",
-                }}
-              >
-                {s.label}
-              </span>
             </div>
-            {i < steps.length - 1 && (
-              <div
-                className="flex-1 h-px mx-1"
-                style={{ backgroundColor: isDone ? COLORS.forest : COLORS.border }}
-              />
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// SIDE BLOCK — avec hauteur fixe optionnelle
+// ============================================================
+const SideBlock = ({
+  number,
+  icon: Icon,
+  title,
+  count,
+  onAdd,
+  addDisabled,
+  addTitle,
+  tone = "neutral",
+  fixedHeight,
+  children,
+}: {
+  number: string;
+  icon: any;
+  title: string;
+  count?: number;
+  onAdd?: () => void;
+  addDisabled?: boolean;
+  addTitle?: string;
+  tone?: "neutral" | "warm" | "cool" | "rose";
+  fixedHeight?: string;
+  children: React.ReactNode;
+}) => {
+  const tones = {
+    neutral: { bg: "#FFFFFF", headerBg: "#FCFBF8", iconBg: COLORS.forest + "15", iconColor: COLORS.forest },
+    warm:    { bg: "#FFFFFF", headerBg: "#FDF9F3", iconBg: "#FFF3E0", iconColor: "#B76E1D" },
+    cool:    { bg: "#FFFFFF", headerBg: "#F6F8FA", iconBg: "#EDF2F7", iconColor: "#38536F" },
+    rose:    { bg: "#FFFFFF", headerBg: "#FDF6F5", iconBg: "#FBE9E7", iconColor: "#C62828" },
+  }[tone];
+
+  return (
+    <div
+      className={cn("rounded-xl overflow-hidden flex flex-col", fixedHeight)}
+      style={{
+        border: `1px solid ${COLORS.border}`,
+        backgroundColor: tones.bg,
+        boxShadow: "0 1px 3px rgba(23,32,48,0.05)",
+      }}
+    >
+      <div
+        className="flex items-center gap-2.5 px-4 py-3 border-b flex-shrink-0"
+        style={{ borderColor: COLORS.border + "99", backgroundColor: tones.headerBg }}
+      >
+        <span
+          className="flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold flex-shrink-0"
+          style={{ backgroundColor: tones.iconBg, color: tones.iconColor }}
+        >
+          {number}
+        </span>
+        <Icon className="h-4 w-4 flex-shrink-0" style={{ color: tones.iconColor }} />
+        <span
+          className="text-[13.5px] font-semibold flex-1 truncate"
+          style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
+        >
+          {title}
+        </span>
+        {typeof count === "number" && (
+          <span
+            className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: tones.iconBg, color: tones.iconColor }}
+          >
+            {count}
+          </span>
+        )}
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={addDisabled}
+            className={cn(
+              "h-7 w-7 p-0 rounded-md flex items-center justify-center transition-colors",
+              addDisabled ? "opacity-40 cursor-not-allowed" : "hover:bg-white"
             )}
-          </div>
-        );
-      })}
+            style={{ color: COLORS.navy + "80" }}
+            title={addTitle}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="p-3.5 flex-1 min-h-0 overflow-hidden flex flex-col">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// EMPTY STATE
+// ============================================================
+const EmptyState = ({
+  icon: Icon, title, hint, tone = "neutral",
+}: {
+  icon: any; title: string; hint?: string;
+  tone?: "neutral" | "warm" | "cool" | "rose";
+}) => {
+  const tones = {
+    neutral: { bg: COLORS.cream, color: COLORS.navy + "35" },
+    warm:    { bg: "#FFF3E0", color: "#B76E1D" },
+    cool:    { bg: "#EDF2F7", color: "#38536F" },
+    rose:    { bg: "#FBE9E7", color: "#C62828" },
+  }[tone];
+
+  return (
+    <div className="flex flex-col items-center text-center py-4 my-auto">
+      <div
+        className="flex h-10 w-10 items-center justify-center rounded-full mb-2"
+        style={{ backgroundColor: tones.bg }}
+      >
+        <Icon className="h-4.5 w-4.5" style={{ color: tones.color }} />
+      </div>
+      <p className="text-[12px] font-medium" style={{ color: COLORS.navy + "80" }}>
+        {title}
+      </p>
+      {hint && (
+        <p className="text-[10.5px] mt-1 max-w-[220px] leading-snug" style={{ color: COLORS.navy + "50" }}>
+          {hint}
+        </p>
+      )}
     </div>
   );
 };
@@ -238,6 +384,14 @@ export const WarRoomView = ({
     for (const e of entries) counts[e.type] = (counts[e.type] || 0) + 1;
     return counts;
   }, [entries]);
+
+  // Détecte si l'auteur d'une entrée est "Inconnu" (ou vide) → affiche Copilote IA si l'entrée est de type Action et a été créée automatiquement
+  const isCopiloteEntry = (entry: MainCouranteEntry): boolean => {
+    if (entry.auteur && entry.auteur.trim() && entry.auteur.trim() !== "Inconnu") return false;
+    // Heuristique : si l'auteur est Inconnu et le contenu commence par "Action créée" ou "Plan activé", c'est probablement le copilote
+    const c = entry.contenu.toLowerCase();
+    return c.startsWith("action créée") || c.startsWith("plan activé");
+  };
 
   const submitMc = async () => {
     if (!mcContenu.trim()) return;
@@ -347,123 +501,167 @@ export const WarRoomView = ({
   const hasComms = communications.length > 0;
 
   return (
-    <div className="space-y-5">
-      {/* ===== BANDEAU CRISE + STEPPER ===== */}
+    <div className="space-y-4">
+      {/* ============================================================
+          BANDEAU DE CRISE
+          ============================================================ */}
       <div
-        className="rounded-xl p-5 bg-white"
+        className="rounded-2xl overflow-hidden bg-white"
         style={{
-          borderLeft: `4px solid ${sev.dot}`,
           border: `1px solid ${COLORS.border}`,
+          boxShadow: "0 1px 3px rgba(23,32,48,0.05)",
         }}
       >
-        <div className="flex flex-col md:flex-row md:items-start gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            className="self-start hover:bg-[#F8F6F2]"
-            style={{ color: COLORS.navy + "80" }}
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" /> Retour
-          </Button>
+        <div className="flex h-1.5">
+          <div className="flex-1" style={{ backgroundColor: sev.dot }} />
+          <div className="flex-1" style={{ backgroundColor: sev.dot, opacity: 0.7 }} />
+          <div className="flex-1" style={{ backgroundColor: sev.dot, opacity: 0.4 }} />
+          <div className="flex-1" style={{ backgroundColor: sev.dot, opacity: 0.15 }} />
+        </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span
-                className="inline-flex items-center justify-center h-10 w-10 rounded-xl font-bold text-white text-sm flex-shrink-0"
-                style={{ backgroundColor: sev.dot }}
-              >
-                {incident.niveau_severite}
-              </span>
-              <span
-                className="font-semibold text-xl truncate"
-                style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
-              >
-                {incident.titre}
-              </span>
-              <Badge
-                className="text-[10px] border-0"
-                style={{ backgroundColor: sev.bg, color: sev.text }}
-              >
-                {incident.statut}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-4 mt-2 text-xs flex-wrap" style={{ color: COLORS.navy + "75" }}>
-              {incident.type && <span>{incident.type}</span>}
-              <span>·</span>
-              <span>Déclaré il y a {elapsedSince(incident.date_heure_debut)}</span>
-              {incident.declarant && (
-                <>
-                  <span>·</span>
-                  <span>Par {incident.declarant}</span>
-                </>
-              )}
-              <span>·</span>
-              <span>{processCount} processus impacté{processCount > 1 ? "s" : ""}</span>
-            </div>
-
-            {/* Stepper pleine largeur */}
-            <div className="mt-4">
-              <CrisisTimeline
-                hasEntries={hasEntries}
-                hasActions={hasActions}
-                hasComms={hasComms}
-                isClosed={isClosed}
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-2 flex-shrink-0">
+        <div className="p-5">
+          <div className="flex flex-col md:flex-row md:items-start gap-4">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={onOpenTimeline}
-              style={{ borderColor: COLORS.border, color: COLORS.navy }}
+              onClick={onBack}
+              className="self-start hover:bg-[#F8F6F2] -ml-2"
+              style={{ color: COLORS.navy + "80" }}
             >
-              <Clock className="h-3.5 w-3.5 mr-1" /> Timeline
+              <ArrowLeft className="h-4 w-4 mr-1" /> Retour
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onOpenRetex}
-              style={{
-                borderColor: hasRetex ? COLORS.forest : COLORS.border,
-                color: hasRetex ? COLORS.forest : COLORS.navy,
-              }}
-            >
-              <FileText className="h-3.5 w-3.5 mr-1" /> {retex?.id ? "RETEX" : "Remplir RETEX"}
-            </Button>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span
+                  className="inline-flex items-center justify-center h-11 min-w-11 px-3 rounded-lg font-bold text-white text-sm flex-shrink-0"
+                  style={{
+                    backgroundColor: sev.dot,
+                    fontFamily: "'Playfair Display', serif",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {incident.niveau_severite}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h1
+                    className="text-xl md:text-2xl font-bold leading-tight truncate"
+                    style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
+                  >
+                    {incident.titre}
+                  </h1>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <Badge
+                      className="text-[10px] border-0 font-medium"
+                      style={{ backgroundColor: sev.bg, color: sev.text }}
+                    >
+                      {incident.statut}
+                    </Badge>
+                    {incident.type && (
+                      <span className="text-[11px]" style={{ color: COLORS.navy + "70" }}>
+                        {incident.type}
+                      </span>
+                    )}
+                    <span className="text-[11px]" style={{ color: COLORS.navy + "40" }}>·</span>
+                    <span className="text-[11px]" style={{ color: COLORS.navy + "70" }}>
+                      Il y a {elapsedSince(incident.date_heure_debut)}
+                    </span>
+                    {incident.declarant && (
+                      <>
+                        <span className="text-[11px]" style={{ color: COLORS.navy + "40" }}>·</span>
+                        <span className="text-[11px]" style={{ color: COLORS.navy + "70" }}>
+                          Par {incident.declarant}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <CrisisRail
+                  hasEntries={hasEntries}
+                  hasActions={hasActions}
+                  hasComms={hasComms}
+                  isClosed={isClosed}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 flex-shrink-0 self-start">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenTimeline}
+                className="h-8"
+                style={{ borderColor: COLORS.border, color: COLORS.navy }}
+              >
+                <Clock className="h-3.5 w-3.5 mr-1" /> Timeline
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenRetex}
+                className="h-8"
+                style={{
+                  borderColor: hasRetex ? COLORS.forest : COLORS.border,
+                  color: hasRetex ? COLORS.forest : COLORS.navy,
+                  backgroundColor: hasRetex ? COLORS.forest + "08" : "transparent",
+                }}
+              >
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                {retex?.id ? "RETEX" : "Remplir RETEX"}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ===== LAYOUT 2 COLONNES ===== */}
+      {/* ============================================================
+          LAYOUT PRINCIPAL
+          ============================================================ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* ===== COLONNE PRINCIPALE : MAIN COURANTE ===== */}
+        {/* Main courante */}
         <div className="lg:col-span-2 space-y-4">
-          <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <CardTitle
-                  className="text-base flex items-center gap-2"
-                  style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
+          <div
+            className="rounded-xl overflow-hidden bg-white flex flex-col"
+            style={{
+              border: `1px solid ${COLORS.border}`,
+              boxShadow: "0 1px 2px rgba(23,32,48,0.04)",
+            }}
+          >
+            <div
+              className="px-4 py-3 border-b"
+              style={{ borderColor: COLORS.border + "99", backgroundColor: "#FCFBF8" }}
+            >
+              <div className="flex items-center gap-2.5 mb-3">
+                <div
+                  className="flex h-7 w-7 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: COLORS.forest + "15" }}
                 >
-                  <MessageSquare className="h-4 w-4" style={{ color: COLORS.forest }} />
-                  Main courante
-                  <span className="text-xs font-normal" style={{ color: COLORS.navy + "60" }}>
-                    {entries.length} entrée{entries.length > 1 ? "s" : ""} · immuable
-                  </span>
-                </CardTitle>
+                  <MessageSquare className="h-3.5 w-3.5" style={{ color: COLORS.forest }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3
+                    className="text-[14px] font-semibold leading-tight"
+                    style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
+                  >
+                    Main courante
+                  </h3>
+                  <p className="text-[10px] leading-tight mt-0.5" style={{ color: COLORS.navy + "55" }}>
+                    {entries.length} entrée{entries.length > 1 ? "s" : ""} · Journal immuable horodaté
+                  </p>
+                </div>
               </div>
 
-              {/* Filtres */}
-              <div className="flex gap-1.5 flex-wrap mt-3">
+              <div className="flex gap-1.5 flex-wrap">
                 <button
                   onClick={() => setMcFilter("all")}
-                  className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors"
+                  className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
                   style={{
-                    backgroundColor: mcFilter === "all" ? COLORS.navy : COLORS.cream,
-                    color: mcFilter === "all" ? "#FFFFFF" : COLORS.navy,
+                    backgroundColor: mcFilter === "all" ? COLORS.navy : "#FFFFFF",
+                    color: mcFilter === "all" ? "#FFFFFF" : COLORS.navy + "70",
+                    border: `1px solid ${mcFilter === "all" ? COLORS.navy : COLORS.border}`,
                   }}
                 >
                   Toutes ({entries.length})
@@ -477,23 +675,27 @@ export const WarRoomView = ({
                     <button
                       key={t}
                       onClick={() => setMcFilter(t)}
-                      className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors flex items-center gap-1.5"
+                      className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5"
                       style={{
-                        backgroundColor: active ? style.text : style.bg,
+                        backgroundColor: active ? style.text : "#FFFFFF",
                         color: active ? "#FFFFFF" : style.text,
+                        border: `1px solid ${active ? style.text : COLORS.border}`,
                       }}
                     >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: active ? "#FFFFFF" : style.text }}
+                      />
                       {t} ({count})
                     </button>
                   );
                 })}
               </div>
-            </CardHeader>
+            </div>
 
-            <CardContent>
-              {/* Liste scrollable avec max-height */}
+            <div className="p-3 flex-1">
               <div
-                className="space-y-2 overflow-y-auto pr-1"
+                className="space-y-1.5 overflow-y-auto pr-1"
                 style={{ maxHeight: "480px" }}
               >
                 {filteredEntries.length === 0 ? (
@@ -503,33 +705,62 @@ export const WarRoomView = ({
                 ) : (
                   filteredEntries.map((entry) => {
                     const style = ENTRY_TYPE_STYLE[entry.type] || ENTRY_TYPE_STYLE.Information;
+                    const fromCopilote = isCopiloteEntry(entry);
                     return (
                       <div
                         key={entry.id}
-                        className="flex items-start gap-3 p-3 rounded-lg"
-                        style={{ backgroundColor: "#FAFAF9" }}
+                        className="flex items-start gap-3 p-3 rounded-lg transition-colors hover:bg-[#FAF9F6]"
+                        style={{
+                          borderLeft: `3px solid ${fromCopilote ? COLORS.forest : style.text}`,
+                          backgroundColor: fromCopilote ? COLORS.forest + "06" : "#FAFAF9",
+                        }}
                       >
-                        <div
-                          className="text-[11px] whitespace-nowrap font-mono pt-0.5"
-                          style={{ color: COLORS.navy + "80" }}
-                        >
-                          {formatDateTime(entry.horodatage)}
+                        <div className="flex flex-col items-start gap-0.5 flex-shrink-0 w-24">
+                          <span
+                            className="text-[10px] font-mono font-medium tabular-nums"
+                            style={{ color: COLORS.navy + "80" }}
+                          >
+                            {new Date(entry.horodatage).toLocaleTimeString("fr-FR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                          <span className="text-[9px] font-mono" style={{ color: COLORS.navy + "40" }}>
+                            {new Date(entry.horodatage).toLocaleDateString("fr-FR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                            })}
+                          </span>
                         </div>
+
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
                             <Badge
-                              className="text-[10px] border-0"
+                              className="text-[9px] border-0 font-semibold uppercase tracking-wider"
                               style={{ backgroundColor: style.bg, color: style.text }}
                             >
                               {entry.type}
                             </Badge>
-                            {entry.auteur && (
-                              <span className="text-xs font-medium" style={{ color: COLORS.navy }}>
-                                {entry.auteur}
+                            {fromCopilote ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                style={{ backgroundColor: COLORS.forest + "12", color: COLORS.forest }}
+                              >
+                                <Sparkles className="h-2.5 w-2.5" />
+                                Copilote IA
                               </span>
+                            ) : (
+                              entry.auteur && entry.auteur !== "Inconnu" && (
+                                <span className="text-[11px] font-medium" style={{ color: COLORS.navy }}>
+                                  {entry.auteur}
+                                </span>
+                              )
                             )}
                           </div>
-                          <p className="text-sm mt-1 whitespace-pre-wrap break-words" style={{ color: COLORS.navy }}>
+                          <p
+                            className="text-[13px] leading-relaxed whitespace-pre-wrap break-words"
+                            style={{ color: COLORS.navy }}
+                          >
                             {entry.contenu}
                           </p>
                         </div>
@@ -539,9 +770,11 @@ export const WarRoomView = ({
                 )}
               </div>
 
-              {/* Ajout rapide */}
               {!isClosed && (
-                <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: COLORS.border }}>
+                <div
+                  className="mt-4 pt-4 border-t space-y-2"
+                  style={{ borderColor: COLORS.border }}
+                >
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <Select value={mcType} onValueChange={(v) => setMcType(v as EntryType)}>
                       <SelectTrigger className="h-9">
@@ -573,6 +806,7 @@ export const WarRoomView = ({
                     <Button
                       onClick={submitMc}
                       disabled={!mcContenu.trim() || mcSubmitting}
+                      className="h-9"
                       style={{ backgroundColor: COLORS.forest, color: "white" }}
                     >
                       <Send className="h-3.5 w-3.5 mr-1.5" />
@@ -581,32 +815,22 @@ export const WarRoomView = ({
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
-        {/* ===== COLONNE LATÉRALE ===== */}
-        <div className="space-y-4">
-          {/* Infos crise */}
-          <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
-            <CardHeader className="pb-2">
-              <CardTitle
-                className="text-sm flex items-center gap-2"
-                style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
-              >
-                <FileText className="h-4 w-4" style={{ color: COLORS.forest }} />
-                Informations
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2.5">
+        {/* Colonne latérale */}
+        <div className="space-y-3">
+          <SideBlock number="01" icon={Info} title="Informations">
+            <div className="space-y-2.5">
               {incident.type && (
                 <div className="flex items-start gap-2">
                   <Layers className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" style={{ color: COLORS.navy + "50" }} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "60" }}>
+                    <p className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "50" }}>
                       Type
                     </p>
-                    <p className="text-sm" style={{ color: COLORS.navy }}>{incident.type}</p>
+                    <p className="text-[12px]" style={{ color: COLORS.navy }}>{incident.type}</p>
                   </div>
                 </div>
               )}
@@ -614,50 +838,37 @@ export const WarRoomView = ({
                 <div className="flex items-start gap-2">
                   <User className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" style={{ color: COLORS.navy + "50" }} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "60" }}>
+                    <p className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "50" }}>
                       Déclarant
                     </p>
-                    <p className="text-sm" style={{ color: COLORS.navy }}>{incident.declarant}</p>
+                    <p className="text-[12px]" style={{ color: COLORS.navy }}>{incident.declarant}</p>
                   </div>
                 </div>
               )}
               <div className="flex items-start gap-2">
                 <Calendar className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" style={{ color: COLORS.navy + "50" }} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "60" }}>
+                  <p className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "50" }}>
                     Déclaré le
                   </p>
-                  <p className="text-sm" style={{ color: COLORS.navy }}>{formatDateTime(incident.date_heure_debut)}</p>
+                  <p className="text-[12px]" style={{ color: COLORS.navy }}>{formatDateTime(incident.date_heure_debut)}</p>
                 </div>
               </div>
               <div className="flex items-start gap-2">
                 <Building2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" style={{ color: COLORS.navy + "50" }} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "60" }}>
+                  <p className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: COLORS.navy + "50" }}>
                     Processus impactés
                   </p>
-                  <p className="text-sm" style={{ color: COLORS.navy }}>{processCount}</p>
+                  <p className="text-[12px]" style={{ color: COLORS.navy }}>{processCount}</p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </SideBlock>
 
-          {/* Cellule de crise */}
           {cellMembers.length > 0 && (
-            <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
-              <CardHeader className="pb-2">
-                <CardTitle
-                  className="text-sm flex items-center gap-2"
-                  style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
-                >
-                  <Users className="h-4 w-4" style={{ color: COLORS.forest }} />
-                  Cellule
-                  <span className="text-[10px] font-normal ml-auto" style={{ color: COLORS.navy + "60" }}>
-                    {cellMembers.length}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
+            <SideBlock number="02" icon={Users} title="Cellule" count={cellMembers.length}>
+              <div className="space-y-2">
                 {cellMembers.map((m) => {
                   const av = getAvatarColor(m.nom);
                   const roleStyle = m.role
@@ -666,13 +877,13 @@ export const WarRoomView = ({
                   return (
                     <div key={m.id} className="flex items-center gap-2.5">
                       <div
-                        className="h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
+                        className="h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
                         style={{ backgroundColor: av.bg, color: av.text }}
                       >
                         {getInitials(m.nom)}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium truncate" style={{ color: COLORS.navy }}>
+                        <p className="text-[11.5px] font-medium truncate" style={{ color: COLORS.navy }}>
                           {m.nom}
                         </p>
                         {m.role && (
@@ -687,11 +898,10 @@ export const WarRoomView = ({
                     </div>
                   );
                 })}
-              </CardContent>
-            </Card>
+              </div>
+            </SideBlock>
           )}
 
-          {/* Recommandations IA */}
           <AiCrisisRecommendations
             incidentId={incident.id}
             typeIncident={incident.type}
@@ -704,309 +914,361 @@ export const WarRoomView = ({
             onAddAction={(p) => addAction(p as Partial<IncidentAction>)}
             onAddPlan={addPlan}
           />
-
-          {/* Actions */}
-          <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
-            <CardHeader className="pb-2">
-              <CardTitle
-                className="text-sm flex items-center gap-2"
-                style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
-              >
-                <Target className="h-4 w-4" style={{ color: COLORS.forest }} />
-                Actions
-                <span className="text-[10px] font-normal" style={{ color: COLORS.navy + "60" }}>
-                  {actions.length}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="ml-auto h-6 w-6 p-0"
-                  onClick={() => setActionDialog(true)}
-                  disabled={isClosed}
-                  style={{ color: COLORS.forest }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {actions.length === 0 ? (
-                <p className="text-xs italic text-center py-2" style={{ color: COLORS.navy + "50" }}>
-                  Aucune action
-                </p>
-              ) : (
-                <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1">
-                  {actions.map((a) => {
-                    const isDone = a.statut === "Fait";
-                    return (
-                      <div
-                        key={a.id}
-                        className="flex items-start gap-2 p-2 rounded-lg"
-                        style={{ backgroundColor: "#FAFAF9", opacity: isDone ? 0.6 : 1 }}
-                      >
-                        <button
-                          onClick={() => !isClosed && cycleAction(a)}
-                          disabled={isClosed}
-                          className="mt-0.5 flex-shrink-0"
-                        >
-                          {isDone ? (
-                            <CheckCircle2 className="h-4 w-4" style={{ color: COLORS.forest }} />
-                          ) : (
-                            <Circle className="h-4 w-4" style={{ color: COLORS.navy + "50" }} />
-                          )}
-                        </button>
-                        <div className="min-w-0 flex-1">
-                          <p
-                            className={cn("text-xs", isDone && "line-through")}
-                            style={{ color: COLORS.navy }}
-                          >
-                            {a.description}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5 text-[10px] flex-wrap" style={{ color: COLORS.navy + "70" }}>
-                            {a.responsable && <span>👤 {a.responsable}</span>}
-                            <Badge variant="outline" className="text-[9px]" style={{ borderColor: COLORS.border }}>
-                              {a.statut}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Plans activés */}
-          <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
-            <CardHeader className="pb-2">
-              <CardTitle
-                className="text-sm flex items-center gap-2"
-                style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
-              >
-                <Layers className="h-4 w-4" style={{ color: COLORS.forest }} />
-                Plans
-                <span className="text-[10px] font-normal" style={{ color: COLORS.navy + "60" }}>
-                  {plansLies.length}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="ml-auto h-6 w-6 p-0"
-                  onClick={() => setPlanDialog(true)}
-                  disabled={isClosed}
-                  style={{ color: COLORS.forest }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {plansLies.length === 0 ? (
-                <p className="text-xs italic text-center py-2" style={{ color: COLORS.navy + "50" }}>
-                  Aucun plan activé
-                </p>
-              ) : (
-                <div className="space-y-1.5">
-                  {plansLies.map((p) => (
-                    <div
-                      key={p.id}
-                      className="p-2 rounded-lg flex items-start justify-between gap-2"
-                      style={{ backgroundColor: "#FAFAF9" }}
-                    >
-                      <p className="text-xs font-medium truncate" style={{ color: COLORS.navy }}>
-                        {p.libelle || plans.find((x) => x.id === p.plan_id)?.titre || "Plan référencé"}
-                      </p>
-                      {!isClosed && (
-                        <button
-                          onClick={() => removePlan(p.id)}
-                          className="flex-shrink-0"
-                          style={{ color: COLORS.navy + "40" }}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Communication */}
-          <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
-            <CardHeader className="pb-2">
-              <CardTitle
-                className="text-sm flex items-center gap-2"
-                style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
-              >
-                <Megaphone className="h-4 w-4" style={{ color: COLORS.forest }} />
-                Communication
-                <span className="text-[10px] font-normal" style={{ color: COLORS.navy + "60" }}>
-                  {communications.length}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="ml-auto h-6 w-6 p-0"
-                  onClick={() => setCommDialog(true)}
-                  disabled={isClosed}
-                  style={{ color: COLORS.forest }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {communications.length === 0 ? (
-                <div className="text-center py-2">
-                  <p className="text-xs italic" style={{ color: COLORS.navy + "50" }}>
-                    Aucune communication
-                  </p>
-                  {!isClosed && (
-                    <div className="flex flex-wrap justify-center gap-1 mt-2">
-                      {COMM_TYPES.map((t) => {
-                        const style = COMM_TYPE_STYLE[t];
-                        return (
-                          <button
-                            key={t}
-                            onClick={() => {
-                              setNewComm({ objet: "", message: "", type: t });
-                              setCommDialog(true);
-                            }}
-                            className="px-2 py-0.5 rounded-full text-[10px] font-medium hover:opacity-80"
-                            style={{ backgroundColor: style.bg, color: style.text }}
-                          >
-                            + {t}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1">
-                  {communications.map((c) => {
-                    const statutColor =
-                      c.statut === "Envoyé" ? COLORS.forest :
-                      c.statut === "Validé" ? "#EF9F27" :
-                      COLORS.navy + "60";
-                    const typeStyle = c.type ? COMM_TYPE_STYLE[c.type] : null;
-                    return (
-                      <div key={c.id} className="p-2 rounded-lg" style={{ backgroundColor: "#FAFAF9" }}>
-                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                          {typeStyle && (
-                            <span
-                              className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                              style={{ backgroundColor: typeStyle.bg, color: typeStyle.text }}
-                            >
-                              {c.type}
-                            </span>
-                          )}
-                          <Badge className="text-[9px] border-0 text-white" style={{ backgroundColor: statutColor }}>
-                            {c.statut}
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-medium truncate" style={{ color: COLORS.navy }}>
-                          {c.objet}
-                        </p>
-                        {!isClosed && c.statut === "Brouillon" && (
-                          <Button
-                            size="sm" variant="outline"
-                            className="h-6 text-[10px] mt-1.5 w-full"
-                            onClick={() => setCommunicationStatut(c, "Validé")}
-                          >
-                            Valider
-                          </Button>
-                        )}
-                        {!isClosed && c.statut === "Validé" && (
-                          <Button
-                            size="sm" variant="outline"
-                            className="h-6 text-[10px] mt-1.5 w-full"
-                            onClick={() => setCommunicationStatut(c, "Envoyé")}
-                          >
-                            Envoyer
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
 
-      {/* ===== RETEX / CLÔTURE (pleine largeur) ===== */}
-      <Card className="border-0 shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
-        <CardHeader className="pb-2">
-          <CardTitle
-            className="text-base flex items-center gap-2"
-            style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
+      {/* ============================================================
+          TROIS BLOCS Actions / Plans / Communication — HAUTEUR UNIFORME
+          ============================================================ */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+        {/* Actions */}
+        <SideBlock
+          number="03"
+          icon={Target}
+          title="Actions"
+          count={actions.length}
+          onAdd={() => setActionDialog(true)}
+          addDisabled={isClosed}
+          addTitle="Ajouter une action"
+          tone="warm"
+          fixedHeight="h-[280px]"
+        >
+          {actions.length === 0 ? (
+            <EmptyState
+              icon={Target}
+              title="Aucune action en cours"
+              hint="Ajoutez-en une ou utilisez une suggestion IA"
+              tone="warm"
+            />
+          ) : (
+            <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
+              {actions.map((a) => {
+                const isDone = a.statut === "Fait";
+                return (
+                  <div
+                    key={a.id}
+                    className="flex items-start gap-2.5 px-2.5 py-2 rounded-md transition-colors hover:bg-[#FDF9F3]"
+                    style={{ opacity: isDone ? 0.55 : 1 }}
+                  >
+                    <button
+                      onClick={() => !isClosed && cycleAction(a)}
+                      disabled={isClosed}
+                      className="mt-0.5 flex-shrink-0"
+                    >
+                      {isDone ? (
+                        <CheckCircle2 className="h-4 w-4" style={{ color: COLORS.forest }} />
+                      ) : (
+                        <Circle className="h-4 w-4" style={{ color: COLORS.navy + "40" }} />
+                      )}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={cn("text-[12px] leading-snug", isDone && "line-through")}
+                        style={{ color: COLORS.navy }}
+                      >
+                        {a.description}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] flex-wrap" style={{ color: COLORS.navy + "60" }}>
+                        {a.responsable && <span>· {a.responsable}</span>}
+                        <span
+                          className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor:
+                              a.statut === "Fait" ? "#E8F5E9" :
+                              a.statut === "En cours" ? "#FFF3E0" :
+                              "#F1EFE8",
+                            color:
+                              a.statut === "Fait" ? COLORS.forest :
+                              a.statut === "En cours" ? "#B76E1D" :
+                              COLORS.navy + "70",
+                          }}
+                        >
+                          {a.statut}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SideBlock>
+
+        {/* Plans */}
+        <SideBlock
+          number="04"
+          icon={Layers}
+          title="Plans"
+          count={plansLies.length}
+          onAdd={() => setPlanDialog(true)}
+          addDisabled={isClosed}
+          addTitle="Activer un plan"
+          tone="cool"
+          fixedHeight="h-[280px]"
+        >
+          {plansLies.length === 0 ? (
+            <EmptyState
+              icon={Layers}
+              title="Aucun plan activé"
+              hint="Activez un plan PCA/PRA ou utilisez une suggestion IA"
+              tone="cool"
+            />
+          ) : (
+            <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
+              {plansLies.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-start gap-2.5 px-2.5 py-2 rounded-md transition-colors hover:bg-[#F6F8FA] group"
+                >
+                  <span
+                    className="flex h-5 w-5 items-center justify-center rounded-md flex-shrink-0 mt-0.5"
+                    style={{ backgroundColor: "#EDF2F7" }}
+                  >
+                    <Layers className="h-3 w-3" style={{ color: "#38536F" }} />
+                  </span>
+                  <p
+                    className="flex-1 min-w-0 text-[12px] leading-snug font-medium truncate"
+                    style={{ color: COLORS.navy }}
+                  >
+                    {p.libelle || plans.find((x) => x.id === p.plan_id)?.titre || "Plan référencé"}
+                  </p>
+                  {!isClosed && (
+                    <button
+                      onClick={() => removePlan(p.id)}
+                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ color: COLORS.navy + "40" }}
+                      title="Retirer ce plan"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </SideBlock>
+
+        {/* Communication */}
+        <SideBlock
+          number="05"
+          icon={Megaphone}
+          title="Communication"
+          count={communications.length}
+          onAdd={() => {
+            setNewComm({ objet: "", message: "", type: "Interne" });
+            setCommDialog(true);
+          }}
+          addDisabled={isClosed}
+          addTitle="Rédiger une communication"
+          tone="rose"
+          fixedHeight="h-[280px]"
+        >
+          {communications.length === 0 ? (
+            <div className="flex-1 overflow-y-auto">
+              <EmptyState
+                icon={Megaphone}
+                title="Aucune communication"
+                hint="Rédigez un message pour vos parties prenantes"
+                tone="rose"
+              />
+              {!isClosed && (
+                <div className="pt-3 mt-1 border-t" style={{ borderColor: COLORS.border + "80" }}>
+                  <p
+                    className="text-[9.5px] font-semibold uppercase tracking-wider text-center mb-2"
+                    style={{ color: COLORS.navy + "45" }}
+                  >
+                    Créer un message
+                  </p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {COMM_TYPES.map((t) => {
+                      const style = COMM_TYPE_STYLE[t];
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            setNewComm({ objet: "", message: "", type: t });
+                            setCommDialog(true);
+                          }}
+                          className="h-8 rounded-md text-[10.5px] font-medium border transition-all hover:shadow-sm hover:-translate-y-0.5 flex items-center justify-center"
+                          style={{
+                            borderColor: style.text + "40",
+                            color: style.text,
+                            backgroundColor: style.bg,
+                          }}
+                        >
+                          <Plus className="h-3 w-3 mr-0.5" />
+                          {t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
+              {communications.map((c) => {
+                const statutStyle =
+                  c.statut === "Envoyé" ? { bg: "#E8F5E9", text: COLORS.forest } :
+                  c.statut === "Validé" ? { bg: "#FFF3E0", text: "#B76E1D" } :
+                  { bg: "#F1EFE8", text: COLORS.navy + "70" };
+                const typeStyle = c.type ? COMM_TYPE_STYLE[c.type] : null;
+                return (
+                  <div
+                    key={c.id}
+                    className="px-2.5 py-2 rounded-md transition-colors hover:bg-[#FDF6F5]"
+                  >
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      {typeStyle && (
+                        <span
+                          className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: typeStyle.bg, color: typeStyle.text }}
+                        >
+                          {c.type}
+                        </span>
+                      )}
+                      <span
+                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: statutStyle.bg, color: statutStyle.text }}
+                      >
+                        {c.statut}
+                      </span>
+                    </div>
+                    <p className="text-[12px] font-medium leading-snug truncate" style={{ color: COLORS.navy }}>
+                      {c.objet}
+                    </p>
+                    {!isClosed && (c.statut === "Brouillon" || c.statut === "Validé") && (
+                      <button
+                        onClick={() => setCommunicationStatut(c, c.statut === "Brouillon" ? "Validé" : "Envoyé")}
+                        className="text-[10px] mt-1 font-medium hover:underline"
+                        style={{ color: COLORS.forest }}
+                      >
+                        {c.statut === "Brouillon" ? "Marquer comme validé" : "Marquer comme envoyé"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SideBlock>
+      </div>
+
+      {/* ============================================================
+          RETEX — padding resserré
+          ============================================================ */}
+      <div
+        className="rounded-2xl overflow-hidden bg-white"
+        style={{
+          border: `1px solid ${COLORS.border}`,
+          boxShadow: "0 1px 2px rgba(23,32,48,0.04)",
+        }}
+      >
+        <div
+          className="px-4 py-3 border-b flex items-center gap-2.5"
+          style={{ borderColor: COLORS.border + "99", backgroundColor: "#FCFBF8" }}
+        >
+          <div
+            className="flex h-7 w-7 items-center justify-center rounded-lg"
+            style={{ backgroundColor: COLORS.forest + "15" }}
           >
-            <FileText className="h-4 w-4" style={{ color: COLORS.forest }} />
-            RETEX · Retour d'expérience
-            {hasRetex && (
-              <Badge className="text-[10px] border-0 ml-1" style={{ backgroundColor: "#E8F5E9", color: COLORS.forest }}>
-                ✓ Enregistré
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs" style={{ color: COLORS.navy + "80" }}>
+            <FileText className="h-3.5 w-3.5" style={{ color: COLORS.forest }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3
+              className="text-[13.5px] font-semibold leading-tight"
+              style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
+            >
+              RETEX · Retour d'expérience
+            </h3>
+            <p className="text-[10px] leading-tight mt-0.5" style={{ color: COLORS.navy + "55" }}>
+              Analyse post-crise requise avant clôture
+            </p>
+          </div>
+          {hasRetex ? (
+            <Badge
+              className="text-[10px] border-0 font-semibold"
+              style={{ backgroundColor: "#E8F5E9", color: COLORS.forest }}
+            >
+              <CheckCircle2 className="h-3 w-3 mr-1" />
+              Enregistré
+            </Badge>
+          ) : (
+            <Badge
+              className="text-[10px] border-0 font-semibold"
+              style={{ backgroundColor: sev.bg, color: sev.text }}
+            >
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              Requis
+            </Badge>
+          )}
+        </div>
+
+        <div className="p-4">
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-medium" style={{ color: COLORS.navy + "80" }}>
                 Progression du RETEX
               </span>
-              <span className="text-xs font-semibold" style={{ color: COLORS.navy }}>
+              <span
+                className="text-[12px] font-bold tabular-nums"
+                style={{
+                  color: retexProgress === 100 ? COLORS.forest : retexProgress > 0 ? "#B76E1D" : COLORS.navy + "50",
+                  fontFamily: "'Playfair Display', serif",
+                }}
+              >
                 {retexProgress}%
               </span>
             </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: COLORS.cream }}>
+            <div
+              className="h-1.5 rounded-full overflow-hidden"
+              style={{ backgroundColor: COLORS.border + "70" }}
+            >
               <div
-                className="h-full transition-all"
+                className="h-full transition-all duration-500 rounded-full"
                 style={{
                   width: `${retexProgress}%`,
-                  backgroundColor: retexProgress === 100 ? COLORS.forest : COLORS.danger,
+                  backgroundColor: retexProgress === 100 ? COLORS.forest : retexProgress > 0 ? "#B76E1D" : COLORS.navy + "40",
                 }}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
             {[
-              { key: "resume", label: "Résumé de la crise" },
-              { key: "causes_racines", label: "Causes racines" },
-              { key: "points_amelioration", label: "Points d'amélioration" },
-              { key: "actions_correctives", label: "Actions correctives" },
+              { key: "resume", label: "Résumé de la crise", num: "1" },
+              { key: "causes_racines", label: "Causes racines", num: "2" },
+              { key: "points_amelioration", label: "Points d'amélioration", num: "3" },
+              { key: "actions_correctives", label: "Actions correctives", num: "4" },
             ].map((f) => {
               const value = (retex as any)?.[f.key] || "";
               const filled = value.trim().length > 0;
               return (
                 <div
                   key={f.key}
-                  className="p-3 rounded-lg flex items-start gap-2"
+                  className="p-2.5 rounded-lg flex items-start gap-2"
                   style={{
                     backgroundColor: filled ? "#F0F5F0" : "#FAFAF9",
                     border: `1px solid ${filled ? COLORS.forest + "33" : COLORS.border}`,
                   }}
                 >
-                  <div
-                    className="flex h-5 w-5 items-center justify-center rounded-full flex-shrink-0 mt-0.5"
+                  <span
+                    className="flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold flex-shrink-0 mt-0.5"
                     style={{
-                      backgroundColor: filled ? COLORS.forest : "#FFFFFF",
-                      border: `1.5px solid ${filled ? COLORS.forest : COLORS.border}`,
+                      backgroundColor: filled ? COLORS.forest : COLORS.border,
+                      color: filled ? "#FFFFFF" : COLORS.navy + "60",
                     }}
                   >
-                    {filled && <CheckCircle2 className="h-3 w-3 text-white" />}
-                  </div>
+                    {filled ? <Check className="h-3 w-3" /> : f.num}
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: COLORS.navy + "80" }}>
+                    <p
+                      className="text-[10px] font-semibold uppercase tracking-wider"
+                      style={{ color: filled ? COLORS.forest : COLORS.navy + "70" }}
+                    >
                       {f.label}
                     </p>
-                    <p className="text-xs mt-0.5 line-clamp-2" style={{ color: COLORS.navy }}>
+                    <p className="text-[11.5px] mt-0.5 line-clamp-2" style={{ color: COLORS.navy }}>
                       {filled ? value : <em style={{ color: COLORS.navy + "40" }}>Non renseigné</em>}
                     </p>
                   </div>
@@ -1015,16 +1277,26 @@ export const WarRoomView = ({
             })}
           </div>
 
-          <div className="flex flex-col md:flex-row md:items-center gap-3 pt-4 border-t" style={{ borderColor: COLORS.border }}>
-            <div className="flex-1 flex items-start gap-2">
-              {!hasRetex && (
-                <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: COLORS.danger }} />
-              )}
+          <div
+            className="flex flex-col md:flex-row md:items-center gap-3 pt-3 border-t"
+            style={{ borderColor: COLORS.border }}
+          >
+            <div className="flex-1 flex items-start gap-2.5">
+              <div
+                className="flex h-7 w-7 items-center justify-center rounded-lg flex-shrink-0"
+                style={{ backgroundColor: hasRetex ? "#E8F5E9" : sev.bg }}
+              >
+                {hasRetex ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" style={{ color: COLORS.forest }} />
+                ) : (
+                  <AlertTriangle className="h-3.5 w-3.5" style={{ color: sev.text }} />
+                )}
+              </div>
               <div>
-                <p className="text-sm font-medium" style={{ color: COLORS.navy }}>
+                <p className="text-[12.5px] font-medium" style={{ color: COLORS.navy }}>
                   {hasRetex ? "Le RETEX est prêt" : "RETEX requis avant clôture"}
                 </p>
-                <p className="text-xs mt-0.5" style={{ color: COLORS.navy + "75" }}>
+                <p className="text-[10.5px] mt-0.5" style={{ color: COLORS.navy + "70" }}>
                   {hasRetex
                     ? "Vous pouvez modifier le RETEX ou clôturer l'incident."
                     : "Complétez au minimum le résumé, puis enregistrez pour débloquer la clôture."}
@@ -1036,17 +1308,18 @@ export const WarRoomView = ({
                 <Button
                   variant="outline"
                   onClick={onOpenRetex}
+                  className="h-8"
                   style={{ borderColor: COLORS.forest, color: COLORS.forest }}
                 >
-                  <Edit3 className="h-4 w-4 mr-1.5" />
-                  {hasRetex ? "Modifier le RETEX" : "Remplir le RETEX"}
+                  <Edit3 className="h-3.5 w-3.5 mr-1.5" />
+                  {hasRetex ? "Modifier" : "Remplir le RETEX"}
                 </Button>
               )}
               <Button
                 onClick={closeIncident}
                 disabled={!hasRetex || isClosed || closing}
                 title={!hasRetex ? "RETEX obligatoire avant clôture" : undefined}
-                className="font-medium"
+                className="font-medium h-8"
                 style={{
                   backgroundColor: hasRetex && !isClosed ? COLORS.forest : COLORS.border,
                   color: hasRetex && !isClosed ? "white" : COLORS.navy + "70",
@@ -1058,8 +1331,8 @@ export const WarRoomView = ({
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* ===== DIALOGS ===== */}
       <Dialog open={actionDialog} onOpenChange={setActionDialog}>

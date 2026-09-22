@@ -38,24 +38,24 @@ type IncidentAction = {
 };
 
 // ============================================================
-// KPI CARD — Fond neutre par défaut, couleur sémantique sur icône + chiffre
-// Exception : "Crises prioritaires" passe en rouge uniquement si valeur > 0
+// KPI CARD — variantes de taille et fond alerte conditionnel
 // ============================================================
 const KpiCard = ({
   label, value, suffix, icon: Icon, iconColor, valueColor,
-  hint, active, onClick, pulse, alertBg,
+  hint, active, onClick, pulse, alertBg, emphasized,
 }: {
   label: string;
   value: string | number;
   suffix?: string;
   icon: any;
-  iconColor: string;    // couleur de l'icône
-  valueColor: string;   // couleur du chiffre
+  iconColor: string;
+  valueColor: string;
   hint?: string;
   active?: boolean;
   onClick?: () => void;
   pulse?: boolean;
-  alertBg?: string;     // si défini → fond d'alerte (uniquement Crises prioritaires)
+  alertBg?: string;
+  emphasized?: boolean;
 }) => {
   const isAlert = !!alertBg;
   return (
@@ -82,7 +82,10 @@ const KpiCard = ({
             {label}
           </p>
           <p
-            className="text-3xl font-bold mt-1 flex items-baseline gap-1.5"
+            className={cn(
+              "font-bold mt-1 flex items-baseline gap-1.5",
+              emphasized ? "text-4xl" : "text-3xl"
+            )}
             style={{ fontFamily: "'Playfair Display', serif", color: valueColor }}
           >
             {value}
@@ -96,12 +99,13 @@ const KpiCard = ({
         </div>
         <div
           className={cn(
-            "h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0",
+            "rounded-lg flex items-center justify-center flex-shrink-0",
+            emphasized ? "h-10 w-10" : "h-9 w-9",
             pulse && "animate-pulse"
           )}
           style={{ backgroundColor: iconColor + "15" }}
         >
-          <Icon className="h-4 w-4" style={{ color: iconColor }} />
+          <Icon className={cn(emphasized ? "h-5 w-5" : "h-4 w-4")} style={{ color: iconColor }} />
         </div>
       </div>
       {active && (
@@ -117,7 +121,7 @@ const KpiCard = ({
 // ============================================================
 // AVATAR
 // ============================================================
-const Avatar = ({ name, size = 36 }: { name?: string | null; size?: number }) => {
+const Avatar = ({ name, size = 32 }: { name?: string | null; size?: number }) => {
   const color = getAvatarColor(name);
   return (
     <div
@@ -257,8 +261,10 @@ export const WarRoomDashboard = ({
     else setTab("active");
   };
 
+  const hasP1 = kpi.p1Active > 0;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* ===== HEADER ===== */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -291,22 +297,23 @@ export const WarRoomDashboard = ({
 
       {/* ===== KPI ===== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* KPI 1 — Crises prioritaires : alerte uniquement si > 0 */}
+        {/* KPI 1 — Crises prioritaires */}
         <KpiCard
           label="Crises prioritaires"
           value={kpi.p1Active}
           suffix="P1"
           icon={Flame}
-          iconColor={kpi.p1Active > 0 ? COLORS.danger : COLORS.navy + "80"}
-          valueColor={kpi.p1Active > 0 ? COLORS.danger : COLORS.navy}
-          hint={kpi.p1Active > 0 ? "⚠ Action immédiate" : "Aucune urgence"}
-          pulse={kpi.p1Active > 0}
-          alertBg={kpi.p1Active > 0 ? "#FBE9E7" : undefined}
+          iconColor={hasP1 ? COLORS.danger : COLORS.navy + "80"}
+          valueColor={hasP1 ? COLORS.danger : COLORS.navy}
+          hint={hasP1 ? "⚠ Action immédiate" : "Aucune urgence"}
+          pulse={hasP1}
+          alertBg={hasP1 ? "#FBE9E7" : undefined}
+          emphasized={hasP1}
           active={kpiFilter === "p1"}
           onClick={() => toggleKpiFilter("p1")}
         />
 
-        {/* KPI 2 — Durée moyenne : neutre */}
+        {/* KPI 2 — Durée moyenne */}
         <KpiCard
           label="Durée moyenne"
           value={kpi.avgDurationLabel}
@@ -316,7 +323,7 @@ export const WarRoomDashboard = ({
           hint={`${allActive.length} crise${allActive.length > 1 ? "s" : ""} en cours`}
         />
 
-        {/* KPI 3 — Actions en cours : neutre, icône orange */}
+        {/* KPI 3 — Actions en cours */}
         <KpiCard
           label="Actions en cours"
           value={kpi.actionsInProgress}
@@ -328,7 +335,7 @@ export const WarRoomDashboard = ({
           onClick={() => toggleKpiFilter("actions")}
         />
 
-        {/* KPI 4 — Clôturées : neutre, icône verte */}
+        {/* KPI 4 — Clôturées */}
         <KpiCard
           label="Clôturées · 30 j"
           value={kpi.closed30d}
@@ -409,7 +416,7 @@ export const WarRoomDashboard = ({
       </div>
 
       {/* ===== LISTE ===== */}
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {displayed.length === 0 ? (
           tab === "active" ? (
             <Card style={{ backgroundColor: "#FFFFFF", borderColor: COLORS.border }}>
@@ -481,78 +488,84 @@ export const WarRoomDashboard = ({
                 key={inc.id}
                 onClick={() => onOpenIncident(inc.id)}
                 className={cn(
-                  "rounded-xl transition-all cursor-pointer hover:shadow-md flex flex-col md:flex-row md:items-center gap-4 p-4 bg-white border",
-                  isP1 && "ring-2 ring-offset-1"
+                  "rounded-xl transition-all cursor-pointer hover:shadow-md bg-white",
+                  isP1 ? "border-2" : "border"
                 )}
                 style={{
-                  borderColor: COLORS.border,
-                  borderLeft: `4px solid ${sev.dot}`,
-                  ...(isP1 ? { boxShadow: `0 0 0 3px ${COLORS.danger}22` } : {}),
+                  borderColor: isP1 ? COLORS.danger + "55" : COLORS.border,
+                  boxShadow: isP1 ? `0 1px 3px ${COLORS.danger}18` : "0 1px 2px rgba(23,32,48,0.04)",
                 }}
               >
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span
-                    className="inline-flex items-center justify-center h-12 w-12 rounded-xl font-bold text-sm"
-                    style={{ backgroundColor: sev.bg, color: sev.text }}
-                  >
-                    {inc.niveau_severite}
-                  </span>
-                  {isP1 && (
-                    <Badge
-                      className="animate-pulse text-white border-0 text-[10px] font-bold tracking-wide"
-                      style={{ backgroundColor: COLORS.danger }}
+                <div className="flex flex-col md:flex-row md:items-center gap-3 px-4 py-3">
+                  {/* Badge sévérité + indicateur d'état */}
+                  <div className="flex items-center gap-2.5 flex-shrink-0">
+                    <span
+                      className="inline-flex items-center justify-center h-10 w-10 rounded-lg font-bold text-[12px]"
+                      style={{ backgroundColor: sev.bg, color: sev.text }}
                     >
-                      ⚠ ALERTE
-                    </Badge>
-                  )}
-                </div>
-
-                <Avatar name={inc.declarant} size={40} />
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-base truncate" style={{ color: COLORS.navy }}>
-                      {inc.titre}
+                      {inc.niveau_severite}
                     </span>
-                    {inc.type && (
+                    {isP1 && (
                       <span
-                        className="text-[10px] font-medium px-2 py-0.5 rounded-md"
-                        style={{ backgroundColor: COLORS.cream, color: COLORS.navy + "AA" }}
+                        className="inline-flex items-center gap-1 text-white text-[9.5px] font-bold uppercase tracking-wider px-2 py-1 rounded-full"
+                        style={{ backgroundColor: COLORS.danger }}
                       >
-                        {inc.type}
+                        <ShieldAlert className="h-2.5 w-2.5" />
+                        Alerte
                       </span>
                     )}
-                    <span
-                      className="text-[10px] font-medium px-2 py-0.5 rounded-md"
-                      style={{ backgroundColor: COLORS.cream, color: COLORS.navy + "AA" }}
-                    >
-                      {inc.statut}
-                    </span>
                   </div>
 
-                  <div className="flex items-center gap-4 mt-2 text-xs flex-wrap" style={{ color: COLORS.navy + "70" }}>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5" />
-                      Déclaré il y a {elapsedSince(inc.date_heure_debut)}
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Building2 className="h-3.5 w-3.5" />
-                      {processCount} processus impacté{processCount > 1 ? "s" : ""}
-                    </span>
-                    {inc.declarant && (
-                      <span className="hidden md:inline">Par {inc.declarant}</span>
-                    )}
+                  {/* Avatar */}
+                  <Avatar name={inc.declarant} size={34} />
+
+                  {/* Contenu */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-[14px] leading-tight truncate" style={{ color: COLORS.navy }}>
+                        {inc.titre}
+                      </span>
+                      {inc.type && (
+                        <span
+                          className="text-[9.5px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wider"
+                          style={{ backgroundColor: COLORS.cream, color: COLORS.navy + "80" }}
+                        >
+                          {inc.type}
+                        </span>
+                      )}
+                      <span
+                        className="text-[9.5px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wider"
+                        style={{ backgroundColor: sev.bg, color: sev.text }}
+                      >
+                        {inc.statut}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3.5 mt-1.5 text-[11px] flex-wrap" style={{ color: COLORS.navy + "70" }}>
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Il y a {elapsedSince(inc.date_heure_debut)}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Building2 className="h-3 w-3" />
+                        {processCount} processus
+                      </span>
+                      {inc.declarant && (
+                        <span className="hidden md:inline">· Par {inc.declarant}</span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Bouton */}
+                  <Button
+                    onClick={(e) => { e.stopPropagation(); onOpenIncident(inc.id); }}
+                    className="h-9 px-4 font-semibold flex-shrink-0 text-white shadow-sm"
+                    style={{ backgroundColor: isP1 ? COLORS.danger : COLORS.forest }}
+                  >
+                    Ouvrir la war room
+                    <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
                 </div>
-
-                <Button
-                  onClick={(e) => { e.stopPropagation(); onOpenIncident(inc.id); }}
-                  className="h-10 px-5 font-semibold flex-shrink-0 text-white shadow-sm"
-                  style={{ backgroundColor: isP1 ? COLORS.danger : COLORS.forest }}
-                >
-                  Ouvrir la war room
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
               </div>
             );
           })
@@ -567,10 +580,10 @@ export const WarRoomDashboard = ({
                 <button
                   key={inc.id}
                   onClick={() => onOpenIncident(inc.id)}
-                  className="w-full flex items-center gap-3 p-3.5 text-left hover:bg-[#FAFAF9] transition-colors"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF9] transition-colors"
                 >
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: sev.dot }} />
-                  <Avatar name={inc.declarant} size={32} />
+                  <Avatar name={inc.declarant} size={30} />
                   <span className="flex-1 text-sm font-medium truncate" style={{ color: COLORS.navy }}>
                     {inc.titre}
                   </span>
@@ -580,6 +593,7 @@ export const WarRoomDashboard = ({
                   <Badge className="text-[10px] border-0" style={{ backgroundColor: sev.bg, color: sev.text }}>
                     {inc.niveau_severite}
                   </Badge>
+                  <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: COLORS.navy + "40" }} />
                 </button>
               );
             })}
