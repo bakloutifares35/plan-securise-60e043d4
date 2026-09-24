@@ -2,10 +2,9 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-// Headers CORS
+// ============================================================
+// CORS — défini AVANT tout accès à Deno.env.get()
+// ============================================================
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -15,16 +14,18 @@ const corsHeaders = {
 
 console.log("🚀 Groq Extract Function started");
 
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
 serve(async (req) => {
-  // Gestion du preflight OPTIONS
+  // 1) Preflight CORS — AVANT TOUT
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
+    // 2) Accès aux variables d'environnement APRÈS le check OPTIONS
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+
     // Vérifier la clé API
     if (!GROQ_API_KEY) {
       console.error("❌ GROQ_API_KEY non définie");

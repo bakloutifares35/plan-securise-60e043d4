@@ -2,20 +2,27 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// ============================================================
+// CORS — défini AVANT tout accès à Deno.env.get()
+// ============================================================
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Content-Type": "application/json",
 };
 
 serve(async (req) => {
+  // 1) Preflight CORS — AVANT TOUT (Deno.env, req.json, logique métier)
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
     // ⭐ NOUVEAU : on reçoit TOUTES les options disponibles
     const { processName, rto, rpo, criticality, description, resources, options } = await req.json();
 
+    // 2) Accès à la clé API APRÈS le check OPTIONS
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY not configured");
@@ -110,18 +117,18 @@ La justification doit être concrète, professionnelle et en français.`;
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: "Limite de requêtes atteinte. Veuillez réessayer dans quelques minutes." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 429, headers: corsHeaders }
         );
       }
       if (response.status === 402) {
         return new Response(
           JSON.stringify({ error: "Crédits IA épuisés." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 402, headers: corsHeaders }
         );
       }
       return new Response(
         JSON.stringify({ error: "Erreur du service IA" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: corsHeaders }
       );
     }
 
@@ -181,7 +188,7 @@ La justification doit être concrète, professionnelle et en français.`;
     };
 
     return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: corsHeaders,
     });
 
   } catch (error) {
@@ -193,7 +200,7 @@ La justification doit être concrète, professionnelle et en français.`;
         justification: "Le basculement vers un site de repli alternatif permet de répondre aux exigences de RTO et RPO, assure la continuité en cas d'indisponibilité du site, de panne système ou de cyberattaque, et garantit une alimentation redondée conforme aux contraintes. (Confiance : haute)",
         allOptions: [],
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: corsHeaders }
     );
   }
 });

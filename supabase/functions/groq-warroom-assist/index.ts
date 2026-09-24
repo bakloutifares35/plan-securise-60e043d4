@@ -3,25 +3,20 @@
 // Même pattern que groq-strategy-assist : appel Groq, fallback modèle, JSON strict.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
-const GROQ_FALLBACK_MODEL = Deno.env.get("GROQ_FALLBACK_MODEL") || "openai/gpt-oss-20b";
-
-// Fallback Lovable AI si Groq indisponible (clé absente, quota, panne).
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-const LOVABLE_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_MODEL = "google/gemini-2.5-flash";
-
-const REQUEST_TIMEOUT_MS = 30000;
-
+// ============================================================
+// CORS — défini AVANT tout accès à Deno.env.get()
+// ============================================================
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
 };
+
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const LOVABLE_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const LOVABLE_MODEL = "google/gemini-2.5-flash";
+const REQUEST_TIMEOUT_MS = 30000;
 
 interface GroqMessage {
   role: "system" | "user" | "assistant";
@@ -67,6 +62,11 @@ async function performFetch(
 }
 
 async function callModel(messages: GroqMessage[]): Promise<{ content: string; model: string }> {
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
+  const GROQ_FALLBACK_MODEL = Deno.env.get("GROQ_FALLBACK_MODEL") || "openai/gpt-oss-20b";
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -171,8 +171,9 @@ function normalize(parsed: Partial<WarRoomSuggestion>): WarRoomSuggestion {
 }
 
 serve(async (req) => {
+  // 1) Preflight CORS — AVANT TOUT
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   if (req.method !== "POST") {

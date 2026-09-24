@@ -2,20 +2,22 @@
 // Suggère 3 à 5 actions de traitement pour un risque donné (GPT-oss via Groq, fallback Lovable AI).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
-
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-const LOVABLE_API_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const LOVABLE_MODEL = "google/gemini-3.7-flash";
-
+// ============================================================
+// CORS — défini AVANT tout accès à Deno.env.get()
+// ============================================================
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
 };
+
+// ============================================================
+// CONFIGURATION (constantes statiques — pas d'accès env ici)
+// ============================================================
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const LOVABLE_API_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const LOVABLE_MODEL = "google/gemini-3.7-flash";
 
 type SuggestedAction = {
   mesure: string;
@@ -110,6 +112,11 @@ function normalize(parsed: unknown): SuggestedAction[] {
 }
 
 async function callModel(userPrompt: string): Promise<{ actions: SuggestedAction[]; model: string }> {
+  // Accès aux variables d'environnement UNIQUEMENT ici, APRÈS le check OPTIONS
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
   const payloadBase = {
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
@@ -161,7 +168,10 @@ async function callModel(userPrompt: string): Promise<{ actions: SuggestedAction
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // 1) Preflight CORS — AVANT TOUT (Deno.env, req.json, logique métier)
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
     const body = (await req.json()) as Record<string, unknown>;

@@ -2,24 +2,22 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 // ============================================================
-// CONFIGURATION
+// CORS — défini AVANT tout accès à Deno.env.get()
 // ============================================================
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-// Modèle principal - configurable via variable d'environnement
-const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
-const GROQ_FALLBACK_MODEL = Deno.env.get("GROQ_FALLBACK_MODEL") || "openai/gpt-oss-20b";
-
-// Timeout global pour les appels Groq (30 secondes)
-const REQUEST_TIMEOUT_MS = 30000;
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
 };
+
+// ============================================================
+// CONFIGURATION (lazy : accédée APRÈS le check OPTIONS)
+// ============================================================
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+// Timeout global pour les appels Groq (30 secondes)
+const REQUEST_TIMEOUT_MS = 30000;
 
 // ============================================================
 // TYPES
@@ -63,6 +61,10 @@ interface SuggestRiskResponse {
  * Appel générique à l'API Groq avec gestion d'erreurs, timeout et fallback
  */
 async function callGroq(options: GroqRequestOptions): Promise<string> {
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
+  const GROQ_FALLBACK_MODEL = Deno.env.get("GROQ_FALLBACK_MODEL") || "openai/gpt-oss-20b";
+
   const {
     messages,
     temperature = 0.2,
@@ -80,39 +82,47 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
     max_tokens: maxTokens,
   };
 
-  // Utiliser le format JSON si demandé (uniquement si le modèle le supporte)
-  if (responseFormat === "json_object") {
+  // NOTE : Groq rejette response_format=json_object sur certains modèles
+  // (gpt-oss-120b / gpt-oss-20b) avec l'erreur "json_validate_failed".
+  // Le prompt demande déjà du JSON pur, et parseGroqResponse() nettoie
+  // les backticks. On n'active donc le mode JSON strict que si on est
+  // sur un modèle qui le supporte réellement.
+  const supportsJsonMode =
+    responseFormat === "json_object" && !GROQ_MODEL.includes("gpt-oss");
+
+  if (supportsJsonMode) {
     body.response_format = { type: "json_object" };
   }
 
-  // Reasoning effort pour GPT-OSS
-  if (reasoningEffort && GROQ_MODEL.includes("gpt-oss")) {
-    body.reasoning_effort = reasoningEffort;
+  // Reasoning effort + format pour GPT-OSS.
+  // "reasoning_format: parsed" sépare le raisonnement de la réponse finale
+  // dans des champs distincts (message.reasoning vs message.content),
+  // ce qui évite que le raisonnement "pollue" le contenu final.
+  if (GROQ_MODEL.includes("gpt-oss")) {
+    if (reasoningEffort) body.reasoning_effort = reasoningEffort;
+    body.reasoning_format = "parsed";
   }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    let lastError: Error | null = null;
     let modelUsed = GROQ_MODEL;
 
     // Tentative avec le modèle principal
-    let response = await performFetch(body, controller);
+    let response = await performFetch(body, controller, GROQ_API_KEY);
 
     // Si le modèle principal échoue avec une erreur 4xx ou 5xx, tenter le fallback
-    if (!response.ok && (response.status >= 400 || response.status >= 500)) {
+    if (!response.ok) {
       console.warn(
         `[groq-strategy-assist] Modèle principal ${GROQ_MODEL} a échoué (${response.status}), fallback vers ${GROQ_FALLBACK_MODEL}`
       );
 
-      // Réessayer avec le modèle de fallback
       const fallbackBody = { ...body, model: GROQ_FALLBACK_MODEL };
-      response = await performFetch(fallbackBody, controller);
+      response = await performFetch(fallbackBody, controller, GROQ_API_KEY);
       modelUsed = GROQ_FALLBACK_MODEL;
     }
 
-    // Vérifier la réponse
     if (!response.ok) {
       const errorText = await response.text();
       console.error(
@@ -124,9 +134,50 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const choice = data.choices?.[0];
+    const finishReason = choice?.finish_reason;
 
-    if (!content) {
+    // Le contenu final peut se trouver dans .content, ou, avec
+    // reasoning_format="parsed" sur certains modèles gpt-oss, la
+    // réponse finale peut apparaître dans un champ séparé du raisonnement.
+    let content: string | undefined = choice?.message?.content;
+    if (!content || !content.trim()) {
+      content = choice?.message?.reasoning;
+    }
+
+    if (!content || !content.trim()) {
+      console.error(
+        `[groq-strategy-assist] Réponse Groq vide (modèle=${modelUsed}, finish_reason=${finishReason}):`,
+        JSON.stringify(data)
+      );
+
+      // Cas fréquent : le modèle a épuisé son budget de tokens dans le
+      // raisonnement interne avant d'écrire la réponse finale.
+      // On retente une fois avec un budget de tokens nettement plus large.
+      if (finishReason === "length") {
+        console.warn(
+          `[groq-strategy-assist] finish_reason=length détecté, nouvel essai avec max_tokens élargi`
+        );
+        const retryBody = { ...body, model: modelUsed, max_tokens: Math.max(maxTokens * 3, 2000) };
+        const retryResponse = await performFetch(retryBody, controller, GROQ_API_KEY);
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json();
+          const retryChoice = retryData.choices?.[0];
+          const retryContent =
+            retryChoice?.message?.content?.trim() || retryChoice?.message?.reasoning?.trim();
+          if (retryContent) {
+            console.log(
+              `[groq-strategy-assist] Réussite après retry élargi avec ${modelUsed} (${retryData.usage?.total_tokens || 0} tokens)`
+            );
+            return retryContent;
+          }
+          console.error(
+            `[groq-strategy-assist] Retry élargi toujours vide:`,
+            JSON.stringify(retryData)
+          );
+        }
+      }
+
       throw new Error("Réponse Groq vide ou mal formée");
     }
 
@@ -148,12 +199,12 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
 /**
  * Exécute un fetch avec gestion d'erreur réseau
  */
-async function performFetch(body: any, controller: AbortController): Promise<Response> {
+async function performFetch(body: any, controller: AbortController, apiKey: string | undefined): Promise<Response> {
   const response = await fetch(GROQ_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${GROQ_API_KEY}`,
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
     signal: controller.signal,
@@ -171,12 +222,10 @@ function parseGroqResponse<T>(content: string): T {
     .replace(/```\s*/g, "")
     .trim();
 
-  // Si le contenu commence par "{" on parse directement
   if (cleanContent.startsWith("{")) {
     return JSON.parse(cleanContent);
   }
 
-  // Sinon, essayer de trouver un objet JSON dans le texte
   const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     return JSON.parse(jsonMatch[0]);
@@ -313,7 +362,7 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
       { role: "user", content: prompt },
     ],
     temperature: 0.2,
-    maxTokens: 500,
+    maxTokens: 800,
     responseFormat: "json_object",
     reasoningEffort: "medium",
   });
@@ -323,7 +372,6 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
     parsed = parseGroqResponse<RecommendResponse>(content);
   } catch (e) {
     console.error("[groq-strategy-assist] Parsing échoué:", e);
-    // Fallback: choisir la première option
     return new Response(
       JSON.stringify({
         response: JSON.stringify({
@@ -336,7 +384,6 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
     );
   }
 
-  // Validation des champs
   const result: RecommendResponse = {
     recommended_option_id:
       parsed.recommended_option_id ||
@@ -347,7 +394,6 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
     confidence: validateConfidence(parsed.confidence),
   };
 
-  // Vérifier que l'ID existe bien dans les options
   const exists = options.some((o: any) => o.id === result.recommended_option_id);
   if (!exists && options.length > 0) {
     result.recommended_option_id = options[0].id;
@@ -401,7 +447,7 @@ Justification:`;
       { role: "user", content: prompt },
     ],
     temperature: 0.2,
-    maxTokens: 300,
+    maxTokens: 600,
     responseFormat: "text",
     reasoningEffort: "low",
   });
@@ -477,17 +523,16 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
       { role: "user", content: prompt },
     ],
     temperature: 0.1,
-    maxTokens: 500,
+    maxTokens: 1500,
     responseFormat: "json_object",
-    reasoningEffort: "medium",
+    reasoningEffort: "low",
   });
 
   let parsed: SuggestRiskResponse;
   try {
     parsed = parseGroqResponse<SuggestRiskResponse>(content);
   } catch (e) {
-    console.error("[groq-strategy-assist] Parsing suggestion risques échoué:", e);
-    // Fallback: valeurs neutres
+    console.error("[groq-strategy-assist] Parsing suggestion risques échoué:", e, "contenu reçu:", content);
     return new Response(
       JSON.stringify({
         probabilite: 3,
@@ -499,7 +544,6 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
     );
   }
 
-  // Validation et clamp des valeurs
   const result: SuggestRiskResponse = {
     probabilite: validateRiskScore(parsed.probabilite, 3),
     impact: validateRiskScore(parsed.impact, 3),
@@ -520,30 +564,27 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
 // SERVEUR PRINCIPAL
 // ============================================================
 serve(async (req) => {
-  // CORS
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
-  // Vérification de la méthode
-  if (req.method !== "POST") {
-    return new Response(
-      JSON.stringify({ error: "Méthode non supportée. Utilisez POST." }),
-      { status: 405, headers: corsHeaders }
-    );
-  }
-
-  // Vérification de la clé API
-  if (!GROQ_API_KEY) {
-    console.error("[groq-strategy-assist] GROQ_API_KEY non configurée");
-    return new Response(
-      JSON.stringify({ error: "Service IA temporairement indisponible." }),
-      { status: 500, headers: corsHeaders }
-    );
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Parsing du body
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    if (!GROQ_API_KEY) {
+      console.error("[groq-strategy-assist] GROQ_API_KEY non configurée");
+      return new Response(
+        JSON.stringify({ error: "Service IA temporairement indisponible." }),
+        { status: 500, headers: corsHeaders }
+      );
+    }
+
+    if (req.method !== "POST") {
+      return new Response(
+        JSON.stringify({ error: "Méthode non supportée. Utilisez POST." }),
+        { status: 405, headers: corsHeaders }
+      );
+    }
+
     let body;
     try {
       body = await req.json();
@@ -570,7 +611,6 @@ serve(async (req) => {
       );
     }
 
-    // Validation de la taille des inputs
     try {
       validateInputSize(context);
     } catch (e) {
@@ -580,9 +620,8 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[groq-strategy-assist] action=${action}, model=${GROQ_MODEL}`);
+    console.log(`[groq-strategy-assist] action=${action}`);
 
-    // Routage des actions
     switch (action) {
       case "recommend":
         return await handleRecommend(context);
@@ -599,7 +638,6 @@ serve(async (req) => {
   } catch (error) {
     console.error("[groq-strategy-assist] Erreur générale:", error);
 
-    // Gestion des erreurs spécifiques
     if (error instanceof GroqTimeoutError) {
       return new Response(
         JSON.stringify({ error: "Le service IA a mis trop de temps à répondre. Veuillez réessayer." }),
@@ -636,7 +674,6 @@ serve(async (req) => {
       );
     }
 
-    // Erreur générique
     return new Response(
       JSON.stringify({
         error: "Service IA temporairement indisponible. Veuillez réessayer.",

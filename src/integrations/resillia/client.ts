@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 export const RESILLIA_SUPABASE_PROJECT_ID = "ipbfddubgzypgfkfkvbb";
 export const RESILLIA_SUPABASE_URL = "https://ipbfddubgzypgfkfkvbb.supabase.co";
 export const RESILLIA_SUPABASE_PUBLISHABLE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlwYmZkZHViZ3p5cGdma2ZrdmJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NDUzMTMsImV4cCI6MjA5NDMyMTMxM30.rs7nGHUnX_F-kRymZQ00FkuNsDCCLT5tB0DHb53jCAQ";
+  "sb_publishable_DeaCFb2Z8zBaSl2B8guQIg_foy92Tdr";
 
 // Le schéma de ce projet est géré hors de Lovable (dépôt Git de production),
 // les types générés localement ne s'appliquent donc pas : client non typé volontairement.

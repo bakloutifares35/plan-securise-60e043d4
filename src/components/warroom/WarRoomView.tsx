@@ -15,6 +15,7 @@ import {
   ArrowLeft, Send, Plus, CheckCircle2, Circle, Clock, FileText,
   MessageSquare, Target, Layers, Lock, AlertTriangle, Megaphone, Trash2,
   Users, Edit3, Building2, User, Calendar, Info, Check, Sparkles,
+  ChevronDown, ChevronUp, FileDown, CheckSquare, Square, Timer, ListChecks,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -24,7 +25,7 @@ import {
   formatDateTime, elapsedSince, getInitials, getAvatarColor,
   type Severite, type EntryType, type CommType, type CellRole,
 } from "./warroomHelpers";
-import { AiCrisisRecommendations, type AiProcessContext } from "./AiCrisisRecommendations";
+import { useAiSuggestions, type AiProcessContext } from "./AiCrisisRecommendations";
 
 // ============================================================
 // TYPES
@@ -99,6 +100,142 @@ type Retex = {
 };
 
 // ============================================================
+// HELPERS
+// ============================================================
+const parseActionStatusEntry = (
+  contenu: string,
+): { description: string; statut: string } | null => {
+  const m = contenu.match(/^Action\s*[«"]([\s\S]+?)[»"]\s*→\s*(.+?)\s*$/);
+  if (!m) return null;
+  return { description: m[1].trim(), statut: m[2].trim() };
+};
+
+const ACTION_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
+  "À faire": { bg: "#F1EFE8", text: COLORS.navy + "80" },
+  "En cours": { bg: "#FFF3E0", text: "#B76E1D" },
+  "Fait": { bg: "#E8F5E9", text: COLORS.forest },
+};
+
+const STATUS_ORDER = ["À faire", "En cours", "Fait"] as const;
+type ActionStatus = typeof STATUS_ORDER[number];
+
+const shortElapsed = (dateStr: string): string => {
+  const t = new Date(dateStr).getTime();
+  if (Number.isNaN(t)) return "—";
+  const ms = Math.max(0, Date.now() - t);
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h${String(min % 60).padStart(2, "0")}`;
+  const d = Math.floor(h / 24);
+  return `${d}j ${h % 24}h`;
+};
+
+// ============================================================
+// Segmented control 3 états
+// ============================================================
+const ActionStatusSegments = ({
+  current, disabled, onChange,
+}: {
+  current: string;
+  disabled: boolean;
+  onChange: (s: ActionStatus) => void;
+}) => {
+  return (
+    <div className="flex items-center gap-1 flex-shrink-0">
+      {STATUS_ORDER.map((s) => {
+        const style = ACTION_STATUS_STYLE[s];
+        const isActive = current === s;
+        return (
+          <button
+            key={s}
+            type="button"
+            disabled={disabled}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!disabled && !isActive) onChange(s);
+            }}
+            className={cn(
+              "rounded-md text-[10px] font-semibold transition-all duration-200 border",
+              disabled
+                ? "cursor-not-allowed opacity-50"
+                : isActive
+                  ? "cursor-default"
+                  : "cursor-pointer hover:opacity-90 hover:shadow-sm"
+            )}
+            style={{
+              minWidth: 62,
+              height: 24,
+              padding: "0 6px",
+              backgroundColor: isActive ? style.text : "transparent",
+              color: isActive ? "#FFFFFF" : style.text + "AA",
+              borderColor: isActive ? style.text : COLORS.border,
+            }}
+            title={`Marquer : ${s}`}
+          >
+            {s}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// ============================================================
+// Mini onglets pills
+// ============================================================
+const BlockTabs = ({
+  active, onChange, tabs,
+}: {
+  active: string;
+  onChange: (k: string) => void;
+  tabs: { key: string; label: string; count?: number }[];
+}) => {
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {tabs.map((t) => {
+        const isActive = active === t.key;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => onChange(t.key)}
+            className={cn(
+              "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 cursor-pointer flex items-center gap-1.5",
+              !isActive && "hover:shadow-sm"
+            )}
+            style={{
+              backgroundColor: isActive ? COLORS.forest : "transparent",
+              color: isActive ? "#FFFFFF" : COLORS.navy + "80",
+              border: `1px solid ${isActive ? COLORS.forest : COLORS.border}`,
+            }}
+          >
+            {t.key.toLowerCase().includes("suggestions") && (
+              <Sparkles
+                className="h-3 w-3"
+                style={{ color: isActive ? "#FFFFFF" : COLORS.forest }}
+              />
+            )}
+            {t.label}
+            {typeof t.count === "number" && (
+              <span
+                className="text-[9.5px] font-bold tabular-nums px-1.5 rounded-full"
+                style={{
+                  backgroundColor: isActive ? "#FFFFFF22" : COLORS.forest + "15",
+                  color: isActive ? "#FFFFFF" : COLORS.forest,
+                }}
+              >
+                {t.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// ============================================================
 // RAIL DE PROGRESSION
 // ============================================================
 const CrisisRail = ({
@@ -115,7 +252,6 @@ const CrisisRail = ({
     { label: "Communication", sub: hasComms ? "Émise" : "À rédiger", done: hasComms },
     { label: "Clôture", sub: isClosed ? "Clôturé" : "RETEX requis", done: isClosed },
   ];
-
   const currentIdx = steps.findIndex((s) => !s.done);
   const activeIdx = currentIdx === -1 ? steps.length - 1 : currentIdx;
 
@@ -184,19 +320,11 @@ const CrisisRail = ({
 };
 
 // ============================================================
-// SIDE BLOCK — avec hauteur fixe optionnelle
+// SIDE BLOCK
 // ============================================================
 const SideBlock = ({
-  number,
-  icon: Icon,
-  title,
-  count,
-  onAdd,
-  addDisabled,
-  addTitle,
-  tone = "neutral",
-  fixedHeight,
-  children,
+  number, icon: Icon, title, count, onAdd, addDisabled, addTitle,
+  tone = "neutral", fixedHeight, headerExtra, children,
 }: {
   number: string;
   icon: any;
@@ -207,6 +335,7 @@ const SideBlock = ({
   addTitle?: string;
   tone?: "neutral" | "warm" | "cool" | "rose";
   fixedHeight?: string;
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) => {
   const tones = {
@@ -257,7 +386,7 @@ const SideBlock = ({
             disabled={addDisabled}
             className={cn(
               "h-7 w-7 p-0 rounded-md flex items-center justify-center transition-colors",
-              addDisabled ? "opacity-40 cursor-not-allowed" : "hover:bg-white"
+              addDisabled ? "opacity-40 cursor-not-allowed" : "hover:bg-white cursor-pointer"
             )}
             style={{ color: COLORS.navy + "80" }}
             title={addTitle}
@@ -266,6 +395,16 @@ const SideBlock = ({
           </button>
         )}
       </div>
+
+      {headerExtra && (
+        <div
+          className="px-3 py-2 border-b flex-shrink-0"
+          style={{ borderColor: COLORS.border + "80", backgroundColor: "#FFFFFF" }}
+        >
+          {headerExtra}
+        </div>
+      )}
+
       <div className="p-3.5 flex-1 min-h-0 overflow-hidden flex flex-col">
         {children}
       </div>
@@ -308,6 +447,383 @@ const EmptyState = ({
     </div>
   );
 };
+
+// ============================================================
+// FONCTIONNALITÉ 1 — Barre de résumé exécutif
+// ============================================================
+const CrisisSummaryBar = ({
+  incident,
+  actions,
+  communications,
+  hasRetex,
+}: {
+  incident: Incident;
+  actions: IncidentAction[];
+  communications: IncidentCommunication[];
+  hasRetex: boolean;
+}) => {
+  const pendingActions = actions.filter(
+    (a) => a.statut === "À faire" || a.statut === "En cours"
+  ).length;
+
+  const lastSentComm = useMemo(() => {
+    const sent = communications.filter((c) => c.statut === "Envoyé");
+    if (sent.length === 0) return null;
+    return sent.sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0];
+  }, [communications]);
+
+  const items: { icon: any; label: string; color?: string }[] = [
+    {
+      icon: Clock,
+      label: `Durée : ${shortElapsed(incident.date_heure_debut)}`,
+    },
+    {
+      icon: ListChecks,
+      label:
+        pendingActions > 0
+          ? `${pendingActions} action${pendingActions > 1 ? "s" : ""} en attente`
+          : "Aucune action en attente",
+      color: pendingActions > 0 ? "#B76E1D" : undefined,
+    },
+    {
+      icon: FileText,
+      label: hasRetex ? "RETEX prêt" : "RETEX à compléter",
+      color: hasRetex ? COLORS.forest : undefined,
+    },
+    {
+      icon: Megaphone,
+      label: lastSentComm
+        ? `Dernière comm. il y a ${shortElapsed(lastSentComm.created_at)}`
+        : "Aucune communication envoyée",
+    },
+  ];
+
+  return (
+    <div
+      className="rounded-xl px-4 py-2.5 flex items-center gap-3 overflow-x-auto whitespace-nowrap"
+      style={{
+        backgroundColor: COLORS.cream,
+        border: `1px solid ${COLORS.border}`,
+        minHeight: 46,
+      }}
+    >
+      <span
+        className="text-[10px] font-bold uppercase tracking-wider flex-shrink-0"
+        style={{ color: COLORS.forest }}
+      >
+        Aperçu
+      </span>
+      <span className="w-px h-4 flex-shrink-0" style={{ backgroundColor: COLORS.border }} />
+      {items.map((it, i) => {
+        const Icon = it.icon;
+        return (
+          <div key={i} className="flex items-center gap-2 flex-shrink-0">
+            <Icon
+              className="h-3.5 w-3.5"
+              style={{ color: it.color || COLORS.navy + "70" }}
+            />
+            <span
+              className="text-[11.5px] font-medium"
+              style={{ color: it.color || COLORS.navy }}
+            >
+              {it.label}
+            </span>
+            {i < items.length - 1 && (
+              <span
+                className="text-[11.5px] mx-1"
+                style={{ color: COLORS.navy + "40" }}
+              >
+                ·
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ============================================================
+// FONCTIONNALITÉ 3 — Checklist de premiers réflexes
+// ============================================================
+const getFirstReflexes = (type: string | null): string[] => {
+  const t = (type || "").toLowerCase();
+  if (t.includes("cyber")) {
+    return [
+      "Isoler les systèmes affectés du réseau",
+      "Ne pas éteindre les machines compromises (préserver les preuves)",
+      "Notifier le RSSI et la Direction",
+      "Vérifier les sauvegardes disponibles",
+    ];
+  }
+  if (t.includes("panne")) {
+    return [
+      "Identifier le périmètre exact de la panne",
+      "Activer le plan de continuité concerné",
+      "Informer les utilisateurs impactés",
+    ];
+  }
+  return [
+    "Confirmer la portée de l'incident",
+    "Constituer la cellule de crise",
+    "Ouvrir la main courante et documenter chaque action",
+  ];
+};
+
+const FirstReflexes = ({
+  incident,
+  entriesCount,
+}: {
+  incident: Incident;
+  entriesCount: number;
+}) => {
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const toggle = (i: number) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
+  const reflexes = useMemo(() => getFirstReflexes(incident.type), [incident.type]);
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{
+        backgroundColor: COLORS.cream,
+        border: `1px solid ${COLORS.border}`,
+      }}
+    >
+      <div
+        className="px-4 py-2.5 border-b flex items-center gap-2.5"
+        style={{ borderColor: COLORS.border, backgroundColor: COLORS.forest + "08" }}
+      >
+        <div
+          className="flex h-7 w-7 items-center justify-center rounded-lg flex-shrink-0"
+          style={{ backgroundColor: COLORS.forest + "18" }}
+        >
+          <Timer className="h-4 w-4" style={{ color: COLORS.forest }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-[13px] font-semibold leading-tight"
+            style={{ color: COLORS.navy, fontFamily: "'Playfair Display', serif" }}
+          >
+            Premiers réflexes
+          </p>
+          <p className="text-[10px] mt-0.5" style={{ color: COLORS.navy + "60" }}>
+            Crise récente — cochez au fur et à mesure
+          </p>
+        </div>
+        <span
+          className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+          style={{
+            backgroundColor: COLORS.forest + "15",
+            color: COLORS.forest,
+          }}
+        >
+          {checked.size}/{reflexes.length}
+        </span>
+      </div>
+      <div className="p-3 space-y-1.5">
+        {reflexes.map((label, i) => {
+          const isChecked = checked.has(i);
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => toggle(i)}
+              className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-md text-left transition-colors duration-200 hover:bg-white cursor-pointer"
+              style={{ backgroundColor: "#FFFFFF" }}
+            >
+              {isChecked ? (
+                <CheckSquare className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: COLORS.forest }} />
+              ) : (
+                <Square className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: COLORS.navy + "50" }} />
+              )}
+              <span
+                className={cn(
+                  "text-[12px] leading-snug",
+                  isChecked && "line-through"
+                )}
+                style={{
+                  color: isChecked ? COLORS.navy + "60" : COLORS.navy,
+                }}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// FONCTIONNALITÉ 2 — Impression du rapport (window.print)
+// ============================================================
+const PrintReport = ({
+  incident,
+  entries,
+  actions,
+  communications,
+  retex,
+}: {
+  incident: Incident;
+  entries: MainCouranteEntry[];
+  actions: IncidentAction[];
+  communications: IncidentCommunication[];
+  retex: Retex | null;
+}) => {
+  const sev = SEV_PASTEL[incident.niveau_severite];
+
+  return (
+    <div
+      id="wr-print-report"
+      className="hidden"
+      style={{ color: "#172030" }}
+    >
+      <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, margin: "0 0 6px" }}>
+        Rapport de crise — {incident.titre}
+      </h1>
+      <table style={{ borderCollapse: "collapse", marginBottom: 16, fontSize: 11 }}>
+        <tbody>
+          <tr>
+            <td style={{ padding: "2px 8px 2px 0", fontWeight: 600 }}>Sévérité :</td>
+            <td style={{ padding: "2px 8px 2px 0" }}>{incident.niveau_severite}</td>
+            <td style={{ padding: "2px 8px 2px 16px", fontWeight: 600 }}>Statut :</td>
+            <td style={{ padding: "2px 8px 2px 0" }}>{incident.statut}</td>
+          </tr>
+          <tr>
+            <td style={{ padding: "2px 8px 2px 0", fontWeight: 600 }}>Type :</td>
+            <td style={{ padding: "2px 8px 2px 0" }}>{incident.type || "—"}</td>
+            <td style={{ padding: "2px 8px 2px 16px", fontWeight: 600 }}>Déclarant :</td>
+            <td style={{ padding: "2px 8px 2px 0" }}>{incident.declarant || "—"}</td>
+          </tr>
+          <tr>
+            <td style={{ padding: "2px 8px 2px 0", fontWeight: 600 }}>Début :</td>
+            <td style={{ padding: "2px 8px 2px 0" }}>{formatDateTime(incident.date_heure_debut)}</td>
+            <td style={{ padding: "2px 8px 2px 16px", fontWeight: 600 }}>Fin :</td>
+            <td style={{ padding: "2px 8px 2px 0" }}>
+              {incident.date_heure_fin ? formatDateTime(incident.date_heure_fin) : "En cours"}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {incident.description && (
+        <>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 14, margin: "12px 0 4px", borderBottom: "1px solid #999", paddingBottom: 2 }}>
+            Description
+          </h2>
+          <p style={{ fontSize: 11, marginBottom: 12 }}>{incident.description}</p>
+        </>
+      )}
+
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 14, margin: "12px 0 4px", borderBottom: "1px solid #999", paddingBottom: 2 }}>
+        Main courante ({entries.length})
+      </h2>
+      {entries.length === 0 ? (
+        <p style={{ fontSize: 11, fontStyle: "italic" }}>Aucune entrée.</p>
+      ) : (
+        <ul style={{ paddingLeft: 16, fontSize: 11 }}>
+          {[...entries]
+            .sort((a, b) => new Date(a.horodatage).getTime() - new Date(b.horodatage).getTime())
+            .map((e) => (
+              <li key={e.id} style={{ marginBottom: 3 }}>
+                <strong>{formatDateTime(e.horodatage)}</strong> · [{e.type}]{" "}
+                {e.auteur ? `${e.auteur} — ` : ""}
+                {e.contenu}
+              </li>
+            ))}
+        </ul>
+      )}
+
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 14, margin: "12px 0 4px", borderBottom: "1px solid #999", paddingBottom: 2 }}>
+        Actions ({actions.length})
+      </h2>
+      {actions.length === 0 ? (
+        <p style={{ fontSize: 11, fontStyle: "italic" }}>Aucune action.</p>
+      ) : (
+        <ul style={{ paddingLeft: 16, fontSize: 11 }}>
+          {actions.map((a) => (
+            <li key={a.id} style={{ marginBottom: 3 }}>
+              <strong>[{a.statut}]</strong> {a.description}
+              {a.responsable ? ` — ${a.responsable}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 14, margin: "12px 0 4px", borderBottom: "1px solid #999", paddingBottom: 2 }}>
+        Communications ({communications.length})
+      </h2>
+      {communications.length === 0 ? (
+        <p style={{ fontSize: 11, fontStyle: "italic" }}>Aucune communication.</p>
+      ) : (
+        <ul style={{ paddingLeft: 16, fontSize: 11 }}>
+          {communications.map((c) => (
+            <li key={c.id} style={{ marginBottom: 6 }}>
+              <strong>{c.objet}</strong> · {c.type || "—"} · {c.statut} ·{" "}
+              {formatDateTime(c.created_at)}
+              {c.auteur ? ` · ${c.auteur}` : ""}
+              {c.message && (
+                <div style={{ marginTop: 2, fontStyle: "italic", color: "#333" }}>
+                  {c.message}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 14, margin: "12px 0 4px", borderBottom: "1px solid #999", paddingBottom: 2 }}>
+        RETEX
+      </h2>
+      {!retex || !retex.resume?.trim() ? (
+        <p style={{ fontSize: 11, fontStyle: "italic" }}>RETEX non renseigné.</p>
+      ) : (
+        <div style={{ fontSize: 11 }}>
+          <p><strong>Résumé :</strong> {retex.resume}</p>
+          <p><strong>Causes racines :</strong> {retex.causes_racines || "—"}</p>
+          <p><strong>Points positifs :</strong> {retex.points_positifs || "—"}</p>
+          <p><strong>Points d'amélioration :</strong> {retex.points_amelioration || "—"}</p>
+          <p><strong>Actions correctives :</strong> {retex.actions_correctives || "—"}</p>
+        </div>
+      )}
+
+      <p style={{ fontSize: 9, color: "#666", marginTop: 20 }}>
+        Rapport généré le {formatDateTime(new Date().toISOString())} · Sévérité : {sev.text}
+      </p>
+    </div>
+  );
+};
+
+const PrintStyles = () => (
+  <style>{`
+    @media print {
+      body * { visibility: hidden !important; }
+      #wr-print-report, #wr-print-report * { visibility: visible !important; }
+      #wr-print-report {
+        display: block !important;
+        position: absolute;
+        left: 0; top: 0;
+        width: 100%;
+        padding: 20mm 15mm;
+        background: #FFFFFF;
+        color: #172030;
+        font-family: 'Inter', sans-serif;
+      }
+      @page { size: A4; margin: 0; }
+    }
+  `}</style>
+);
 
 // ============================================================
 // COMPOSANT PRINCIPAL
@@ -373,6 +889,15 @@ export const WarRoomView = ({
   const [mcAuteur, setMcAuteur] = useState(currentUser || "");
   const [mcSubmitting, setMcSubmitting] = useState(false);
   const [mcFilter, setMcFilter] = useState<"all" | EntryType>("all");
+  const [expandedActionEntries, setExpandedActionEntries] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedActionEntries((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const filteredEntries = useMemo(() => {
     if (mcFilter === "all") return entries;
@@ -385,10 +910,8 @@ export const WarRoomView = ({
     return counts;
   }, [entries]);
 
-  // Détecte si l'auteur d'une entrée est "Inconnu" (ou vide) → affiche Copilote IA si l'entrée est de type Action et a été créée automatiquement
   const isCopiloteEntry = (entry: MainCouranteEntry): boolean => {
     if (entry.auteur && entry.auteur.trim() && entry.auteur.trim() !== "Inconnu") return false;
-    // Heuristique : si l'auteur est Inconnu et le contenu commence par "Action créée" ou "Plan activé", c'est probablement le copilote
     const c = entry.contenu.toLowerCase();
     return c.startsWith("action créée") || c.startsWith("plan activé");
   };
@@ -404,6 +927,51 @@ export const WarRoomView = ({
     setMcSubmitting(false);
     if (ok) setMcContenu("");
   };
+
+  // ===== ONGLETS =====
+  const [actionsTab, setActionsTab] = useState<"actions" | "suggestions">("actions");
+  const [plansTab, setPlansTab] = useState<"plans" | "suggestions">("plans");
+
+  // ===== SUGGESTIONS IA =====
+  const aiSuggestions = useAiSuggestions({
+    incidentId: incident.id,
+    typeIncident: incident.type,
+    severite: incident.niveau_severite,
+    titre: incident.titre,
+    description: incident.description,
+    processus: impactedProcessus ?? [],
+    plans: (plans ?? []).map((p: any) => ({ id: p.id, titre: p.titre })),
+  });
+
+  const existingActionDescriptions = useMemo(
+    () => new Set(actions.map((a) => a.description.trim().toLowerCase())),
+    [actions]
+  );
+  const existingPlanLibelles = useMemo(
+    () =>
+      new Set(
+        plansLies.map((p) =>
+          (p.libelle || plans.find((x) => x.id === p.plan_id)?.titre || "").trim().toLowerCase()
+        )
+      ),
+    [plansLies, plans]
+  );
+
+  const pendingActionSuggestions = useMemo(
+    () =>
+      aiSuggestions.actions.filter(
+        (s) => !existingActionDescriptions.has(s.description.trim().toLowerCase())
+      ),
+    [aiSuggestions.actions, existingActionDescriptions]
+  );
+
+  const pendingPlanSuggestions = useMemo(
+    () =>
+      aiSuggestions.plans.filter(
+        (s) => !existingPlanLibelles.has((s.libelle || "").trim().toLowerCase())
+      ),
+    [aiSuggestions.plans, existingPlanLibelles]
+  );
 
   // ===== ACTIONS =====
   const [actionDialog, setActionDialog] = useState(false);
@@ -426,9 +994,27 @@ export const WarRoomView = ({
     }
   };
 
-  const cycleAction = async (a: IncidentAction) => {
-    const next = a.statut === "À faire" ? "En cours" : a.statut === "En cours" ? "Fait" : "À faire";
-    await setActionStatut(a, next);
+  const setActionStatutDirect = async (a: IncidentAction, statut: ActionStatus) => {
+    if (a.statut === statut) return;
+    await setActionStatut(a, statut);
+  };
+
+  const handleAddAiAction = async (s: { description: string; priorite?: string | null }) => {
+    const ok = await addAction({
+      description: s.description,
+      responsable: undefined,
+      echeance: null,
+      statut: "À faire",
+    });
+    if (ok) setActionsTab("actions");
+  };
+
+  const handleAddAiPlan = async (s: { plan_id?: string | null; libelle?: string | null }) => {
+    const ok = await addPlan({
+      plan_id: s.plan_id || null,
+      libelle: s.libelle || null,
+    });
+    if (ok) setPlansTab("plans");
   };
 
   // ===== PLANS =====
@@ -500,8 +1086,37 @@ export const WarRoomView = ({
   const hasActions = actions.length > 0;
   const hasComms = communications.length > 0;
 
+  // ============================================================
+  // FONCTIONNALITÉ 3 : détection "crise récente"
+  // ============================================================
+  const isRecentCrisis = useMemo(() => {
+    if (isClosed) return false;
+    const t = new Date(incident.date_heure_debut).getTime();
+    if (Number.isNaN(t)) return false;
+    const minutes = (Date.now() - t) / 60000;
+    return minutes >= 0 && minutes < 30 && entries.length < 3;
+  }, [incident.date_heure_debut, incident.statut, entries.length, isClosed]);
+
+  // ============================================================
+  // FONCTIONNALITÉ 2 : export / impression du rapport
+  // ============================================================
+  const handleExportReport = () => {
+    window.print();
+  };
+
   return (
     <div className="space-y-4">
+      {/* Styles d'impression */}
+      <PrintStyles />
+      {/* Bloc caché contenant le rapport complet pour l'impression */}
+      <PrintReport
+        incident={incident}
+        entries={entries}
+        actions={actions}
+        communications={communications}
+        retex={retex}
+      />
+
       {/* ============================================================
           BANDEAU DE CRISE
           ============================================================ */}
@@ -525,7 +1140,7 @@ export const WarRoomView = ({
               variant="ghost"
               size="sm"
               onClick={onBack}
-              className="self-start hover:bg-[#F8F6F2] -ml-2"
+              className="self-start hover:bg-[#F8F6F2] -ml-2 transition-colors duration-200"
               style={{ color: COLORS.navy + "80" }}
             >
               <ArrowLeft className="h-4 w-4 mr-1" /> Retour
@@ -588,12 +1203,22 @@ export const WarRoomView = ({
               </div>
             </div>
 
-            <div className="flex gap-2 flex-shrink-0 self-start">
+            <div className="flex gap-2 flex-shrink-0 self-start flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportReport}
+                className="h-8 transition-all duration-200 hover:shadow-sm cursor-pointer"
+                style={{ borderColor: COLORS.forest, color: COLORS.forest }}
+                title="Générer et imprimer le rapport de crise (PDF via le navigateur)"
+              >
+                <FileDown className="h-3.5 w-3.5 mr-1" /> Exporter
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={onOpenTimeline}
-                className="h-8"
+                className="h-8 transition-all duration-200 hover:shadow-sm cursor-pointer"
                 style={{ borderColor: COLORS.border, color: COLORS.navy }}
               >
                 <Clock className="h-3.5 w-3.5 mr-1" /> Timeline
@@ -602,7 +1227,7 @@ export const WarRoomView = ({
                 variant="outline"
                 size="sm"
                 onClick={onOpenRetex}
-                className="h-8"
+                className="h-8 transition-all duration-200 hover:shadow-sm cursor-pointer"
                 style={{
                   borderColor: hasRetex ? COLORS.forest : COLORS.border,
                   color: hasRetex ? COLORS.forest : COLORS.navy,
@@ -616,6 +1241,23 @@ export const WarRoomView = ({
           </div>
         </div>
       </div>
+
+      {/* ============================================================
+          FONCTIONNALITÉ 1 : BARRE DE RÉSUMÉ EXÉCUTIF
+          ============================================================ */}
+      <CrisisSummaryBar
+        incident={incident}
+        actions={actions}
+        communications={communications}
+        hasRetex={hasRetex}
+      />
+
+      {/* ============================================================
+          FONCTIONNALITÉ 3 : CHECKLIST PREMIERS RÉFLEXES
+          ============================================================ */}
+      {isRecentCrisis && (
+        <FirstReflexes incident={incident} entriesCount={entries.length} />
+      )}
 
       {/* ============================================================
           LAYOUT PRINCIPAL
@@ -657,7 +1299,7 @@ export const WarRoomView = ({
               <div className="flex gap-1.5 flex-wrap">
                 <button
                   onClick={() => setMcFilter("all")}
-                  className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all"
+                  className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 hover:shadow-sm cursor-pointer"
                   style={{
                     backgroundColor: mcFilter === "all" ? COLORS.navy : "#FFFFFF",
                     color: mcFilter === "all" ? "#FFFFFF" : COLORS.navy + "70",
@@ -675,7 +1317,7 @@ export const WarRoomView = ({
                     <button
                       key={t}
                       onClick={() => setMcFilter(t)}
-                      className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1.5"
+                      className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 hover:shadow-sm cursor-pointer flex items-center gap-1.5"
                       style={{
                         backgroundColor: active ? style.text : "#FFFFFF",
                         color: active ? "#FFFFFF" : style.text,
@@ -696,7 +1338,7 @@ export const WarRoomView = ({
             <div className="p-3 flex-1">
               <div
                 className="space-y-1.5 overflow-y-auto pr-1"
-                style={{ maxHeight: "480px" }}
+                style={{ maxHeight: "380px" }}
               >
                 {filteredEntries.length === 0 ? (
                   <p className="text-sm italic text-center py-6" style={{ color: COLORS.navy + "50" }}>
@@ -706,10 +1348,112 @@ export const WarRoomView = ({
                   filteredEntries.map((entry) => {
                     const style = ENTRY_TYPE_STYLE[entry.type] || ENTRY_TYPE_STYLE.Information;
                     const fromCopilote = isCopiloteEntry(entry);
+                    const parsed = parseActionStatusEntry(entry.contenu);
+                    const isExpanded = expandedActionEntries.has(entry.id);
+
+                    if (parsed) {
+                      const statusStyle = ACTION_STATUS_STYLE[parsed.statut] || {
+                        bg: "#F1EFE8",
+                        text: COLORS.navy + "80",
+                      };
+                      const isLong = parsed.description.length > 60;
+                      const preview = isLong
+                        ? parsed.description.slice(0, 60).trimEnd() + "…"
+                        : parsed.description;
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex items-start gap-3 px-3 py-2 rounded-lg transition-colors duration-200 hover:bg-[#F0EEE9] cursor-default"
+                          style={{
+                            borderLeft: `3px solid ${fromCopilote ? COLORS.forest : style.text}`,
+                            backgroundColor: fromCopilote ? COLORS.forest + "06" : "#FAFAF9",
+                          }}
+                        >
+                          <div className="flex flex-col items-start gap-0.5 flex-shrink-0 w-16">
+                            <span
+                              className="text-[10px] font-mono font-medium tabular-nums"
+                              style={{ color: COLORS.navy + "80" }}
+                            >
+                              {new Date(entry.horodatage).toLocaleTimeString("fr-FR", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            <span className="text-[9px] font-mono" style={{ color: COLORS.navy + "40" }}>
+                              {new Date(entry.horodatage).toLocaleDateString("fr-FR", {
+                                day: "2-digit",
+                                month: "2-digit",
+                              })}
+                            </span>
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
+                                className="text-[9px] border-0 font-semibold uppercase tracking-wider flex-shrink-0"
+                                style={{ backgroundColor: style.bg, color: style.text }}
+                              >
+                                {entry.type}
+                              </Badge>
+                              <span
+                                className="text-[12.5px] leading-snug truncate"
+                                style={{ color: COLORS.navy }}
+                                title={parsed.description}
+                              >
+                                {preview}
+                              </span>
+                              <span className="text-[11px] flex-shrink-0" style={{ color: COLORS.navy + "40" }}>
+                                →
+                              </span>
+                              <span
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                style={{ backgroundColor: statusStyle.bg, color: statusStyle.text }}
+                              >
+                                {parsed.statut}
+                              </span>
+                              {isLong && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpanded(entry.id)}
+                                  className="ml-auto flex items-center gap-0.5 text-[10px] font-medium transition-colors cursor-pointer hover:underline"
+                                  style={{ color: COLORS.forest }}
+                                  title={isExpanded ? "Réduire" : "Voir plus"}
+                                >
+                                  {isExpanded ? (
+                                    <>
+                                      <ChevronUp className="h-3 w-3" />
+                                      Réduire
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="h-3 w-3" />
+                                      Voir plus
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+
+                            {isExpanded && isLong && (
+                              <p
+                                className="text-[12px] leading-relaxed whitespace-pre-wrap break-words mt-2 pl-1 border-l-2"
+                                style={{
+                                  color: COLORS.navy + "CC",
+                                  borderColor: COLORS.forest + "40",
+                                }}
+                              >
+                                {parsed.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
                       <div
                         key={entry.id}
-                        className="flex items-start gap-3 p-3 rounded-lg transition-colors hover:bg-[#FAF9F6]"
+                        className="flex items-start gap-3 p-3 rounded-lg transition-colors duration-200 hover:bg-[#F0EEE9] cursor-default"
                         style={{
                           borderLeft: `3px solid ${fromCopilote ? COLORS.forest : style.text}`,
                           backgroundColor: fromCopilote ? COLORS.forest + "06" : "#FAFAF9",
@@ -806,7 +1550,7 @@ export const WarRoomView = ({
                     <Button
                       onClick={submitMc}
                       disabled={!mcContenu.trim() || mcSubmitting}
-                      className="h-9"
+                      className="h-9 transition-all duration-200 hover:shadow-md cursor-pointer"
                       style={{ backgroundColor: COLORS.forest, color: "white" }}
                     >
                       <Send className="h-3.5 w-3.5 mr-1.5" />
@@ -901,27 +1645,14 @@ export const WarRoomView = ({
               </div>
             </SideBlock>
           )}
-
-          <AiCrisisRecommendations
-            incidentId={incident.id}
-            typeIncident={incident.type}
-            severite={incident.niveau_severite}
-            titre={incident.titre}
-            description={incident.description}
-            processus={impactedProcessus ?? []}
-            plans={(plans ?? []).map((p: any) => ({ id: p.id, titre: p.titre }))}
-            disabled={isClosed}
-            onAddAction={(p) => addAction(p as Partial<IncidentAction>)}
-            onAddPlan={addPlan}
-          />
         </div>
       </div>
 
       {/* ============================================================
-          TROIS BLOCS Actions / Plans / Communication — HAUTEUR UNIFORME
+          TROIS BLOCS Actions / Plans / Communication
           ============================================================ */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-        {/* Actions */}
+        {/* BLOC ACTIONS (03) */}
         <SideBlock
           number="03"
           icon={Target}
@@ -931,70 +1662,134 @@ export const WarRoomView = ({
           addDisabled={isClosed}
           addTitle="Ajouter une action"
           tone="warm"
-          fixedHeight="h-[280px]"
-        >
-          {actions.length === 0 ? (
-            <EmptyState
-              icon={Target}
-              title="Aucune action en cours"
-              hint="Ajoutez-en une ou utilisez une suggestion IA"
-              tone="warm"
+          fixedHeight="h-[320px]"
+          headerExtra={
+            <BlockTabs
+              active={actionsTab}
+              onChange={(k) => setActionsTab(k as "actions" | "suggestions")}
+              tabs={[
+                { key: "actions", label: "Actions", count: actions.length },
+                {
+                  key: "suggestions",
+                  label: "Suggestions IA",
+                  count: pendingActionSuggestions.length,
+                },
+              ]}
             />
-          ) : (
-            <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
-              {actions.map((a) => {
-                const isDone = a.statut === "Fait";
-                return (
-                  <div
-                    key={a.id}
-                    className="flex items-start gap-2.5 px-2.5 py-2 rounded-md transition-colors hover:bg-[#FDF9F3]"
-                    style={{ opacity: isDone ? 0.55 : 1 }}
-                  >
-                    <button
-                      onClick={() => !isClosed && cycleAction(a)}
-                      disabled={isClosed}
-                      className="mt-0.5 flex-shrink-0"
+          }
+        >
+          {actionsTab === "actions" ? (
+            actions.length === 0 ? (
+              <EmptyState
+                icon={Target}
+                title="Aucune action en cours"
+                hint="Ajoutez-en une ou consultez les suggestions IA"
+                tone="warm"
+              />
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                {actions.map((a) => {
+                  const isDone = a.statut === "Fait";
+                  return (
+                    <div
+                      key={a.id}
+                      className="px-2.5 py-2 rounded-md transition-all duration-200 hover:bg-[#FDF9F3] hover:shadow-sm"
+                      style={{ opacity: isDone ? 0.75 : 1 }}
                     >
-                      {isDone ? (
-                        <CheckCircle2 className="h-4 w-4" style={{ color: COLORS.forest }} />
-                      ) : (
-                        <Circle className="h-4 w-4" style={{ color: COLORS.navy + "40" }} />
-                      )}
-                    </button>
-                    <div className="min-w-0 flex-1">
                       <p
                         className={cn("text-[12px] leading-snug", isDone && "line-through")}
                         style={{ color: COLORS.navy }}
                       >
                         {a.description}
                       </p>
-                      <div className="flex items-center gap-2 mt-1 text-[10px] flex-wrap" style={{ color: COLORS.navy + "60" }}>
-                        {a.responsable && <span>· {a.responsable}</span>}
-                        <span
-                          className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
-                          style={{
-                            backgroundColor:
-                              a.statut === "Fait" ? "#E8F5E9" :
-                              a.statut === "En cours" ? "#FFF3E0" :
-                              "#F1EFE8",
-                            color:
-                              a.statut === "Fait" ? COLORS.forest :
-                              a.statut === "En cours" ? "#B76E1D" :
-                              COLORS.navy + "70",
-                          }}
-                        >
-                          {a.statut}
-                        </span>
+                      {a.responsable && (
+                        <p className="text-[10px] mt-0.5" style={{ color: COLORS.navy + "60" }}>
+                          · {a.responsable}
+                        </p>
+                      )}
+                      <div className="mt-2">
+                        <ActionStatusSegments
+                          current={a.statut}
+                          disabled={isClosed}
+                          onChange={(s) => setActionStatutDirect(a, s)}
+                        />
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            pendingActionSuggestions.length === 0 ? (
+              <EmptyState
+                icon={Sparkles}
+                title="Aucune suggestion pour le moment"
+                hint="Le copilote IA n'a pas de nouvelle action à proposer"
+                tone="neutral"
+              />
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                {pendingActionSuggestions.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 px-2.5 py-2 rounded-md transition-all duration-200"
+                    style={{
+                      backgroundColor: COLORS.forest + "08",
+                      border: `1px solid ${COLORS.forest}25`,
+                    }}
+                  >
+                    <div className="mt-0.5 flex-shrink-0">
+                      <Sparkles className="h-3.5 w-3.5" style={{ color: COLORS.forest }} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="text-[11.5px] leading-snug"
+                        style={{ color: COLORS.navy }}
+                      >
+                        {s.description}
+                      </p>
+                      {s.priorite && (
+                        <span
+                          className="inline-block mt-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor:
+                              s.priorite === "Critique" ? "#FBE9E7"
+                                : s.priorite === "Haute" ? "#FFF3E0"
+                                : "#F1EFE8",
+                            color:
+                              s.priorite === "Critique" ? "#C62828"
+                                : s.priorite === "Haute" ? "#B76E1D"
+                                : COLORS.navy + "70",
+                          }}
+                        >
+                          {s.priorite}
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={isClosed}
+                      onClick={() => handleAddAiAction(s)}
+                      className={cn(
+                        "h-7 px-2.5 text-[11px] font-semibold flex-shrink-0 transition-all duration-200",
+                        !isClosed && "cursor-pointer hover:shadow-sm"
+                      )}
+                      style={{
+                        backgroundColor: isClosed ? COLORS.border : COLORS.forest,
+                        color: isClosed ? COLORS.navy + "60" : "white",
+                      }}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Ajouter
+                    </Button>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )
           )}
         </SideBlock>
 
-        {/* Plans */}
+        {/* BLOC PLANS (04) */}
         <SideBlock
           number="04"
           icon={Layers}
@@ -1004,51 +1799,122 @@ export const WarRoomView = ({
           addDisabled={isClosed}
           addTitle="Activer un plan"
           tone="cool"
-          fixedHeight="h-[280px]"
-        >
-          {plansLies.length === 0 ? (
-            <EmptyState
-              icon={Layers}
-              title="Aucun plan activé"
-              hint="Activez un plan PCA/PRA ou utilisez une suggestion IA"
-              tone="cool"
+          fixedHeight="h-[320px]"
+          headerExtra={
+            <BlockTabs
+              active={plansTab}
+              onChange={(k) => setPlansTab(k as "plans" | "suggestions")}
+              tabs={[
+                { key: "plans", label: "Plans", count: plansLies.length },
+                {
+                  key: "suggestions",
+                  label: "Suggestions IA",
+                  count: pendingPlanSuggestions.length,
+                },
+              ]}
             />
-          ) : (
-            <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
-              {plansLies.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-start gap-2.5 px-2.5 py-2 rounded-md transition-colors hover:bg-[#F6F8FA] group"
-                >
-                  <span
-                    className="flex h-5 w-5 items-center justify-center rounded-md flex-shrink-0 mt-0.5"
-                    style={{ backgroundColor: "#EDF2F7" }}
+          }
+        >
+          {plansTab === "plans" ? (
+            plansLies.length === 0 ? (
+              <EmptyState
+                icon={Layers}
+                title="Aucun plan activé"
+                hint="Activez un plan ou consultez les suggestions IA"
+                tone="cool"
+              />
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                {plansLies.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-start gap-2.5 px-2.5 py-2 rounded-md transition-all duration-200 hover:bg-[#F6F8FA] group"
                   >
-                    <Layers className="h-3 w-3" style={{ color: "#38536F" }} />
-                  </span>
-                  <p
-                    className="flex-1 min-w-0 text-[12px] leading-snug font-medium truncate"
-                    style={{ color: COLORS.navy }}
-                  >
-                    {p.libelle || plans.find((x) => x.id === p.plan_id)?.titre || "Plan référencé"}
-                  </p>
-                  {!isClosed && (
-                    <button
-                      onClick={() => removePlan(p.id)}
-                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ color: COLORS.navy + "40" }}
-                      title="Retirer ce plan"
+                    <span
+                      className="flex h-5 w-5 items-center justify-center rounded-md flex-shrink-0 mt-0.5"
+                      style={{ backgroundColor: "#EDF2F7" }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+                      <Layers className="h-3 w-3" style={{ color: "#38536F" }} />
+                    </span>
+                    <p
+                      className="flex-1 min-w-0 text-[12px] leading-snug font-medium truncate"
+                      style={{ color: COLORS.navy }}
+                    >
+                      {p.libelle || plans.find((x) => x.id === p.plan_id)?.titre || "Plan référencé"}
+                    </p>
+                    {!isClosed && (
+                      <button
+                        onClick={() => removePlan(p.id)}
+                        className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer hover:text-[#C62828]"
+                        style={{ color: COLORS.navy + "40" }}
+                        title="Retirer ce plan"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            pendingPlanSuggestions.length === 0 ? (
+              <EmptyState
+                icon={Sparkles}
+                title="Aucune suggestion pour le moment"
+                hint="Le copilote IA n'a pas de nouveau plan à proposer"
+                tone="neutral"
+              />
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto pr-1 flex-1">
+                {pendingPlanSuggestions.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 px-2.5 py-2 rounded-md transition-all duration-200"
+                    style={{
+                      backgroundColor: COLORS.forest + "08",
+                      border: `1px solid ${COLORS.forest}25`,
+                    }}
+                  >
+                    <div className="mt-0.5 flex-shrink-0">
+                      <Sparkles className="h-3.5 w-3.5" style={{ color: COLORS.forest }} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="text-[11.5px] font-medium leading-snug"
+                        style={{ color: COLORS.navy }}
+                      >
+                        {s.libelle || "Plan référencé"}
+                      </p>
+                      {s.raison && (
+                        <p className="text-[10px] mt-0.5 italic" style={{ color: COLORS.navy + "60" }}>
+                          {s.raison}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={isClosed}
+                      onClick={() => handleAddAiPlan(s)}
+                      className={cn(
+                        "h-7 px-2.5 text-[11px] font-semibold flex-shrink-0 transition-all duration-200",
+                        !isClosed && "cursor-pointer hover:shadow-sm"
+                      )}
+                      style={{
+                        backgroundColor: isClosed ? COLORS.border : COLORS.forest,
+                        color: isClosed ? COLORS.navy + "60" : "white",
+                      }}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Activer
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </SideBlock>
 
-        {/* Communication */}
+        {/* BLOC COMMUNICATION (05) */}
         <SideBlock
           number="05"
           icon={Megaphone}
@@ -1061,7 +1927,7 @@ export const WarRoomView = ({
           addDisabled={isClosed}
           addTitle="Rédiger une communication"
           tone="rose"
-          fixedHeight="h-[280px]"
+          fixedHeight="h-[320px]"
         >
           {communications.length === 0 ? (
             <div className="flex-1 overflow-y-auto">
@@ -1089,7 +1955,7 @@ export const WarRoomView = ({
                             setNewComm({ objet: "", message: "", type: t });
                             setCommDialog(true);
                           }}
-                          className="h-8 rounded-md text-[10.5px] font-medium border transition-all hover:shadow-sm hover:-translate-y-0.5 flex items-center justify-center"
+                          className="h-8 rounded-md text-[10.5px] font-medium border transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5 cursor-pointer flex items-center justify-center"
                           style={{
                             borderColor: style.text + "40",
                             color: style.text,
@@ -1116,7 +1982,7 @@ export const WarRoomView = ({
                 return (
                   <div
                     key={c.id}
-                    className="px-2.5 py-2 rounded-md transition-colors hover:bg-[#FDF6F5]"
+                    className="px-2.5 py-2 rounded-md transition-colors duration-200 hover:bg-[#FDF6F5]"
                   >
                     <div className="flex items-center gap-1.5 flex-wrap mb-1">
                       {typeStyle && (
@@ -1140,7 +2006,7 @@ export const WarRoomView = ({
                     {!isClosed && (c.statut === "Brouillon" || c.statut === "Validé") && (
                       <button
                         onClick={() => setCommunicationStatut(c, c.statut === "Brouillon" ? "Validé" : "Envoyé")}
-                        className="text-[10px] mt-1 font-medium hover:underline"
+                        className="text-[10px] mt-1 font-medium hover:underline transition-colors duration-200 cursor-pointer"
                         style={{ color: COLORS.forest }}
                       >
                         {c.statut === "Brouillon" ? "Marquer comme validé" : "Marquer comme envoyé"}
@@ -1155,7 +2021,7 @@ export const WarRoomView = ({
       </div>
 
       {/* ============================================================
-          RETEX — padding resserré
+          RETEX
           ============================================================ */}
       <div
         className="rounded-2xl overflow-hidden bg-white"
@@ -1308,7 +2174,7 @@ export const WarRoomView = ({
                 <Button
                   variant="outline"
                   onClick={onOpenRetex}
-                  className="h-8"
+                  className="h-8 transition-all duration-200 hover:shadow-sm cursor-pointer"
                   style={{ borderColor: COLORS.forest, color: COLORS.forest }}
                 >
                   <Edit3 className="h-3.5 w-3.5 mr-1.5" />
@@ -1319,7 +2185,7 @@ export const WarRoomView = ({
                 onClick={closeIncident}
                 disabled={!hasRetex || isClosed || closing}
                 title={!hasRetex ? "RETEX obligatoire avant clôture" : undefined}
-                className="font-medium h-8"
+                className="font-medium h-8 transition-all duration-200 hover:shadow-md"
                 style={{
                   backgroundColor: hasRetex && !isClosed ? COLORS.forest : COLORS.border,
                   color: hasRetex && !isClosed ? "white" : COLORS.navy + "70",
@@ -1447,7 +2313,7 @@ export const WarRoomView = ({
                       key={t}
                       type="button"
                       onClick={() => setNewComm({ ...newComm, type: t })}
-                      className="rounded-lg py-2 text-xs font-medium transition-all"
+                      className="rounded-lg py-2 text-xs font-medium transition-all duration-200 cursor-pointer"
                       style={{
                         backgroundColor: active ? style.text : style.bg,
                         color: active ? "#FFFFFF" : style.text,

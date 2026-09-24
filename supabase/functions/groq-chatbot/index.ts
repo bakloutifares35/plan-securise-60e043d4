@@ -2,20 +2,32 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL") ?? "",
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-);
-
+// ============================================================
+// CORS — doit être défini AVANT tout accès à Deno.env.get()
+// ============================================================
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
 };
+
+// ============================================================
+// CONFIGURATION (lazy : accédée APRÈS le check OPTIONS)
+// ============================================================
+let GROQ_API_KEY: string | undefined;
+let supabase: ReturnType<typeof createClient> | null = null;
+
+function initClients() {
+  if (supabase) return;
+  GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? undefined;
+  supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  );
+}
+
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const SYSTEM_PROMPT = `Tu es l'Assistant Resillia, un expert en continuité d'activité (BCM/BIA/PCA/Risk Management) intégré à la plateforme Resillia, un logiciel professionnel utilisé par des entreprises clientes.
 
@@ -187,9 +199,10 @@ function scoreToLabel(score: number): string {
 
 // --- FONCTIONS D'EXÉCUTION DES OUTILS ---
 async function executeTool(name: string, args: any) {
+  const sb = supabase!;
   switch (name) {
     case "search_processes": {
-      let query = supabase.from("processus_metier").select("id, name, direction, impacts, rto_hours, rpo_hours");
+      let query = sb.from("processus_metier").select("id, name, direction, impacts, rto_hours, rpo_hours");
       if (args.query) query = query.ilike("name", `%${args.query}%`);
       const { data, error } = await query.limit(50);
       if (error) throw error;
@@ -221,7 +234,7 @@ async function executeTool(name: string, args: any) {
     }
 
     case "get_process_details": {
-      const { data, error } = await supabase
+      const { data, error } = await sb
         .from("processus_metier")
         .select(`*, processus_ressources_humaines(ressource_humaine_id), processus_equipements(equipement_id), processus_applications(application_id), processus_fournisseurs(fournisseur_id)`)
         .eq("id", args.process_id)
@@ -231,7 +244,7 @@ async function executeTool(name: string, args: any) {
     }
 
     case "search_risks": {
-      let query = supabase.from("risques").select("id, title, category, niveau, score_residuel, status, owner");
+      let query = sb.from("risques").select("id, title, category, niveau, score_residuel, status, owner");
       if (args.query) query = query.ilike("title", `%${args.query}%`);
       if (args.niveau) query = query.eq("niveau", args.niveau);
       const { data, error } = await query.limit(10);
@@ -240,7 +253,7 @@ async function executeTool(name: string, args: any) {
     }
 
     case "get_risk_details": {
-      const { data, error } = await supabase
+      const { data, error } = await sb
         .from("risques")
         .select(`*, plans_traitement(*)`)
         .eq("id", args.risque_id)
@@ -254,7 +267,7 @@ async function executeTool(name: string, args: any) {
 
       // Si on n'a pas d'ID, on cherche le risque par titre d'abord
       if (!riskId && args.query) {
-        const { data: found, error: searchError } = await supabase
+        const { data: found, error: searchError } = await sb
           .from("risques")
           .select("id, title")
           .ilike("title", `%${args.query}%`)
@@ -267,7 +280,7 @@ async function executeTool(name: string, args: any) {
 
       if (!riskId) return { has_solution: false, reason: "Aucun identifiant ou titre de risque fourni." };
 
-      const { data: risk, error } = await supabase
+      const { data: risk, error } = await sb
         .from("risques")
         .select(`id, title, category, niveau, score_residuel, plans_traitement(*)`)
         .eq("id", riskId)
@@ -293,7 +306,7 @@ async function executeTool(name: string, args: any) {
       let processId = args.process_id;
 
       if (!processId && args.query) {
-        const { data: found, error: searchError } = await supabase
+        const { data: found, error: searchError } = await sb
           .from("processus_metier")
           .select("id, name")
           .ilike("name", `%${args.query}%`)
@@ -306,7 +319,7 @@ async function executeTool(name: string, args: any) {
 
       if (!processId) return { has_solution: false, reason: "Aucun identifiant ou nom de processus fourni." };
 
-      const { data: process, error: processError } = await supabase
+      const { data: process, error: processError } = await sb
         .from("processus_metier")
         .select("id, name, criticality_level")
         .eq("id", processId)
@@ -314,7 +327,7 @@ async function executeTool(name: string, args: any) {
       if (processError) throw processError;
       if (!process) return { has_solution: false, reason: "Processus introuvable." };
 
-      const { data: associations, error: assocError } = await supabase
+      const { data: associations, error: assocError } = await sb
         .from("strategies_association")
         .select("*, strategies_continuite(*)")
         .eq("processus_id", processId);
@@ -333,8 +346,8 @@ async function executeTool(name: string, args: any) {
     }
 
     case "get_strategies_coverage": {
-      const { data: processus } = await supabase.from("processus_metier").select("id, criticality_level");
-      const { data: associations } = await supabase.from("strategies_association").select("processus_id");
+      const { data: processus } = await sb.from("processus_metier").select("id, criticality_level");
+      const { data: associations } = await sb.from("strategies_association").select("processus_id");
 
       const total = processus?.length || 0;
       const linkedIds = new Set(associations?.map(a => a.processus_id) || []);
@@ -352,7 +365,7 @@ async function executeTool(name: string, args: any) {
         case "app": table = "applications_it"; break;
         case "supplier": table = "fournisseurs"; break;
       }
-      let query = supabase.from(table).select("*");
+      let query = sb.from(table).select("*");
       if (args.query) query = query.ilike("name", `%${args.query}%`);
       const { data, error } = await query.limit(20);
       if (error) throw error;
@@ -377,10 +390,10 @@ async function executeTool(name: string, args: any) {
       let totalUnlinked = 0;
 
       for (const cfg of resourceConfigs) {
-        const { data: allResources, error: resError } = await supabase.from(cfg.table).select("id, name");
+        const { data: allResources, error: resError } = await sb.from(cfg.table).select("id, name");
         if (resError) throw resError;
 
-        const { data: links, error: linkError } = await supabase.from(cfg.linkTable).select(cfg.linkColumn);
+        const { data: links, error: linkError } = await sb.from(cfg.linkTable).select(cfg.linkColumn);
         if (linkError) throw linkError;
 
         const linkedIds = new Set((links || []).map((l: any) => l[cfg.linkColumn]));
@@ -394,8 +407,8 @@ async function executeTool(name: string, args: any) {
     }
 
     case "get_dashboard_stats": {
-      const { count: procCount } = await supabase.from("processus_metier").select("*", { count: "exact", head: true });
-      const { count: riskCount } = await supabase.from("risques").select("*", { count: "exact", head: true });
+      const { count: procCount } = await sb.from("processus_metier").select("*", { count: "exact", head: true });
+      const { count: riskCount } = await sb.from("risques").select("*", { count: "exact", head: true });
       return { totalProcessus: procCount, totalRisques: riskCount };
     }
 
@@ -406,9 +419,15 @@ async function executeTool(name: string, args: any) {
 
 // --- ROUTEUR PRINCIPAL ---
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  // 1) Preflight CORS — AVANT TOUT (Deno.env, req.json, logique métier)
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
+    // 2) Init lazy des clients (après le check OPTIONS)
+    initClients();
+
     if (!GROQ_API_KEY) throw new Error("Clé API Groq non configurée");
 
     const { messages, history } = await req.json();
