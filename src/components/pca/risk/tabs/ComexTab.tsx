@@ -3,28 +3,25 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { 
-  AlertTriangle, Activity, ShieldCheck, TrendingUp, 
-  Zap, PieChart, Grid3x3, Sparkles, Circle, Clock,
+import {
+  AlertTriangle, Activity, ShieldCheck, TrendingUp,
+  Zap, PieChart, Grid3x3, Sparkles, Circle, Clock, Loader2,
   Users, FileText, Download, ChevronRight, Target, Info,
   Eye, ArrowUpRight, RefreshCw, User, Building2,
-  Gauge, BarChart3, Shield, AlertOctagon, CheckCircle,
+  Gauge, BarChart3, Shield, AlertOctagon, CheckCircle, CheckCircle2,
   ArrowDown, ArrowUp, Minus, Layers, Fingerprint,
   ListChecks, ClipboardCheck, AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-// ✅ CHANGEMENT : Utiliser le même client Supabase que PlansTab
 import { supabase } from "@/integrations/supabase/db";
 import type { RiskData } from "../useRiskData";
 import { scoreToNiveau } from "../riskModel";
-// Import Recharts pour un rendu PRO
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 type Props = {
   data: RiskData;
 };
 
-// ✅ CORRECTION : Type Measure complet comme dans PlansTab
 type Measure = {
   id: string;
   risque_id: string;
@@ -41,7 +38,7 @@ type Measure = {
 };
 
 // ============================================================
-// CHARTE GRAPHIQUE RESILLIA PREMIUM (Pastel & PRO)
+// CHARTE GRAPHIQUE RESILLIA PREMIUM
 // ============================================================
 const COLORS = {
   navy: "#172030",
@@ -51,7 +48,7 @@ const COLORS = {
   muted: "#6C7A8A",
   border: "#E5E2DD",
   cardBg: "#FFFFFF",
-  
+
   risk: {
     Critique: { bg: "#FDE8E8", text: "#C62828", border: "#EBC5C5", dot: "#C62828", light: "#FFF5F5" },
     Élevé: { bg: "#FDEAD6", text: "#B2572A", border: "#F0D1B8", dot: "#B2572A", light: "#FFFAF5" },
@@ -72,41 +69,76 @@ const COLORS = {
   },
   kpi: {
     light: { bg: "#FFFFFF", text: "#172030", iconBg: "#F0EDE8", border: "border-[#E5E2DD]" },
-    green: { bg: "#FFFFFF", text: "#2E7D32", iconBg: "#E8F5E9", border: "border-emerald-200" },
-    red: { bg: "#FFFFFF", text: "#C62828", iconBg: "#FFEBEE", border: "border-rose-200" },
-    amber: { bg: "#FFFFFF", text: "#F57F17", iconBg: "#FFF8E1", border: "border-amber-200" },
-    blue: { bg: "#FFFFFF", text: "#1A56DB", iconBg: "#EBF5FF", border: "border-blue-200" },
+    green: { bg: "#FFFFFF", text: "#2E7D32", iconBg: "#E8F5E9", border: "border-[#E5E2DD]" },
+    red: { bg: "#FFFFFF", text: "#C62828", iconBg: "#FFEBEE", border: "border-[#E5E2DD]" },
+    amber: { bg: "#FFFFFF", text: "#F57F17", iconBg: "#FFF8E1", border: "border-[#E5E2DD]" },
+    blue: { bg: "#FFFFFF", text: "#1A56DB", iconBg: "#EBF5FF", border: "border-[#E5E2DD]" },
   }
 };
 
 // ============================================================
-// COMPOSANT: KPI CARD
+// COMPOSANT : DotBadge (badge discret — dot + label)
 // ============================================================
-const KpiCard = ({ 
-  label, 
-  value, 
-  subValue, 
+const DotBadge = ({
+  label,
+  dot,
+  tone = "neutral",
+  icon: Icon,
+}: {
+  label: string;
+  dot?: string;
+  tone?: "neutral" | "success" | "warning" | "danger";
+  icon?: any;
+}) => {
+  const palette = {
+    neutral: { dot: "#6C7A8A", text: "#17203099" },
+    success: { dot: "#2A5141", text: "#2A5141" },
+    warning: { dot: "#B2572A", text: "#B2572A" },
+    danger: { dot: "#C62828", text: "#C62828" },
+  }[tone];
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium whitespace-nowrap">
+      {Icon ? (
+        <Icon className="h-3 w-3 flex-shrink-0" style={{ color: dot || palette.dot }} />
+      ) : (
+        <span
+          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: dot || palette.dot }}
+        />
+      )}
+      <span style={{ color: palette.text }}>{label}</span>
+    </span>
+  );
+};
+
+// ============================================================
+// COMPOSANT : KPI CARD
+// ============================================================
+const KpiCard = ({
+  label,
+  value,
+  subValue,
   description,
-  icon: Icon, 
+  icon: Icon,
   color = "light",
   badge,
   className
-}: { 
+}: {
   label: string;
   value: string | number;
   subValue?: string;
   description?: string;
   icon: any;
   color?: "light" | "green" | "red" | "amber" | "blue";
-  badge?: { label: string; color?: string };
+  badge?: { label: string; tone?: "neutral" | "success" | "warning" | "danger"; icon?: any };
   className?: string;
 }) => {
   const colorStyles = {
     light: { bg: "#FFFFFF", text: "#172030", iconBg: "#F0EDE8", border: "border-[#E5E2DD]" },
-    green: { bg: "#FFFFFF", text: "#2E7D32", iconBg: "#E8F5E9", border: "border-emerald-200" },
-    red: { bg: "#FFFFFF", text: "#C62828", iconBg: "#FFEBEE", border: "border-rose-200" },
-    amber: { bg: "#FFFFFF", text: "#F57F17", iconBg: "#FFF8E1", border: "border-amber-200" },
-    blue: { bg: "#FFFFFF", text: "#1A56DB", iconBg: "#EBF5FF", border: "border-blue-200" },
+    green: { bg: "#FFFFFF", text: "#2E7D32", iconBg: "#E8F5E9", border: "border-[#E5E2DD]" },
+    red: { bg: "#FFFFFF", text: "#C62828", iconBg: "#FFEBEE", border: "border-[#E5E2DD]" },
+    amber: { bg: "#FFFFFF", text: "#F57F17", iconBg: "#FFF8E1", border: "border-[#E5E2DD]" },
+    blue: { bg: "#FFFFFF", text: "#1A56DB", iconBg: "#EBF5FF", border: "border-[#E5E2DD]" },
   };
 
   const style = colorStyles[color] || colorStyles.light;
@@ -125,12 +157,11 @@ const KpiCard = ({
                 {label}
               </p>
               {badge && (
-                <span className={cn(
-                  "text-[8px] font-medium px-2 py-0.5 rounded-full",
-                  badge.color || "bg-[#F8F6F2] text-[#172030]/50"
-                )}>
-                  {badge.label}
-                </span>
+                <DotBadge
+                  label={badge.label}
+                  tone={badge.tone || "neutral"}
+                  icon={badge.icon}
+                />
               )}
             </div>
             <p className="font-serif text-2xl font-bold mt-0.5" style={{ color: style.text }}>
@@ -157,40 +188,44 @@ const KpiCard = ({
 };
 
 // ============================================================
-// COMPOSANT: Badge de niveau
+// COMPOSANT : Badge de niveau (dot + label)
 // ============================================================
 const RiskLevelBadge = ({ level, className }: { level: string; className?: string }) => {
   const style = COLORS.badge[level as keyof typeof COLORS.badge] || COLORS.badge.Faible;
   return (
-    <span 
+    <span
       className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium",
+        "inline-flex items-center gap-1.5 text-[10px] font-medium whitespace-nowrap",
         className
-      )} 
-      style={{ backgroundColor: style.bg, color: style.text }}
+      )}
+      style={{ color: style.text }}
     >
+      <span
+        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+        style={{ backgroundColor: style.text }}
+      />
       {level.toLowerCase()}
     </span>
   );
 };
 
 // ============================================================
-// COMPOSANT: ModernPieChart (RECHARTS - DESIGN DONUT PRO)
+// COMPOSANT : ModernPieChart (RECHARTS)
 // ============================================================
-const ModernPieChart = ({ 
-  data, 
-  total, 
+const ModernPieChart = ({
+  data,
+  total,
   onSliceClick,
   activeLabel
-}: { 
+}: {
   data: { label: string; value: number; color: string; borderColor: string }[];
   total: number;
   onSliceClick: (label: string) => void;
   activeLabel: string | null;
 }) => {
-  
+
   const filteredData = data.filter(d => d.value > 0);
-  
+
   if (filteredData.length === 0) {
     return (
       <div className="flex items-center justify-center h-full w-full">
@@ -217,10 +252,10 @@ const ModernPieChart = ({
             onClick={(e) => onSliceClick(activeLabel === e.label ? "all" : e.label)}
           >
             {filteredData.map((entry, index) => (
-              <Cell 
-                key={`cell-${index}`} 
+              <Cell
+                key={`cell-${index}`}
                 fill={entry.color}
-                stroke={entry.borderColor} 
+                stroke={entry.borderColor}
                 strokeWidth={1.5}
                 className="transition-all duration-200 hover:opacity-90 hover:drop-shadow-sm"
               />
@@ -249,22 +284,15 @@ export const ComexTab = ({ data }: Props) => {
   const { risques } = data;
   const exportRef = useRef<HTMLDivElement>(null);
 
-  // ============================
-  // ÉTATS INTERACTIFS & FILTRES
-  // ============================
   const [filterLevel, setFilterLevel] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedCell, setSelectedCell] = useState<{p: number, i: number} | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{p: number, i: number} | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // ============================
-  // 🔥 CHARGEMENT DES MESURES (MÊME LOGIQUE QUE PlansTab)
-  // ============================
   const [measures, setMeasures] = useState<Measure[]>([]);
   const [isLoadingMeasures, setIsLoadingMeasures] = useState(true);
 
-  // ✅ Fonction de chargement identique à PlansTab
   const loadMeasures = async () => {
     setIsLoadingMeasures(true);
     try {
@@ -287,13 +315,10 @@ export const ComexTab = ({ data }: Props) => {
     loadMeasures();
   }, []);
 
-  // ============================
-  // LOGIQUE MÉTIER
-  // ============================
   const enriched = useMemo(
-    () => risques.map((r) => ({ 
-      ...r, 
-      niveauCalc: r.niveau || scoreToNiveau(r.score_residuel || 1) 
+    () => risques.map((r) => ({
+      ...r,
+      niveauCalc: r.niveau || scoreToNiveau(r.score_residuel || 1)
     })),
     [risques]
   );
@@ -315,7 +340,7 @@ export const ComexTab = ({ data }: Props) => {
   const eleves = filteredRisks.filter((r) => r.niveauCalc === "Élevé").length;
   const moderes = filteredRisks.filter((r) => r.niveauCalc === "Modéré").length;
   const faibles = filteredRisks.filter((r) => r.niveauCalc === "Faible").length;
-  
+
   const scoreMoyen = total ? (filteredRisks.reduce((s, r) => s + (r.score_residuel || 0), 0) / total) : 0;
   const reduction = (() => {
     const brut = filteredRisks.reduce((s, r) => s + (r.score_brut || 0), 0);
@@ -323,11 +348,6 @@ export const ComexTab = ({ data }: Props) => {
     return brut ? Math.round(((brut - res) / brut) * 100) : 0;
   })();
 
-  // ==========================================================
-  // 🔥 LOGIQUE DE COUVERTURE (basée sur les vraies mesures)
-  // ==========================================================
-  
-  // Créer un Set des IDs de risques qui ont au moins une action
   const riskIdsWithMeasures = useMemo(() => {
     const ids = new Set<string>();
     for (const measure of measures) {
@@ -338,19 +358,17 @@ export const ComexTab = ({ data }: Props) => {
     return ids;
   }, [measures]);
 
-  // Compter les risques filtrés qui ont des mesures
   const withMesures = useMemo(() => {
     return filteredRisks.filter(r => riskIdsWithMeasures.has(String(r.id))).length;
   }, [filteredRisks, riskIdsWithMeasures]);
 
   const couvertureMesures = total > 0 ? Math.round((withMesures / total) * 100) : 0;
-  
+
   const sansResponsable = filteredRisks.filter(r => !r.owner || r.owner.trim() === "").length;
 
-  // Risques critiques/élevés SANS AUCUNE mesure réelle
   const risquesCritiquesSansMesures = useMemo(() => {
-    return filteredRisks.filter(r => 
-      (r.niveauCalc === "Critique" || r.niveauCalc === "Élevé") && 
+    return filteredRisks.filter(r =>
+      (r.niveauCalc === "Critique" || r.niveauCalc === "Élevé") &&
       !riskIdsWithMeasures.has(String(r.id))
     ).length;
   }, [filteredRisks, riskIdsWithMeasures]);
@@ -368,16 +386,10 @@ export const ComexTab = ({ data }: Props) => {
     return latest.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }, [risques]);
 
-  // ============================
-  // TOP RISQUES - LIMITÉ À 5
-  // ============================
   const topRisks = [...filteredRisks]
     .sort((a, b) => (b.score_residuel || 0) - (a.score_residuel || 0))
     .slice(0, 5);
 
-  // ============================
-  // DONNÉES MATRICE
-  // ============================
   const matrix = useMemo(() => {
     const map: Record<string, { count: number; risks: any[] }> = {};
     for (const r of filteredRisks) {
@@ -395,11 +407,11 @@ export const ComexTab = ({ data }: Props) => {
     const score = p * i;
     const cell = matrix[`${p}-${i}`];
     const count = cell?.count || 0;
-    
+
     if (count === 0) {
       return { bg: "#F8F6F2", text: "#D1D5DB", border: "#F0EDE8" };
     }
-    
+
     if (score <= 6) {
       return { bg: COLORS.matrix.Faible, text: "#1F4E39", border: "#C8E6C9" };
     } else if (score <= 12) {
@@ -416,9 +428,6 @@ export const ComexTab = ({ data }: Props) => {
     return cell?.risks || [];
   };
 
-  // ============================
-  // DONNÉES POUR LE PIE CHART
-  // ============================
   const pieData = [
     { label: "Critique", value: critiques, color: "#FDE8E8", borderColor: "#EBC5C5" },
     { label: "Élevé", value: eleves, color: "#FDEAD6", borderColor: "#F0D1B8" },
@@ -426,15 +435,12 @@ export const ComexTab = ({ data }: Props) => {
     { label: "Faible", value: faibles, color: "#E5F0EB", borderColor: "#C0D8CF" },
   ];
 
-  // ============================
-  // EXPORT PDF
-  // ============================
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
       const html2canvas = (await import('html2canvas')).default;
       const jsPDF = (await import('jspdf')).default;
-      
+
       if (exportRef.current) {
         const canvas = await html2canvas(exportRef.current, {
           scale: 2,
@@ -468,7 +474,7 @@ export const ComexTab = ({ data }: Props) => {
   // ============================================================
   return (
     <div className="space-y-6" ref={exportRef}>
-      
+
       {/* ==========================================================
           FILTRES
           ========================================================== */}
@@ -483,15 +489,16 @@ export const ComexTab = ({ data }: Props) => {
             </span>
           )}
           {isLoadingMeasures && (
-            <span className="text-xs text-[#172030]/40 flex items-center gap-1">
-              <span className="animate-pulse">⏳</span> Chargement des mesures...
+            <span className="text-xs text-[#172030]/40 flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Chargement des mesures...
             </span>
           )}
         </div>
-        
+
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 bg-white rounded-lg border border-[#E5E2DD] p-1 shadow-sm">
-            <select 
+            <select
               className="text-xs border-0 bg-transparent px-3 py-1.5 text-[#172030] focus:outline-none focus:ring-0"
               value={filterLevel}
               onChange={(e) => { setFilterLevel(e.target.value); setSelectedCell(null); }}
@@ -503,7 +510,7 @@ export const ComexTab = ({ data }: Props) => {
               <option value="Faible">Faible</option>
             </select>
             <div className="w-px h-5 bg-[#E5E2DD]" />
-            <select 
+            <select
               className="text-xs border-0 bg-transparent px-3 py-1.5 text-[#172030] focus:outline-none focus:ring-0"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -514,10 +521,10 @@ export const ComexTab = ({ data }: Props) => {
             </select>
           </div>
 
-          <Button 
-            onClick={handleExportPDF} 
-            variant="outline" 
-            size="sm" 
+          <Button
+            onClick={handleExportPDF}
+            variant="outline"
+            size="sm"
             className="border-[#E5E2DD] text-[#172030]/60 hover:text-[#172030] hover:bg-[#F8F6F2] gap-1.5 bg-white shadow-sm"
             disabled={isExporting}
           >
@@ -531,31 +538,31 @@ export const ComexTab = ({ data }: Props) => {
           LIGNE 1 : KPIs
           ========================================================== */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard 
+        <KpiCard
           label="Couverture plans"
           value={`${couvertureMesures}%`}
           subValue={`${withMesures} sur ${total} risques couverts`}
           icon={ClipboardCheck}
           color={couvertureMesures >= 80 ? "green" : couvertureMesures >= 50 ? "amber" : "red"}
-          badge={{ 
-            label: couvertureMesures >= 80 ? "✅ Bonne" : couvertureMesures >= 50 ? "⏳ En cours" : "⚠️ Faible", 
-            color: couvertureMesures >= 80 ? "bg-emerald-100 text-emerald-700" : couvertureMesures >= 50 ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700" 
+          badge={{
+            label: couvertureMesures >= 80 ? "Bonne" : couvertureMesures >= 50 ? "En cours" : "Faible",
+            tone: couvertureMesures >= 80 ? "success" : couvertureMesures >= 50 ? "warning" : "danger",
           }}
         />
 
-        <KpiCard 
+        <KpiCard
           label="Sans plan d'action"
           value={total - withMesures}
           subValue={`dont ${risquesCritiquesSansMesures} critique${risquesCritiquesSansMesures > 1 ? 's' : ''}`}
           icon={AlertCircle}
           color={(total - withMesures) > 0 ? "red" : "green"}
-          badge={{ 
-            label: (total - withMesures) === 0 ? "✅ OK" : "⚠️ Attention", 
-            color: (total - withMesures) === 0 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700" 
+          badge={{
+            label: (total - withMesures) === 0 ? "OK" : "Attention",
+            tone: (total - withMesures) === 0 ? "success" : "danger",
           }}
         />
 
-        <KpiCard 
+        <KpiCard
           label="Risques suivis"
           value={total}
           subValue={`${withMesures} avec action${withMesures > 1 ? 's' : ''}`}
@@ -563,15 +570,15 @@ export const ComexTab = ({ data }: Props) => {
           color="blue"
         />
 
-        <KpiCard 
+        <KpiCard
           label="Risques critiques"
           value={critiques + eleves}
           subValue={`${couvertureMesures}% de couverture`}
           icon={AlertTriangle}
           color={(critiques + eleves) > 0 ? "red" : "green"}
-          badge={{ 
-            label: (critiques + eleves) > 0 ? "⚠️ Attention" : "✅ OK", 
-            color: (critiques + eleves) > 0 ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700" 
+          badge={{
+            label: (critiques + eleves) > 0 ? "Attention" : "OK",
+            tone: (critiques + eleves) > 0 ? "danger" : "success",
           }}
         />
       </div>
@@ -580,8 +587,7 @@ export const ComexTab = ({ data }: Props) => {
           LIGNE 2 : TOP RISQUES + MATRICE
           ========================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        
-        {/* TOP RISQUES */}
+
         <Card className="border-0 shadow-sm bg-white rounded-xl lg:col-span-7 flex flex-col h-[320px]">
           <CardHeader className="p-5 pb-2 border-b border-[#F8F6F2] flex-shrink-0">
             <div className="flex items-center justify-between">
@@ -614,13 +620,13 @@ export const ComexTab = ({ data }: Props) => {
                   const hasMeasure = riskIdsWithMeasures.has(String(risk.id));
 
                   return (
-                    <div 
-                      key={risk.id} 
+                    <div
+                      key={risk.id}
                       onClick={() => setSelectedCell(isActiveCell ? null : {p: risk.probabilite, i: risk.impact})}
                       className={cn(
                         "flex items-start gap-3 p-3 rounded-xl border transition-all duration-200 cursor-pointer group",
-                        isActiveCell 
-                          ? "bg-[#F8F6F2] border-[#2A5141] shadow-[0_2px_8px_rgba(42,81,65,0.12)]" 
+                        isActiveCell
+                          ? "bg-[#F8F6F2] border-[#2A5141] shadow-[0_2px_8px_rgba(42,81,65,0.12)]"
                           : "bg-white border-[#F0EDE8] hover:border-[#2A5141]/30 hover:shadow-sm hover:-translate-y-0.5"
                       )}
                     >
@@ -632,9 +638,9 @@ export const ComexTab = ({ data }: Props) => {
                           <p className="text-sm font-medium text-[#172030] truncate">{risk.title}</p>
                           <RiskLevelBadge level={risk.niveauCalc} />
                           {hasMeasure && (
-                            <Badge className="text-[8px] bg-emerald-100 text-emerald-700 border-0 rounded-full px-1.5 py-0">
-                              ✓
-                            </Badge>
+                            <span className="inline-flex items-center gap-1 text-[9px] font-medium" style={{ color: "#2A5141" }}>
+                              <CheckCircle2 className="h-3 w-3" />
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-[10px] text-[#172030]/40">
@@ -690,7 +696,7 @@ export const ComexTab = ({ data }: Props) => {
                   <div key={i} className="flex-1 text-center text-[8px] font-medium text-[#172030]/30 font-sans">I{i}</div>
                 ))}
               </div>
-              
+
               {[5, 4, 3, 2, 1].map((p) => (
                 <div key={p} className="flex gap-0.5 items-center h-8 md:h-9 relative group">
                   <span className="w-5 text-[8px] font-medium text-[#172030]/30 text-right pr-1 font-sans flex-shrink-0">P{p}</span>
@@ -701,10 +707,10 @@ export const ComexTab = ({ data }: Props) => {
                     const style = getCellStyle(p, i);
                     const hasRisks = count > 0;
                     const risksInCell = hasRisks ? getRisksInCell(p, i) : [];
-                    
+
                     return (
-                      <div 
-                        key={i} 
+                      <div
+                        key={i}
                         onClick={hasRisks ? () => setSelectedCell(isSelected ? null : {p, i}) : undefined}
                         onMouseEnter={() => hasRisks && setHoveredCell({p, i})}
                         onMouseLeave={() => setHoveredCell(null)}
@@ -713,7 +719,7 @@ export const ComexTab = ({ data }: Props) => {
                           hasRisks ? "cursor-pointer hover:scale-105 hover:shadow-md" : "cursor-not-allowed opacity-30",
                           isSelected && "ring-2 ring-[#2A5141] ring-offset-1 shadow-[0_2px_8px_rgba(42,81,65,0.20)]"
                         )}
-                        style={{ 
+                        style={{
                           backgroundColor: hasRisks ? style.bg : "#F8F6F2",
                           border: hasRisks ? `1px solid ${style.border}` : "1px solid transparent"
                         }}
@@ -745,7 +751,7 @@ export const ComexTab = ({ data }: Props) => {
                 { label: "Élevé", key: "Élevé", color: COLORS.matrix.Élevé },
                 { label: "Critique", key: "Critique", color: COLORS.matrix.Critique },
               ].map((item) => (
-                <button 
+                <button
                   key={item.key}
                   onClick={() => {
                     setFilterLevel(filterLevel === item.key ? "all" : item.key);
@@ -769,8 +775,7 @@ export const ComexTab = ({ data }: Props) => {
           LIGNE 3 : RÉPARTITION + COUVERTURE + IMPACT
           ========================================================== */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-        
-        {/* RÉPARTITION */}
+
         <Card className="border-0 shadow-sm bg-white rounded-xl col-span-12 md:col-span-3">
           <CardHeader className="p-4 pb-2 border-b border-[#F8F6F2]">
             <div className="flex items-center justify-between">
@@ -786,7 +791,7 @@ export const ComexTab = ({ data }: Props) => {
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-3 flex items-center gap-3">
-            <ModernPieChart 
+            <ModernPieChart
               data={pieData}
               total={total}
               onSliceClick={(label) => {
@@ -800,17 +805,17 @@ export const ComexTab = ({ data }: Props) => {
               }}
               activeLabel={filterLevel !== "all" ? filterLevel : null}
             />
-            
+
             <div className="flex-1 flex flex-col justify-center space-y-1.5">
               {pieData.map((item) => {
                 const isActive = filterLevel === item.label;
                 return (
-                  <div 
-                    key={item.label} 
+                  <div
+                    key={item.label}
                     onClick={() => {
                       setFilterLevel(isActive ? "all" : item.label);
                       setSelectedCell(null);
-                    }} 
+                    }}
                     className={cn(
                       "flex items-center justify-between px-2 py-1 rounded-md cursor-pointer transition-all duration-200",
                       isActive ? "bg-[#F8F6F2] ring-1 ring-[#2A5141]" : "hover:bg-[#F8F6F2]"
@@ -828,7 +833,6 @@ export const ComexTab = ({ data }: Props) => {
           </CardContent>
         </Card>
 
-        {/* COUVERTURE DES PLANS D'ACTION */}
         <Card className="border-0 shadow-sm bg-white rounded-xl col-span-12 md:col-span-6">
           <CardHeader className="p-4 pb-2 border-b border-[#F8F6F2]">
             <div className="flex items-center justify-between">
@@ -846,22 +850,21 @@ export const ComexTab = ({ data }: Props) => {
             </div>
           </CardHeader>
           <CardContent className="p-4 flex items-center justify-between">
-            
-            {/* Progress Ring */}
+
             <div className="relative h-28 w-28 shrink-0 group">
               <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90 transition-all duration-1000 group-hover:scale-105">
                 <circle cx="50" cy="50" r="40" fill="none" stroke="#F0EDE8" strokeWidth="7" />
                 {couvertureMesures > 0 && (
-                  <circle 
-                    cx="50" cy="50" r="40" fill="none" stroke="#2A5141" strokeWidth="7" 
-                    strokeLinecap="round" 
-                    strokeDasharray={`${2 * Math.PI * 40}`} 
-                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - couvertureMesures / 100)}`} 
+                  <circle
+                    cx="50" cy="50" r="40" fill="none" stroke="#2A5141" strokeWidth="7"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 40}`}
+                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - couvertureMesures / 100)}`}
                     className="transition-all duration-1000 ease-out"
                   />
                 )}
               </svg>
-              
+
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className={cn(
                   "text-xl font-bold font-sans transition-all duration-300 group-hover:scale-110",
@@ -873,7 +876,6 @@ export const ComexTab = ({ data }: Props) => {
               </div>
             </div>
 
-            {/* Détails */}
             <div className="flex-1 flex flex-col gap-1.5 pl-4">
               <div className="flex items-center justify-between border-b border-[#F8F6F2] pb-1.5">
                 <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
@@ -898,28 +900,40 @@ export const ComexTab = ({ data }: Props) => {
               </div>
               <div className="flex items-center justify-between pt-0.5">
                 <span className="text-xs text-[#172030]/60 font-sans flex items-center gap-1.5">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+                  <CheckCircle className="h-3.5 w-3.5 text-[#2A5141]" />
                   Risques critiques couverts
                 </span>
-                <span className="text-sm font-bold text-emerald-600 font-sans">
+                <span className="text-sm font-bold text-[#2A5141] font-sans">
                   {isLoadingMeasures ? "..." : (critiques + eleves) - risquesCritiquesSansMesures}
                 </span>
               </div>
             </div>
           </CardContent>
-          
+
           <div className="px-4 pb-4 pt-0 border-t border-[#F8F6F2]">
-            <p className="text-[10px] text-[#172030]/40 font-sans">
+            <div className="text-[10px] text-[#172030]/40 font-sans flex items-center gap-1.5 pt-2">
               {isLoadingMeasures ? (
-                "Chargement des données..."
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Chargement des données...
+                </>
               ) : withMesures === 0 ? (
-                "Aucun risque ne dispose d'un plan d'action."
+                <>
+                  <AlertTriangle className="h-3 w-3 text-[#B2572A]" />
+                  Aucun risque ne dispose d'un plan d'action.
+                </>
               ) : withMesures === total ? (
-                `✅ Tous les risques (${total}) disposent d'au moins une action.`
+                <>
+                  <CheckCircle2 className="h-3 w-3 text-[#2A5141]" />
+                  Tous les risques ({total}) disposent d'au moins une action.
+                </>
               ) : (
-                `${withMesures} risque${withMesures > 1 ? 's' : ''} sur ${total} dispose${withMesures > 1 ? 'nt' : ''} d'au moins une action.`
+                <>
+                  <Info className="h-3 w-3 text-[#172030]/40" />
+                  {withMesures} risque{withMesures > 1 ? 's' : ''} sur {total} dispose{withMesures > 1 ? 'nt' : ''} d'au moins une action.
+                </>
               )}
-            </p>
+            </div>
           </div>
         </Card>
 
@@ -978,12 +992,12 @@ export const ComexTab = ({ data }: Props) => {
       </div>
 
       {/* ==========================================================
-          LIGNE 4 : SYNTHÈSE IA
+          LIGNE 4 : SYNTHÈSE IA (bordure latérale retirée)
           ========================================================== */}
-      <Card className="border-0 shadow-sm bg-white rounded-xl border-l-4 border-l-[#2A5141] overflow-hidden">
+      <Card className="border-0 shadow-sm bg-gradient-to-r from-white to-[#2A5141]/[0.025] rounded-xl overflow-hidden relative">
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#2A5141]/5 rounded-full -translate-y-1/2 translate-x-1/2" />
         <CardContent className="p-5 flex flex-col md:flex-row md:items-center gap-4 relative">
-          <div className="h-10 w-10 rounded-xl bg-[#2A5141]/10 flex items-center justify-center shrink-0 transition-all group-hover:scale-105">
+          <div className="h-10 w-10 rounded-xl bg-[#2A5141]/10 flex items-center justify-center shrink-0">
             <Sparkles className="h-5 w-5 text-[#2A5141]" />
           </div>
           <div className="flex-1">
@@ -991,21 +1005,38 @@ export const ComexTab = ({ data }: Props) => {
               <span>Synthèse IA</span>
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#2A5141] animate-pulse" />
             </p>
-            <p className="text-sm text-[#172030] mt-0.5 font-sans leading-relaxed">
+            <div className="text-sm text-[#172030] mt-0.5 font-sans leading-relaxed flex items-start gap-1.5">
               {total === 0 ? (
-                "Aucun risque ne correspond aux filtres actuels."
+                <span>Aucun risque ne correspond aux filtres actuels.</span>
               ) : critiques + eleves === 0 ? (
-                `✅ Le portefeuille est globalement maîtrisé. Aucun risque Critique ou Élevé parmi les ${total} éléments actifs. Le score résiduel moyen est de ${scoreMoyen.toFixed(1)}/25.`
+                <>
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "#2A5141" }} />
+                  <span>
+                    Le portefeuille est globalement maîtrisé. Aucun risque Critique ou Élevé parmi les {total} éléments actifs. Le score résiduel moyen est de {scoreMoyen.toFixed(1)}/25.
+                    {sansResponsable > 0 && ` ${sansResponsable} risque(s) n'ont pas de pilote assigné.`}
+                  </span>
+                </>
               ) : reduction > 30 ? (
-                `⚠️ ${critiques + eleves} risque(s) critique(s) ou élevé(s) nécessite(nt) une attention immédiate. Le score résiduel moyen est de ${scoreMoyen.toFixed(1)}/25. Les mesures en place ont permis une réduction de ${reduction}% du risque.`
+                <>
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "#C62828" }} />
+                  <span>
+                    {critiques + eleves} risque(s) critique(s) ou élevé(s) nécessite(nt) une attention immédiate. Le score résiduel moyen est de {scoreMoyen.toFixed(1)}/25. Les mesures en place ont permis une réduction de {reduction}% du risque.
+                    {sansResponsable > 0 && ` ${sansResponsable} risque(s) n'ont pas de pilote assigné.`}
+                  </span>
+                </>
               ) : (
-                `⚠️ Portefeuille à surveiller. ${critiques + eleves} risques critiques/élevés identifiés. Action recommandée. Taux de couverture des mesures à ${couvertureMesures}%.`
+                <>
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "#B2572A" }} />
+                  <span>
+                    Portefeuille à surveiller. {critiques + eleves} risques critiques/élevés identifiés. Action recommandée. Taux de couverture des mesures à {couvertureMesures}%.
+                    {sansResponsable > 0 && ` ${sansResponsable} risque(s) n'ont pas de pilote assigné.`}
+                  </span>
+                </>
               )}
-              {sansResponsable > 0 && ` ${sansResponsable} risque(s) n'ont pas de pilote assigné.`}
-            </p>
+            </div>
           </div>
           <Button variant="outline" className="shrink-0 border-[#2A5141] text-[#2A5141] hover:bg-[#2A5141] hover:text-white transition-colors rounded-full px-5 font-sans text-xs group">
-            Voir le registre 
+            Voir le registre
             <ChevronRight className="h-3 w-3 ml-1 transition-transform group-hover:translate-x-0.5" />
           </Button>
         </CardContent>
@@ -1058,3 +1089,5 @@ export const ComexTab = ({ data }: Props) => {
     </div>
   );
 };
+
+export default ComexTab;

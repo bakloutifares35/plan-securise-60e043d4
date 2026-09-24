@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -278,10 +277,8 @@ const ResourceGroup = ({ category, items }: { category: string; items: any[] }) 
 };
 
 // ============================================================
-// KPI CARD — Discipline chromatique
-// Fond neutre par défaut. La couleur n'apparaît QUE sur le chiffre
-// et l'icône, ET uniquement si la valeur représente une anomalie réelle.
-// Variant "critical" : réservé à LA seule métrique la plus urgente.
+// KPI CARD — sans bordure latérale colorée
+// La criticité passe uniquement par la couleur du chiffre + icône.
 // ============================================================
 const KpiCard = ({
   label, value, subLabel, icon: Icon, tone = "neutral", className, onClick, variant = "default", badge,
@@ -305,6 +302,7 @@ const KpiCard = ({
     info:    { value: "#38536F", icon: "#38536F",   iconBg: "#EDF2F7" },
   }[tone];
 
+  // "critical" n'affecte plus QUE la taille et l'intensité de l'ombre (pas de bordure latérale)
   return (
     <Card
       className={cn(
@@ -318,11 +316,7 @@ const KpiCard = ({
       )}
       onClick={onClick}
     >
-      {isCritical && (
-        <div className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: "#C62828" }} />
-      )}
-
-      <CardContent className={cn("flex items-start justify-between", isCritical ? "p-6 pl-7" : "p-5")}>
+      <CardContent className={cn("flex items-start justify-between", isCritical ? "p-6" : "p-5")}>
         <div className="space-y-1.5 min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={cn(
@@ -378,80 +372,223 @@ const KpiCard = ({
 };
 
 // ============================================================
-// CRITICALITY CARD
+// COVERAGE CONSTELLATION — remplace le donut "Répartition par criticité"
 // ============================================================
-const CriticalityCard = ({ data, coveragePercent = 0 }: { data: any[]; coveragePercent?: number }) => {
+const CoverageConstellation = ({
+  data,
+  coveragePercent = 0,
+}: {
+  data: any[];
+  coveragePercent?: number;
+}) => {
   const total = data.length;
-  const levels = [
-    { label: "Critique", key: "Critique", weight: 5 },
-    { label: "Sévère", key: "Sévère", weight: 4 },
-    { label: "Majeur", key: "Majeur", weight: 3 },
-    { label: "Modéré", key: "Modéré", weight: 2 },
-    { label: "Mineur", key: "Mineur", weight: 1 },
-  ];
-  const counts = levels.map(level => ({
-    ...level,
-    count: data.filter(p => p.calculatedLevel === level.key).length,
-    color: CRITICALITY_COLORS[level.key as keyof typeof CRITICALITY_COLORS] || CRITICALITY_COLORS["Mineur"]
-  }));
-  const pieData = counts.filter(d => d.count > 0).map(d => ({
-    name: d.label, value: d.count, color: d.color.bg, borderColor: d.color.border,
-  }));
-  const maxCount = Math.max(...counts.map(d => d.count), 1);
-  const criticalCount = counts.find(d => d.key === "Critique")?.count || 0;
-  const severeCount = counts.find(d => d.key === "Sévère")?.count || 0;
+  const criticalCount = data.filter((p) => p.calculatedLevel === "Critique").length;
+  const severeCount = data.filter((p) => p.calculatedLevel === "Sévère").length;
+  const majorCount = data.filter((p) => p.calculatedLevel === "Majeur").length;
+  const moderateCount = data.filter((p) => p.calculatedLevel === "Modéré").length;
+  const minorCount = data.filter((p) => p.calculatedLevel === "Mineur").length;
+  const coveredCount = data.filter((p) => p.isCovered).length;
+  const uncoveredCount = total - coveredCount;
   const criticalAndSevere = criticalCount + severeCount;
+
+  // Dimensions responsive
+  const SIZE = 300;
+  const CENTER = SIZE / 2;
+  const MAX_RADIUS = 130;
+
+  // Taille du point proportionnelle à la criticité
+  const sizeFor = (level: string): number => {
+    switch (level) {
+      case "Critique": return 7;
+      case "Sévère": return 5.5;
+      case "Majeur": return 4.5;
+      case "Modéré": return 3.5;
+      case "Mineur": return 2.8;
+      default: return 3;
+    }
+  };
+
+  // Génère des positions stables (deterministic seed from index)
+  const points = useMemo(() => {
+    const n = data.length;
+    if (n === 0) return [];
+    // Golden-angle spiral : répartition harmonieuse sans dépendre du hasard
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    return data.map((p, i) => {
+      // Rayon en racine carrée pour distribuer uniformément sur le disque
+      const t = n === 1 ? 0 : i / (n - 1);
+      const radius = Math.sqrt(t) * MAX_RADIUS;
+      const angle = i * golden;
+      const x = CENTER + radius * Math.cos(angle);
+      const y = CENTER + radius * Math.sin(angle);
+      return {
+        id: p.id,
+        name: p.name,
+        level: p.calculatedLevel,
+        isCovered: !!p.isCovered,
+        x,
+        y,
+        r: sizeFor(p.calculatedLevel),
+        color: p.isCovered ? "#2A5141" : "#1720304D", // forest ou navy 30%
+        lineColor: "#2A514166",
+      };
+    });
+  }, [data, CENTER, MAX_RADIUS]);
+
   const targetCoverage = 80;
   const coverageProgress = Math.min(coveragePercent, 100);
+  const hasAny = total > 0;
+
+  const [hovered, setHovered] = useState<{ name: string; level: string; isCovered: boolean } | null>(null);
 
   return (
     <Card className="border-[#E8E4DC] shadow-sm bg-white rounded-xl h-[380px]">
       <CardContent className="p-5 flex flex-col h-full">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#E8E4DC]/70">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#E8E4DC]/70">
           <h3 className="font-medium text-[#172030] text-sm flex items-center gap-2">
-            <PieChartIcon className="h-4 w-4 text-[#172030]/40" />
-            Répartition par criticité
+            <Sparkles className="h-4 w-4 text-[#2A5141]" />
+            Constellation de couverture
           </h3>
           <Badge variant="outline" className="border-[#E8E4DC] text-[#172030]/50 text-[9px] px-2">
             {total} processus
           </Badge>
         </div>
 
-        <div className="flex items-center gap-4 mb-4">
-          <div className="relative w-[120px] h-[120px] flex-shrink-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData.length > 0 ? pieData : [{ name: "Aucune", value: 1, color: "#E8E4DC", borderColor: "#D1D5DB" }]}
-                  dataKey="value" nameKey="name" innerRadius={38} outerRadius={54}
-                  paddingAngle={2} stroke="white" strokeWidth={2}
-                >
-                  {(pieData.length > 0 ? pieData : [{ name: "Aucune", value: 1, color: "#E8E4DC", borderColor: "#D1D5DB" }]).map((d) => (
-                    <Cell key={d.name} fill={d.color} stroke={d.borderColor} strokeWidth={1} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-xl font-bold text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{total}</span>
-              <span className="text-[8px] text-[#172030]/40 uppercase tracking-wider">Total</span>
+        {/* Constellation SVG */}
+        <div className="flex-1 flex items-center justify-center relative">
+          <svg
+            viewBox={`0 0 ${SIZE} ${SIZE}`}
+            width="100%"
+            height="100%"
+            className="max-w-[320px] max-h-[200px]"
+            style={{ overflow: "visible" }}
+          >
+            {/* Halo doux autour du centre */}
+            <defs>
+              <radialGradient id="wr-const-halo" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#2A5141" stopOpacity="0.18" />
+                <stop offset="100%" stopColor="#2A5141" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+
+            {hasAny && (
+              <circle
+                cx={CENTER}
+                cy={CENTER}
+                r={MAX_RADIUS + 18}
+                fill="url(#wr-const-halo)"
+              />
+            )}
+
+            {/* Lignes de connexion (uniquement pour les processus couverts) */}
+            {points.map((p) =>
+              p.isCovered ? (
+                <line
+                  key={`l-${p.id}`}
+                  x1={CENTER}
+                  y1={CENTER}
+                  x2={p.x}
+                  y2={p.y}
+                  stroke={p.lineColor}
+                  strokeWidth={0.9}
+                />
+              ) : null
+            )}
+
+            {/* Point central — la stratégie globale */}
+            {hasAny && (
+              <g style={{ filter: "drop-shadow(0 0 6px #2A514166)" }}>
+                <circle cx={CENTER} cy={CENTER} r={9} fill="#2A5141" />
+                <circle cx={CENTER} cy={CENTER} r={9} fill="none" stroke="#FFFFFF" strokeOpacity="0.6" strokeWidth={1} />
+                <circle cx={CENTER} cy={CENTER} r={15} fill="none" stroke="#2A5141" strokeOpacity="0.25" strokeWidth={1} />
+              </g>
+            )}
+
+            {/* Points processus */}
+            {points.map((p) => (
+              <g key={p.id}>
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={p.r}
+                  fill={p.color}
+                  stroke={p.isCovered ? "#FFFFFF" : "transparent"}
+                  strokeWidth={p.isCovered ? 1 : 0}
+                  style={{ cursor: "pointer" }}
+                  onMouseEnter={() =>
+                    setHovered({ name: p.name, level: p.level, isCovered: p.isCovered })
+                  }
+                  onMouseLeave={() => setHovered(null)}
+                />
+                {/* Zone de survol élargie (invisible) */}
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={Math.max(p.r + 4, 8)}
+                  fill="transparent"
+                  style={{ cursor: "pointer" }}
+                  onMouseEnter={() =>
+                    setHovered({ name: p.name, level: p.level, isCovered: p.isCovered })
+                  }
+                  onMouseLeave={() => setHovered(null)}
+                />
+              </g>
+            ))}
+
+            {/* État vide */}
+            {!hasAny && (
+              <text
+                x={CENTER}
+                y={CENTER + 4}
+                textAnchor="middle"
+                fontSize="11"
+                fill="#17203055"
+                fontStyle="italic"
+              >
+                Aucun processus à cartographier
+              </text>
+            )}
+          </svg>
+
+          {/* Tooltip flottant */}
+          {hovered && (
+            <div
+              className="absolute top-1 right-1 px-2.5 py-1.5 rounded-lg shadow-md text-[10.5px] pointer-events-none max-w-[180px]"
+              style={{ backgroundColor: "#172030", color: "#FFFFFF" }}
+            >
+              <p className="font-medium leading-tight truncate">{hovered.name}</p>
+              <p className="text-[9.5px] mt-0.5 opacity-80">
+                {hovered.level} · {hovered.isCovered ? "Couvert" : "Non couvert"}
+              </p>
             </div>
-          </div>
-          <div className="flex-1 flex items-end gap-1.5 h-[100px]">
-            {counts.filter(d => d.count > 0).map((d) => {
-              const percentage = (d.count / maxCount) * 100;
-              return (
-                <div key={d.key} className="flex-1 flex flex-col items-center gap-1 h-full">
-                  <div className="w-full rounded-t transition-all duration-500 hover:opacity-80"
-                    style={{ height: `${Math.max(percentage, 12)}%`, backgroundColor: d.color.bg, border: `1px solid ${d.color.border}` }} />
-                  <span className="text-[10px] font-semibold text-[#172030]/70">{d.count}</span>
-                  <span className="text-[8px] text-[#172030]/40 uppercase tracking-wider">{d.label}</span>
-                </div>
-              );
-            })}
-          </div>
+          )}
         </div>
 
+        {/* Résumé chiffré compact */}
+        <div className="flex items-center gap-3 flex-wrap pt-2 pb-2">
+          <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#2A5141" }} />
+            {coveredCount} couverts
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-[#172030]/60">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#1720304D" }} />
+            {uncoveredCount} non couverts
+          </span>
+          <span className="text-[10.5px] text-[#172030]/40">·</span>
+          {criticalCount > 0 && (
+            <span className="text-[10.5px] font-medium" style={{ color: "#C62828" }}>
+              {criticalCount} critique{criticalCount > 1 ? "s" : ""}
+            </span>
+          )}
+          {severeCount > 0 && (
+            <span className="text-[10.5px] font-medium" style={{ color: "#D84315" }}>
+              {severeCount} sévère{severeCount > 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        {/* Barre objectif de couverture (logique inchangée) */}
         <div className="pt-3 border-t border-[#E8E4DC] space-y-3 mt-auto">
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -467,14 +604,14 @@ const CriticalityCard = ({ data, coveragePercent = 0 }: { data: any[]; coverageP
                 className="h-full rounded-full transition-all duration-500"
                 style={{
                   width: `${(coverageProgress / targetCoverage) * 100}%`,
-                  backgroundColor: coverageProgress >= targetCoverage ? "#2E7D32" : "#A38730",
+                  backgroundColor: coverageProgress >= targetCoverage ? "#2A5141" : "#A38730",
                 }}
               />
             </div>
           </div>
           <p className="text-[10px] text-[#172030]/60">
             {criticalAndSevere > 0
-              ? `⚠️ ${criticalAndSevere} processus critique${criticalAndSevere > 1 ? 's' : ''} à prioriser`
+              ? `⚠️ ${criticalAndSevere} processus critique${criticalAndSevere > 1 ? "s" : ""} à prioriser`
               : "✅ Aucun processus critique identifié"}
           </p>
         </div>
@@ -484,7 +621,7 @@ const CriticalityCard = ({ data, coveragePercent = 0 }: { data: any[]; coverageP
 };
 
 // ============================================================
-// PRIORITY CENTER
+// PRIORITY CENTER — sans bordure gauche épaisse sur la 1ʳᵉ carte
 // ============================================================
 const PriorityCenter = ({ items, onSelect, onViewAll }: { items: any[], onSelect: (id: string) => void, onViewAll: () => void }) => {
   if (items.length === 0) {
@@ -536,15 +673,8 @@ const PriorityCenter = ({ items, onSelect, onViewAll }: { items: any[], onSelect
             const isFirst = idx === 0;
             const isSecond = idx === 1;
 
-            const itemBg = isFirst
-              ? "bg-rose-50/60 border-rose-200/50"
-              : isSecond
-                ? "bg-rose-50/30 border-rose-200/30"
-                : isSevere
-                  ? "bg-orange-50/20 border-orange-200/20"
-                  : isMajeur
-                    ? "bg-amber-50/20 border-amber-200/20"
-                    : "bg-[#FAFAF8] border-[#E8E4DC]";
+            // Suppression des fonds rouges dominants — on reste sur des fonds neutres
+            const itemBg = "bg-[#FAFAF8] border-[#E8E4DC]";
 
             const itemPadding = isFirst ? "p-4" : isSecond ? "p-3.5" : "p-3";
             const itemMinHeight = isFirst ? "min-h-[70px]" : isSecond ? "min-h-[62px]" : "min-h-[54px]";
@@ -555,8 +685,7 @@ const PriorityCenter = ({ items, onSelect, onViewAll }: { items: any[], onSelect
                 key={idx}
                 className={cn(
                   "flex items-center justify-between rounded-xl border transition-all hover:shadow-sm cursor-pointer group relative overflow-hidden",
-                  itemBg, itemPadding, itemMinHeight,
-                  isFirst && "border-l-4 border-l-rose-500"
+                  itemBg, itemPadding, itemMinHeight
                 )}
                 onClick={() => onSelect(item.processId)}
               >
@@ -615,7 +744,7 @@ const PriorityCenter = ({ items, onSelect, onViewAll }: { items: any[], onSelect
 };
 
 // ============================================================
-// COMPARATEUR
+// COMPARATEUR (inchangé)
 // ============================================================
 const ComparatorDialog = ({
   open, onOpenChange, processName, associations, catalogue, processus,
@@ -726,7 +855,7 @@ const ComparatorDialog = ({
 };
 
 // ============================================================
-// STRATEGY EXPLORER
+// STRATEGY EXPLORER (inchangé)
 // ============================================================
 const StrategyExplorer = ({
   associations, processus, catalogue, onEdit, onDelete, onCompare,
@@ -1012,7 +1141,7 @@ const StrategyExplorer = ({
 };
 
 // ============================================================
-// GAPS TAB
+// GAPS TAB (inchangé)
 // ============================================================
 const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (processId: string) => void }) => {
   const { processus, associations } = data;
@@ -1091,7 +1220,7 @@ const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (pro
 };
 
 // ============================================================
-// WIZARD
+// WIZARD (inchangé)
 // ============================================================
 const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data: any, onComplete: () => void, onCancel: () => void, initialProcessId?: string | null }) => {
   const { processus, catalogue, saveAssociation } = data;
@@ -1110,7 +1239,6 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
   const [aiLoading, setAiLoading] = useState(false);
   const [aiRecommendation, setAiRecommendation] = useState<any>(null);
   const [aiJustifying, setAiJustifying] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [hasData, setHasData] = useState(false);
 
   useEffect(() => {
@@ -1657,15 +1785,16 @@ export const StrategyModule = () => {
   const data = { ...strategyData, actionPlans, loadingActions: loadingRiskData };
 
   const processusWithCriticality = useMemo(() => {
+    const linkedIds = new Set(strategyData.associations.map((a: any) => a.processus_id));
     return strategyData.processus.map((p: any) => {
       let level = "Non défini";
       if (p.impacts) {
         const score = computeMaxScore(p.impacts);
         level = scoreToCriticality(score);
       }
-      return { ...p, calculatedLevel: level };
+      return { ...p, calculatedLevel: level, isCovered: linkedIds.has(p.id) };
     });
-  }, [strategyData.processus]);
+  }, [strategyData.processus, strategyData.associations]);
 
   const stats = useMemo(() => {
     const linkedIds = new Set(strategyData.associations.map(a => a.processus_id));
@@ -1762,8 +1891,6 @@ export const StrategyModule = () => {
   };
 
   const handleEditInTable = (id: string) => {
-    const assoc = strategyData.associations.find(a => a.id === id);
-    if (!assoc) return;
     toast({ title: "Info", description: "Édition à implémenter." });
   };
 
@@ -1834,9 +1961,8 @@ export const StrategyModule = () => {
             <GapsTab data={data} onDefineStrategy={openWizard} />
           ) : (
             <div className="space-y-4">
-              {/* ===== KPI — Bandeau discipliné (4 cartes) ===== */}
+              {/* ===== KPI — sans bordure latérale colorée ===== */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* CARTE 1 — Sans stratégie : seule carte pouvant passer en "critical" */}
                 <KpiCard
                   label="Sans stratégie"
                   value={stats.sansStrategie}
@@ -1846,8 +1972,6 @@ export const StrategyModule = () => {
                   variant={stats.sansStrategie > 0 ? "critical" : "default"}
                   onClick={() => setCurrentView("gaps")}
                 />
-
-                {/* CARTE 2 — Écarts RTO */}
                 <KpiCard
                   label="Écarts RTO"
                   value={stats.rtoGaps}
@@ -1855,8 +1979,6 @@ export const StrategyModule = () => {
                   icon={Target}
                   tone={stats.rtoGaps === 0 ? "success" : "alert"}
                 />
-
-                {/* CARTE 3 — Maturité */}
                 <KpiCard
                   label="Maturité"
                   value={stats.maturityScore}
@@ -1864,8 +1986,6 @@ export const StrategyModule = () => {
                   icon={Gauge}
                   tone="neutral"
                 />
-
-                {/* CARTE 4 — Couverture + badge secondaire "À revoir" */}
                 <KpiCard
                   label="Couverture"
                   value={`${stats.tauxCouverture}%`}
@@ -1880,10 +2000,10 @@ export const StrategyModule = () => {
                 />
               </div>
 
-              {/* ===== CRITICITÉ + PRIORITÉS ===== */}
+              {/* ===== CONSTELLATION + PRIORITÉS ===== */}
               <div className="grid grid-cols-10 gap-4">
                 <div className="col-span-10 md:col-span-4 lg:col-span-3">
-                  <CriticalityCard data={processusWithCriticality} coveragePercent={stats.tauxCouverture} />
+                  <CoverageConstellation data={processusWithCriticality} coveragePercent={stats.tauxCouverture} />
                 </div>
                 <div className="col-span-10 md:col-span-6 lg:col-span-7">
                   <PriorityCenter items={stats.priorityList} onSelect={openWizard} onViewAll={() => setCurrentView("gaps")} />

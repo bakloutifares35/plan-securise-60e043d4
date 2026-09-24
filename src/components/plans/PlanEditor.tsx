@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge"; // ✅ IMPORT AJOUTÉ
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/db";
 import { RichTextEditor } from "./RichTextEditor";
-import { PlansData, ProcessLite } from "./usePlans"; // ✅ Import du type enrichi
+import { PlansData, ProcessLite } from "./usePlans";
 import {
   Plan, PlanContact, PlanEtape, PlanProcedure, PlanSection, PlanVersion, WorkflowEntry,
   PLAN_STATUTS, PLAN_TYPES, RESOURCE_TYPES, STATUT_STYLE, WORKFLOW_ETAPES,
@@ -51,6 +51,64 @@ const RTO_STYLES: Record<string, string> = {
   "72h": "#E8F5E9",
 };
 
+// ============================================================
+// AXE 4 — DotBadge : pattern unique (dot + label sur fond clair)
+// ============================================================
+const DotBadge = ({
+  label,
+  bg,
+  text,
+  dot,
+  size = "sm",
+}: {
+  label: string;
+  bg: string;
+  text: string;
+  dot?: string;
+  size?: "sm" | "md";
+}) => (
+  <span
+    className={cn(
+      "inline-flex items-center gap-1.5 rounded-full font-medium whitespace-nowrap",
+      size === "sm" ? "text-[10.5px] px-2 py-0.5" : "text-[11.5px] px-2.5 py-1"
+    )}
+    style={{ backgroundColor: bg, color: text }}
+  >
+    <span
+      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+      style={{ backgroundColor: dot || text }}
+    />
+    {label}
+  </span>
+);
+
+// ============================================================
+// AXE 2 — TabBadge : indicateur discret sur les onglets
+// ============================================================
+const TabBadge = ({ count, dot, title }: { count?: number; dot?: string; title?: string }) => {
+  if (typeof count === "number" && count > 0) {
+    return (
+      <span
+        className="ml-1.5 text-[9.5px] font-bold tabular-nums rounded-full px-1.5 py-0 min-w-[16px] inline-flex items-center justify-center"
+        style={{ backgroundColor: "#E5E2DD", color: "#172030" }}
+        title={title}
+      >
+        {count}
+      </span>
+    );
+  }
+  if (dot) {
+    return (
+      <span
+        className="ml-1.5 w-1.5 h-1.5 rounded-full inline-block flex-shrink-0"
+        style={{ backgroundColor: dot }}
+        title={title}
+      />
+    );
+  }
+  return null;
+};
+
 export const PlanEditor = ({
   planId,
   data,
@@ -71,7 +129,7 @@ export const PlanEditor = ({
   const [resources, setResources] = useState<Record<string, any[]>>({});
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [openProcs, setOpenProcs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState("contenu"); // ✅ État d'onglet préservé
+  const [activeTab, setActiveTab] = useState("contenu");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [meta, setMeta] = useState<Partial<Plan>>({});
@@ -140,6 +198,18 @@ export const PlanEditor = ({
     const done = sections.filter((s) => s.statut === "Rédigé").length;
     return Math.round((done / sections.length) * 100);
   }, [sections]);
+
+  // AXE 2 — Badges contextuels calculés localement
+  const sectionsToDraft = useMemo(
+    () => sections.filter((s) => s.statut !== "Rédigé").length,
+    [sections]
+  );
+  const workflowComplete = useMemo(() => {
+    const validated = WORKFLOW_ETAPES.filter((e) =>
+      workflow.some((w) => w.etape === e && w.statut === "Validé")
+    );
+    return validated.length === WORKFLOW_ETAPES.length;
+  }, [workflow]);
 
   if (!plan) {
     return (
@@ -326,52 +396,90 @@ export const PlanEditor = ({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" onClick={onBack} className="text-[#172030]/70">
-          <ArrowLeft className="h-4 w-4 mr-1" /> Bibliothèque
-        </Button>
-        <div className="flex-1 min-w-[220px]">
-          <h2 className="text-2xl text-[#172030]" style={{ fontFamily: "Playfair Display, serif" }}>{plan.titre}</h2>
-          <p className="text-xs text-[#172030]/45">
-            {plan.type} · Version {plan.numero_version ?? 1} · Révision : {fmtDate(plan.date_revision_suivante)}
-          </p>
-        </div>
-        <span className="text-[11px] font-medium rounded-full px-2.5 py-1" style={{ backgroundColor: st.bg, color: st.text }}>
-          {statut}
-        </span>
-        <Button variant="outline" onClick={exportMarkdown} className="border-[#E8E4DC]">
-          <FileDown className="h-4 w-4 mr-1" /> Exporter
-        </Button>
-        <Button onClick={saveMeta} disabled={saving} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
-          {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />} Enregistrer
-        </Button>
-      </div>
+      {/* ============================================================
+          AXE 1 — HEADER UNIFIÉ (titre + statut + actions + progression)
+          ============================================================ */}
+      <Card className="border border-[#E8E4DC] bg-white rounded-xl overflow-hidden shadow-sm">
+        {/* Ligne 1 : identité + actions */}
+        <div className="p-5 flex flex-wrap items-center gap-3">
+          <Button variant="ghost" onClick={onBack} className="text-[#172030]/70 -ml-2">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Bibliothèque
+          </Button>
+          <div className="flex-1 min-w-[220px]">
+            <h2
+              className="text-2xl text-[#172030] leading-tight"
+              style={{ fontFamily: "Playfair Display, serif" }}
+            >
+              {plan.titre}
+            </h2>
+            <p className="text-xs text-[#172030]/45 mt-0.5">
+              {plan.type} · Version {plan.numero_version ?? 1} · Révision : {fmtDate(plan.date_revision_suivante)}
+            </p>
+          </div>
 
-      {/* Barre de progression Stylisée */}
-      <Card className="border border-[#E8E4DC] bg-white rounded-xl overflow-hidden">
-        <CardContent className="p-4 flex items-center gap-4">
+          {/* Statut (dot + label) — harmonisé */}
+          <DotBadge
+            label={statut}
+            bg={st.bg}
+            text={st.text}
+            dot={st.text}
+            size="md"
+          />
+
+          <Button variant="outline" onClick={exportMarkdown} className="border-[#E8E4DC]">
+            <FileDown className="h-4 w-4 mr-1" /> Exporter
+          </Button>
+          <Button onClick={saveMeta} disabled={saving} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
+            {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />} Enregistrer
+          </Button>
+        </div>
+
+        {/* Séparateur discret entre identité et progression */}
+        <div className="border-t border-[#E8E4DC]/70" />
+
+        {/* Ligne 2 : progression compacte intégrée */}
+        <div className="px-5 py-3 flex items-center gap-4">
           <div className="flex-1">
-            <div className="flex justify-between text-xs text-[#172030]/55 mb-1">
+            <div className="flex justify-between text-[11px] text-[#172030]/55 mb-1">
               <span className="font-medium">Avancement de la rédaction</span>
               <span className="font-semibold text-[#2A5141]">{completion}%</span>
             </div>
-            <div className="h-2 rounded-full bg-[#F1EFE8] overflow-hidden relative">
-              <div className="h-full bg-gradient-to-r from-[#2A5141] to-[#4A7A6A] transition-all duration-700" style={{ width: `${completion}%` }} />
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/20" />
+            <div className="h-1.5 rounded-full bg-[#F1EFE8] overflow-hidden">
+              <div
+                className="h-full bg-[#2A5141] transition-all duration-700"
+                style={{ width: `${completion}%` }}
+              />
             </div>
           </div>
-          <div className="text-xs text-[#172030]/45 whitespace-nowrap">
-            {sections.filter((s) => s.statut === "Rédigé").length}/{sections.length} sections rédigées
+          <div className="text-[11px] text-[#172030]/45 whitespace-nowrap tabular-nums">
+            {sections.filter((s) => s.statut === "Rédigé").length}/{sections.length} sections
           </div>
-        </CardContent>
+        </div>
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-[#F1EFE8]">
-          <TabsTrigger value="contenu">Contenu</TabsTrigger>
-          <TabsTrigger value="contacts">Annuaire de crise</TabsTrigger>
+          {/* AXE 2 — badges discrets sur les onglets */}
+          <TabsTrigger value="contenu" className="flex items-center">
+            Contenu
+            <TabBadge
+              count={sectionsToDraft}
+              title={`${sectionsToDraft} section(s) à rédiger`}
+            />
+          </TabsTrigger>
+          <TabsTrigger value="contacts" className="flex items-center">
+            Annuaire de crise
+            {contacts.length === 0 && (
+              <TabBadge dot="#B76E1D" title="Aucun contact renseigné" />
+            )}
+          </TabsTrigger>
           <TabsTrigger value="associations">Associations</TabsTrigger>
-          <TabsTrigger value="workflow">Workflow</TabsTrigger>
+          <TabsTrigger value="workflow" className="flex items-center">
+            Workflow
+            {!workflowComplete && (
+              <TabBadge dot="#B76E1D" title="Action en attente" />
+            )}
+          </TabsTrigger>
           <TabsTrigger value="versions">Versions</TabsTrigger>
           <TabsTrigger value="infos">Informations</TabsTrigger>
         </TabsList>
@@ -385,14 +493,20 @@ export const PlanEditor = ({
               <Card className="border border-[#E8E4DC] bg-white rounded-xl h-fit">
                 <CardContent className="p-2">
                   {sections.map((s) => {
-                    const statusStyle = SECTION_STATUS_STYLES[s.statut as keyof typeof SECTION_STATUS_STYLES] || SECTION_STATUS_STYLES["À rédiger"];
+                    const statusStyle =
+                      SECTION_STATUS_STYLES[s.statut as keyof typeof SECTION_STATUS_STYLES] ||
+                      SECTION_STATUS_STYLES["À rédiger"];
+                    // AXE 3 — comptage de procédures par section
+                    const procCount = procedures.filter((p) => p.section_id === s.id).length;
                     return (
                       <button
                         key={s.id}
                         onClick={() => setActiveSection(s.id)}
                         className={cn(
                           "w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-3 transition-colors",
-                          activeSection === s.id ? "bg-[#E8F0EC] text-[#2A5141] font-medium" : "text-[#172030]/70 hover:bg-[#F5F3EF]"
+                          activeSection === s.id
+                            ? "bg-[#E8F0EC] text-[#2A5141] font-medium"
+                            : "text-[#172030]/70 hover:bg-[#F5F3EF]"
                         )}
                       >
                         <span
@@ -400,7 +514,15 @@ export const PlanEditor = ({
                           style={{ backgroundColor: statusStyle.dot, borderColor: statusStyle.dot }}
                         />
                         <span className="flex-1 truncate">{s.titre}</span>
-                        {s.statut === "Rédigé" && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
+                        {/* AXE 3 — nb de procédures */}
+                        {procCount > 0 && (
+                          <span className="text-[10px] text-[#172030]/40 tabular-nums shrink-0">
+                            {procCount} proc.
+                          </span>
+                        )}
+                        {s.statut === "Rédigé" && (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                        )}
                       </button>
                     );
                   })}
@@ -433,6 +555,25 @@ export const PlanEditor = ({
                           <Button variant="ghost" size="icon" className="text-rose-600" onClick={() => removeSection(currentSection.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
+                        </div>
+
+                        {/* AXE 4 — badge statut de la section (dot + label) */}
+                        <div>
+                          <DotBadge
+                            label={currentSection.statut || "À rédiger"}
+                            bg={
+                              (SECTION_STATUS_STYLES[currentSection.statut as keyof typeof SECTION_STATUS_STYLES] ||
+                                SECTION_STATUS_STYLES["À rédiger"]).bg
+                            }
+                            text={
+                              (SECTION_STATUS_STYLES[currentSection.statut as keyof typeof SECTION_STATUS_STYLES] ||
+                                SECTION_STATUS_STYLES["À rédiger"]).text
+                            }
+                            dot={
+                              (SECTION_STATUS_STYLES[currentSection.statut as keyof typeof SECTION_STATUS_STYLES] ||
+                                SECTION_STATUS_STYLES["À rédiger"]).dot
+                            }
+                          />
                         </div>
 
                         <RichTextEditor
@@ -632,7 +773,7 @@ export const PlanEditor = ({
           </Card>
         </TabsContent>
 
-        {/* ---------------- ASSOCIATIONS (REFONTE DESIGN) ---------------- */}
+        {/* ---------------- ASSOCIATIONS ---------------- */}
         <TabsContent value="associations" className="mt-4">
           <div className="grid lg:grid-cols-3 gap-4">
             {/* PROCESSUS */}
@@ -644,7 +785,7 @@ export const PlanEditor = ({
                 <div className="max-h-[420px] overflow-y-auto space-y-2">
                   {data.processus.map((p: ProcessLite) => {
                     const linked = linkedProcess.includes(p.id);
-                    const criticite = p.criticite || "Mineur"; // ✅ Utilisation de la vraie criticité
+                    const criticite = p.criticite || "Mineur";
                     const style = CRITICALITY_STYLES[criticite] || CRITICALITY_STYLES["Mineur"];
                     const rto = p.rto_hours ? `${p.rto_hours}h` : "—";
                     const rtoBg = RTO_STYLES[rto] || "#F1EFE8";
@@ -658,12 +799,15 @@ export const PlanEditor = ({
                           linked ? "bg-[#F0F7F4] border-[#2A5141] shadow-sm" : "bg-white border-[#E8E4DC] hover:border-[#2A5141]/50"
                         )}
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <span className="text-sm font-medium text-[#172030] truncate">{p.name}</span>
-                          {/* Criticité */}
-                          <Badge className="text-[9px] px-2 py-0.5 rounded-full" style={{ backgroundColor: style.bg, color: style.text }}>
-                            {criticite}
-                          </Badge>
+                          {/* AXE 4 — DotBadge pour la criticité */}
+                          <DotBadge
+                            label={criticite}
+                            bg={style.bg}
+                            text={style.text}
+                            dot={style.border}
+                          />
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <span className="text-[10px] text-[#172030]/50">{p.direction || "—"}</span>
@@ -866,7 +1010,7 @@ export const PlanEditor = ({
 };
 
 // ============================================================
-// WORKFLOW
+// WORKFLOW PANEL
 // ============================================================
 const WorkflowPanel = ({
   plan,
@@ -909,7 +1053,14 @@ const WorkflowPanel = ({
               const refused = last?.statut === "Refusé" && !done;
               const active = !isComplete && e === currentEtape;
               return (
-                <div key={e} className="flex gap-3">
+                // AXE 5 — mise en avant discrète de l'étape active
+                <div
+                  key={e}
+                  className={cn(
+                    "flex gap-3 rounded-lg transition-colors",
+                    active ? "bg-[#2A5141]/[0.06] px-3 py-2 -mx-3" : ""
+                  )}
+                >
                   <div className="flex flex-col items-center">
                     <div className={cn(
                       "h-8 w-8 rounded-full grid place-items-center text-xs font-semibold border-2",
@@ -981,3 +1132,5 @@ const WorkflowPanel = ({
     </div>
   );
 };
+
+export default PlanEditor;

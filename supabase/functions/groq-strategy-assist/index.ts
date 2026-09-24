@@ -12,11 +12,9 @@ const corsHeaders = {
 };
 
 // ============================================================
-// CONFIGURATION (lazy : accédée APRÈS le check OPTIONS)
+// CONFIGURATION
 // ============================================================
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-// Timeout global pour les appels Groq (30 secondes)
 const REQUEST_TIMEOUT_MS = 30000;
 
 // ============================================================
@@ -57,9 +55,6 @@ interface SuggestRiskResponse {
 // HELPERS
 // ============================================================
 
-/**
- * Appel générique à l'API Groq avec gestion d'erreurs, timeout et fallback
- */
 async function callGroq(options: GroqRequestOptions): Promise<string> {
   const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
   const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
@@ -74,7 +69,6 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
     timeoutMs = REQUEST_TIMEOUT_MS,
   } = options;
 
-  // Construire le body de la requête
   const body: any = {
     model: GROQ_MODEL,
     messages,
@@ -82,11 +76,7 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
     max_tokens: maxTokens,
   };
 
-  // NOTE : Groq rejette response_format=json_object sur certains modèles
-  // (gpt-oss-120b / gpt-oss-20b) avec l'erreur "json_validate_failed".
-  // Le prompt demande déjà du JSON pur, et parseGroqResponse() nettoie
-  // les backticks. On n'active donc le mode JSON strict que si on est
-  // sur un modèle qui le supporte réellement.
+  // NOTE : Groq rejette response_format=json_object sur gpt-oss-*
   const supportsJsonMode =
     responseFormat === "json_object" && !GROQ_MODEL.includes("gpt-oss");
 
@@ -94,10 +84,6 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
     body.response_format = { type: "json_object" };
   }
 
-  // Reasoning effort + format pour GPT-OSS.
-  // "reasoning_format: parsed" sépare le raisonnement de la réponse finale
-  // dans des champs distincts (message.reasoning vs message.content),
-  // ce qui évite que le raisonnement "pollue" le contenu final.
   if (GROQ_MODEL.includes("gpt-oss")) {
     if (reasoningEffort) body.reasoning_effort = reasoningEffort;
     body.reasoning_format = "parsed";
@@ -108,11 +94,8 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
 
   try {
     let modelUsed = GROQ_MODEL;
-
-    // Tentative avec le modèle principal
     let response = await performFetch(body, controller, GROQ_API_KEY);
 
-    // Si le modèle principal échoue avec une erreur 4xx ou 5xx, tenter le fallback
     if (!response.ok) {
       console.warn(
         `[groq-strategy-assist] Modèle principal ${GROQ_MODEL} a échoué (${response.status}), fallback vers ${GROQ_FALLBACK_MODEL}`
@@ -137,9 +120,6 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
     const choice = data.choices?.[0];
     const finishReason = choice?.finish_reason;
 
-    // Le contenu final peut se trouver dans .content, ou, avec
-    // reasoning_format="parsed" sur certains modèles gpt-oss, la
-    // réponse finale peut apparaître dans un champ séparé du raisonnement.
     let content: string | undefined = choice?.message?.content;
     if (!content || !content.trim()) {
       content = choice?.message?.reasoning;
@@ -151,9 +131,6 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
         JSON.stringify(data)
       );
 
-      // Cas fréquent : le modèle a épuisé son budget de tokens dans le
-      // raisonnement interne avant d'écrire la réponse finale.
-      // On retente une fois avec un budget de tokens nettement plus large.
       if (finishReason === "length") {
         console.warn(
           `[groq-strategy-assist] finish_reason=length détecté, nouvel essai avec max_tokens élargi`
@@ -196,9 +173,6 @@ async function callGroq(options: GroqRequestOptions): Promise<string> {
   }
 }
 
-/**
- * Exécute un fetch avec gestion d'erreur réseau
- */
 async function performFetch(body: any, controller: AbortController, apiKey: string | undefined): Promise<Response> {
   const response = await fetch(GROQ_API_URL, {
     method: "POST",
@@ -213,9 +187,6 @@ async function performFetch(body: any, controller: AbortController, apiKey: stri
   return response;
 }
 
-/**
- * Nettoie et parse une réponse JSON en gérant les backticks et le texte supplémentaire
- */
 function parseGroqResponse<T>(content: string): T {
   let cleanContent = content
     .replace(/```json\s*/g, "")
@@ -234,27 +205,18 @@ function parseGroqResponse<T>(content: string): T {
   throw new Error("Impossible d'extraire un JSON valide de la réponse");
 }
 
-/**
- * Validation et clamp des scores de risque
- */
 function validateRiskScore(value: any, fallback: number = 3): number {
   const num = typeof value === "number" ? value : parseInt(String(value), 10);
   if (isNaN(num)) return fallback;
   return Math.min(5, Math.max(1, num));
 }
 
-/**
- * Validation du champ confidence
- */
 function validateConfidence(value: any): "haute" | "moyenne" | "basse" {
   const valid = ["haute", "moyenne", "basse"];
   const cleaned = String(value).toLowerCase().trim();
   return valid.includes(cleaned) ? (cleaned as any) : "moyenne";
 }
 
-/**
- * Vérifie que les inputs ne sont pas trop volumineux
- */
 function validateInputSize(context: any): void {
   const maxLength = 10000;
   const jsonStr = JSON.stringify(context);
@@ -461,56 +423,79 @@ Justification:`;
 }
 
 /**
- * ACTION 3 : Suggestion Probabilité/Impact/Maîtrise/Mesures
+ * ACTION 3 : Suggestion Probabilité/Impact/Maîtrise + PROPOSITION de mesures
+ * 
+ * ⚠️ Correction majeure : le prompt demande au modèle de PROPOSER des mesures
+ * de traitement concrètes, PAS de décrire des mesures existantes (qui sont
+ * nécessairement vides au moment de la création du risque).
  */
 async function handleSuggestRiskMeasures(context: any): Promise<Response> {
-  const { title, description, category } = context;
+  const { title, description, category, probability, impact } = context;
 
   const prompt = `Tu es un expert en gestion des risques selon la norme ISO 31000.
 
-Analyse le risque suivant et évalue-le selon cette grille stricte:
+MISSION : Évaluer ce risque ET PROPOSER des mesures de traitement concrètes.
 
-PROBABILITÉ (1 à 5):
+═══════════════════════════════════════════════════
+ÉTAPE 1 — ÉVALUER les scores (1 à 5)
+═══════════════════════════════════════════════════
+
+PROBABILITÉ (1 à 5) — fréquence estimée :
 1 = très rare (moins d'une fois par an)
 2 = rare (1-2 fois par an)
 3 = possible (plusieurs fois par an)
 4 = probable (mensuel)
-5 = quasi certain (hebdomadaire ou quotidien)
-➡️ Base-toi sur la fréquence mentionnée dans la description
+5 = quasi certain (hebdomadaire)
 
-IMPACT (1 à 5):
-1 = négligeable (aucune conséquence notable)
-2 = mineur (gêne limitée)
-3 = modéré (impact opérationnel visible mais gérable)
-4 = majeur (impact financier ou opérationnel significatif)
+IMPACT (1 à 5) — gravité des conséquences :
+1 = négligeable
+2 = mineur
+3 = modéré (impact opérationnel gérable)
+4 = majeur (impact financier/opérationnel significatif)
 5 = critique (menace l'activité)
-➡️ Base-toi STRICTEMENT sur les conséquences décrites
 
-MAÎTRISE (1 à 5):
+MAÎTRISE (1 à 5) — niveau de contrôle ACTUEL :
 1 = aucune mesure en place
 2 = mesures faibles ou ponctuelles
 3 = mesures partielles
 4 = mesures solides
 5 = risque fortement maîtrisé
-➡️ Base-toi sur les mesures décrites ou déductibles du contexte
+
+═══════════════════════════════════════════════════
+ÉTAPE 2 — PROPOSER 3 À 5 MESURES DE TRAITEMENT
+═══════════════════════════════════════════════════
+
+Ce sont des SUGGESTIONS que l'utilisateur pourra accepter, modifier ou refuser.
+Ce ne sont PAS des mesures existantes.
+Les mesures doivent être :
+- Concrètes et actionnables
+- Adaptées au type de risque (cyber → EDR, MFA, sauvegardes isolées ; panne → redondance, PCA ; RH → plan de succession, polyvalence ; etc.)
+- Priorisées : commence par les mesures préventives, puis les mesures de mitigation, puis les mesures de continuité
+- Rédigées en français, sous forme de phrases complètes
 
 RISQUE À ANALYSER :
-Titre: "${title || 'Non spécifié'}"
-Description: "${description || 'Non spécifiée'}"
-Catégorie: "${category || 'Non spécifiée'}"
+- Titre : "${title || 'Non spécifié'}"
+- Description : "${description || 'Non spécifiée'}"
+- Catégorie : "${category || 'Non spécifiée'}"
+${probability ? `- Probabilité initiale suggérée : ${probability}/5` : ""}
+${impact ? `- Impact initial suggéré : ${impact}/5` : ""}
 
-IMPORTANT - RÈGLES STRICTES :
-1. Ne SURÉVALUE PAS l'impact: si la description dit "aucune perte" ou "impact limité", l'impact DOIT être 1 ou 2
-2. Ne SURÉVALUE PAS la maîtrise: si aucune mesure n'est mentionnée, la maîtrise DOIT être 1 ou 2
-3. Si une information n'est pas disponible, utilise 3 comme valeur neutre
-4. La description des mesures existantes doit être factuelle et fluide
+═══════════════════════════════════════════════════
+RÈGLES STRICTES
+═══════════════════════════════════════════════════
 
-Retourne UNIQUEMENT un JSON valide avec ce format exact:
+1. Ne SURÉVALUE PAS l'impact : si la description dit "impact limité", l'impact DOIT être ≤ 2
+2. Ne SURÉVALUE PAS la maîtrise : si AUCUNE mesure n'est mentionnée dans le contexte, la maîtrise DOIT être 1 ou 2
+3. Si une information manque, utilise 3 comme valeur neutre pour probabilité/impact
+4. NE COMMENTE JAMAIS les "mesures existantes" — concentre-toi UNIQUEMENT sur les mesures PROPOSÉES
+5. Ne dis JAMAIS "il n'y a pas assez d'information" — fais toujours une proposition réaliste
+
+Retourne UNIQUEMENT un JSON valide au format exact :
 {
-  "probabilite": nombre,
-  "impact": nombre,
-  "maitrise": nombre,
-  "mesures_existantes": "paragraphe fluide en français, sans puces ni tirets"
+  "probabilite": nombre entre 1 et 5,
+  "impact": nombre entre 1 et 5,
+  "maitrise": nombre entre 1 et 5,
+  "mesures_existantes": "Paragraphe fluide en français décrivant 3 à 5 mesures PROPOSÉES que l'utilisateur peut ajouter pour traiter ce risque."
 }`;
 
   const content = await callGroq({
@@ -518,14 +503,16 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
       {
         role: "system",
         content:
-          "Tu es un expert en gestion des risques ISO 31000. Tu réponds toujours en JSON valide. Tu ne SURÉVALUES JAMAIS les scores sans preuve.",
+          "Tu es un expert en gestion des risques ISO 31000. Tu réponds toujours en JSON valide. " +
+          "Tu ne SURÉVALUES JAMAIS les scores sans preuve. " +
+          "Tu proposes TOUJOURS des mesures concrètes de traitement, même si le contexte est pauvre.",
       },
       { role: "user", content: prompt },
     ],
-    temperature: 0.1,
+    temperature: 0.3,
     maxTokens: 1500,
     responseFormat: "json_object",
-    reasoningEffort: "low",
+    reasoningEffort: "medium",
   });
 
   let parsed: SuggestRiskResponse;
@@ -537,8 +524,11 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
       JSON.stringify({
         probabilite: 3,
         impact: 3,
-        maitrise: 3,
-        mesures_existantes: "Aucune mesure spécifique identifiée pour ce risque.",
+        maitrise: 2,
+        mesures_existantes:
+          "Mettre en place des mesures préventives adaptées à ce risque. " +
+          "Définir des procédures de mitigation et tester régulièrement leur efficacité. " +
+          "Documenter un plan de continuité dédié.",
       }),
       { headers: corsHeaders }
     );
@@ -547,11 +537,11 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact:
   const result: SuggestRiskResponse = {
     probabilite: validateRiskScore(parsed.probabilite, 3),
     impact: validateRiskScore(parsed.impact, 3),
-    maitrise: validateRiskScore(parsed.maitrise, 3),
+    maitrise: validateRiskScore(parsed.maitrise, 2),
     mesures_existantes:
       typeof parsed.mesures_existantes === "string" && parsed.mesures_existantes.trim().length > 0
         ? parsed.mesures_existantes.trim()
-        : "Mesures non spécifiées par l'IA.",
+        : "Aucune mesure spécifique proposée par l'IA. Complétez manuellement ce champ.",
   };
 
   return new Response(
