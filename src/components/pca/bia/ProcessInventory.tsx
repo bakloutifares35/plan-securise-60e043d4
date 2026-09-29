@@ -5217,6 +5217,33 @@ export const ProcessInventory = ({
     setViewLevel("directions");
   }, [processes, entities, resourceCountByProcess]);
 
+  // ⭐ Écoute les imports d'entités/processus depuis OrgChart → recharge le BIA
+  useEffect(() => {
+    const handleRefresh = async (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      console.log("🔄 Rechargement BIA déclenché :", detail);
+      if (refreshProcesses) await refreshProcesses();
+    };
+    window.addEventListener("bia:refresh", handleRefresh as EventListener);
+    return () => {
+      window.removeEventListener("bia:refresh", handleRefresh as EventListener);
+    };
+  }, [refreshProcesses]);
+
+  // ⭐ Écoute la demande d'ouverture d'un processus (clic depuis la taxonomie OrgChart)
+  useEffect(() => {
+    const handleOpenProcess = (event: Event) => {
+      const { processId } = (event as CustomEvent).detail || {};
+      if (processId) {
+        handleOpenProcessDetail({ detail: { processId } } as CustomEvent);
+      }
+    };
+    window.addEventListener("bia:openProcess", handleOpenProcess as EventListener);
+    return () => {
+      window.removeEventListener("bia:openProcess", handleOpenProcess as EventListener);
+    };
+  }, [handleOpenProcessDetail]);
+
   // ✅ Ouvrir le processus en attente transmis par BiaModule après un changement d'onglet
   useEffect(() => {
     if (!pendingProcessId) return;

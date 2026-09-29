@@ -1,8 +1,11 @@
-import { useState } from "react";
+// src/components/governance/OrgChart.tsx
+import { useState, useMemo } from "react";
 import { supabase as functionsClient } from "@/integrations/resillia/client";
 import {
   ChevronDown, ChevronRight, Plus, Building2, Trash2, Pencil, Save, X,
   ExternalLink, FileText, Loader2, PlusCircle, Landmark, Layers,
+  Network, Target, TrendingUp, Search, CheckCircle2, AlertTriangle,
+  Upload, CheckCircle, Sparkles, Wand2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
@@ -28,36 +32,29 @@ import jsPDF from 'jspdf';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 
-// Types d'entités disponibles (sans HOLDING et GROUPE)
 const ENTITY_TYPES_FILTERED = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
 
-// Helper pour déterminer si une entité est un niveau bas (Service ou Département)
 const isLowLevel = (type?: string) => {
   const normalized = (type || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return ["SERVICE", "DEPARTEMENT"].includes(normalized);
 };
 
-// Helper pour déterminer si une entité est une Direction
 const isDirection = (type?: string) => {
   const normalized = (type || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return normalized === "DIRECTION";
 };
 
-// Helper pour déterminer si une entité est une Filiale
 const isFiliale = (type?: string) => {
   const normalized = (type || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return normalized === "FILIALE";
 };
 
-// Fonction de validation hiérarchique
 const validateHierarchy = (type: string, parentId: string | null, entities: Entity[]): { valid: boolean; error?: string } => {
   const normalizedType = type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  
   if (normalizedType === "FILIALE") {
     if (parentId) return { valid: false, error: "Une filiale ne peut pas avoir d'entité parente" };
     return { valid: true };
   }
-  
   if (normalizedType === "DIRECTION") {
     if (!parentId) return { valid: false, error: "Une direction doit avoir une filiale parente" };
     const parent = entities.find(e => e.id === parentId);
@@ -65,7 +62,6 @@ const validateHierarchy = (type: string, parentId: string | null, entities: Enti
     if (!isFiliale(parent.type)) return { valid: false, error: "Une direction doit être rattachée à une filiale" };
     return { valid: true };
   }
-  
   if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
     if (!parentId) return { valid: false, error: "Un service/département doit avoir une direction parente" };
     const parent = entities.find(e => e.id === parentId);
@@ -73,19 +69,12 @@ const validateHierarchy = (type: string, parentId: string | null, entities: Enti
     if (!isDirection(parent.type)) return { valid: false, error: "Un service/département doit être rattaché à une direction" };
     return { valid: true };
   }
-  
   return { valid: false, error: "Type d'entité invalide" };
 };
 
-// Récupérer les enfants d'une entité
-const getChildren = (entities: Entity[], parentId: string) => {
-  return entities.filter(e => e.parentId === parentId);
-};
+const getChildren = (entities: Entity[], parentId: string) => entities.filter(e => e.parentId === parentId);
 
-// Récupérer les processus d'une entité
-const getEntityProcesses = (entity: Entity, allProcesses: any[]) => {
-  return allProcesses.filter(p => p.entityId === entity.id);
-};
+const getEntityProcesses = (entity: Entity, allProcesses: any[]) => allProcesses.filter(p => p.entityId === entity.id);
 
 const buildTree = (entities: Entity[], parentId: string | null = null): Entity[] =>
   entities.filter((e) => e.parentId === parentId).map((e) => ({ ...e, children: buildTree(entities, e.id) }));
@@ -97,18 +86,535 @@ const maturityColor = (m: number) => {
 };
 
 // ============================================================
-// NODE AMÉLIORÉ AVEC HIÉRARCHIE VISUELLE + AJOUT CONTEXTUEL
+// DÉTECTION AUTOMATIQUE DES COLONNES
 // ============================================================
-const Node = ({ 
-  node, 
-  depth, 
-  onDelete, 
-  onSelect,
-  onQuickAdd,
-}: { 
-  node: Entity; 
-  depth: number; 
-  onDelete: (id: string) => void; 
+const COLUMN_PATTERNS = {
+  name: ['nom', 'name', 'libelle', 'libellé', 'intitulé', 'intitule', 'entité', 'entite'],
+  type: ['type', 'niveau', 'nature', 'categorie', 'catégorie'],
+  parent: ['parent', 'mère', 'mere', 'rattach', 'supérieur', 'superieur', 'hiérarchie', 'hierarchie'],
+  referent: ['référent', 'referent', 'responsable pca', 'responsable_pca', 'pilote pca', 'owner'],
+  country: ['pays', 'country', 'zone', 'région', 'region'],
+  processName: ['processus', 'process', 'activité', 'activite', 'procédure', 'procedure'],
+  processOwner: ['responsable processus', 'responsable du processus', 'process owner', 'responsable process'],
+  rto: ['rto', 'délai', 'delai', 'reprise'],
+  rpo: ['rpo', 'perte'],
+  criticality: ['criticité', 'criticite', 'criticality', 'sévérité', 'severite'],
+};
+
+const detectColumn = (headers: string[], key: keyof typeof COLUMN_PATTERNS): string | null => {
+  const patterns = COLUMN_PATTERNS[key];
+  for (const header of headers) {
+    const normalized = header.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    for (const pattern of patterns) {
+      const normPattern = pattern.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (normalized === normPattern || normalized.includes(normPattern)) {
+        return header;
+      }
+    }
+  }
+  return null;
+};
+
+const detectAllColumns = (headers: string[]) => {
+  return {
+    name: detectColumn(headers, 'name'),
+    type: detectColumn(headers, 'type'),
+    parent: detectColumn(headers, 'parent'),
+    referent: detectColumn(headers, 'referent'),
+    country: detectColumn(headers, 'country'),
+    processName: detectColumn(headers, 'processName'),
+    processOwner: detectColumn(headers, 'processOwner'),
+    rto: detectColumn(headers, 'rto'),
+    rpo: detectColumn(headers, 'rpo'),
+    criticality: detectColumn(headers, 'criticality'),
+  };
+};
+
+// ============================================================
+// IMPORT EXCEL — Entités + Processus
+// ============================================================
+type ParsedEntity = {
+  name: string;
+  type: string;
+  parentName: string | null;
+  referent: string;
+  country: string;
+  rowIndex: number;
+  isValid: boolean;
+  error?: string;
+};
+
+type ParsedProcess = {
+  name: string;
+  entityName: string;
+  owner: string | null;
+  rto: number | null;
+  rpo: number | null;
+  criticality: string | null;
+  rowIndex: number;
+  isValid: boolean;
+  error?: string;
+};
+
+const ImportExcelDialog = ({
+  open,
+  onOpenChange,
+  entities,
+  onImported,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  entities: Entity[];
+  onImported: () => void;
+}) => {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [file, setFile] = useState<File | null>(null);
+  const [detectedColumns, setDetectedColumns] = useState<any>(null);
+  const [parsedEntities, setParsedEntities] = useState<ParsedEntity[]>([]);
+  const [parsedProcesses, setParsedProcesses] = useState<ParsedProcess[]>([]);
+  const [detectedNewEntities, setDetectedNewEntities] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ entities: number; processes: number; errors: string[] } | null>(null);
+
+  const reset = () => {
+    setStep(1); setFile(null); setDetectedColumns(null);
+    setParsedEntities([]); setParsedProcesses([]);
+    setDetectedNewEntities([]); setImportResult(null);
+  };
+
+  const processFile = (f: File) => {
+    setFile(f);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+        if (jsonData.length === 0) {
+          toast.error("Le fichier est vide");
+          return;
+        }
+
+        const normalized = jsonData.map((row) => {
+          const out: any = {};
+          for (const [k, v] of Object.entries(row)) {
+            out[k.toString().trim()] = typeof v === 'string' ? v.trim() : v;
+          }
+          return out;
+        });
+
+        const headers = Object.keys(normalized[0] || {});
+        const detected = detectAllColumns(headers);
+        setDetectedColumns(detected);
+
+        analyzeData(normalized, detected);
+        setStep(2);
+      } catch (err: any) {
+        toast.error("Erreur lecture Excel : " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(f);
+  };
+
+  const analyzeData = (data: any[], cols: any) => {
+    const newEntities: ParsedEntity[] = [];
+    const newProcesses: ParsedProcess[] = [];
+
+    const getValue = (row: any, col: string | null) => {
+      if (!col) return '';
+      const val = row[col];
+      return val !== undefined && val !== null ? String(val).trim() : '';
+    };
+
+    data.forEach((row, idx) => {
+      const rowIndex = idx + 2;
+
+      const name = getValue(row, cols.name);
+      const type = getValue(row, cols.type).toUpperCase();
+      const parentName = getValue(row, cols.parent) || null;
+      const referent = getValue(row, cols.referent);
+      const country = getValue(row, cols.country) || 'FR';
+      const processName = getValue(row, cols.processName);
+      const processOwner = getValue(row, cols.processOwner) || null;
+      const rtoRaw = getValue(row, cols.rto);
+      const rpoRaw = getValue(row, cols.rpo);
+      const criticality = getValue(row, cols.criticality) || null;
+
+      if (name && type && ENTITY_TYPES_FILTERED.includes(type)) {
+        const entityParent = parentName;
+        const isValidParent = !entityParent || entities.some(e => e.name.toLowerCase() === entityParent.toLowerCase())
+          || data.some(r => getValue(r, cols.name).toLowerCase() === entityParent.toLowerCase());
+        newEntities.push({
+          name, type, parentName: entityParent, referent, country, rowIndex,
+          isValid: isValidParent,
+          error: isValidParent ? undefined : `Entité parente "${entityParent}" introuvable`,
+        });
+      }
+      else if (processName) {
+        const entityName = name;
+        const isValidEntity = entityName && (
+          entities.some(e => e.name.toLowerCase() === entityName.toLowerCase())
+          || data.some(r => getValue(r, cols.name).toLowerCase() === entityName.toLowerCase())
+        );
+        const rto = rtoRaw ? parseFloat(rtoRaw.replace(',', '.')) : null;
+        const rpo = rpoRaw ? parseFloat(rpoRaw.replace(',', '.')) : null;
+        newProcesses.push({
+          name: processName, entityName: entityName || '', owner: processOwner,
+          rto: isNaN(rto as number) ? null : rto, rpo: isNaN(rpo as number) ? null : rpo,
+          criticality, rowIndex,
+          isValid: !!isValidEntity,
+          error: !entityName ? 'Entité manquante' : !isValidEntity ? `Entité "${entityName}" introuvable` : undefined,
+        });
+      }
+    });
+
+    const existingNames = new Set(entities.map(e => e.name.toLowerCase()));
+    const newEntityNames = newEntities
+      .filter(e => !existingNames.has(e.name.toLowerCase()))
+      .map(e => e.name);
+
+    setParsedEntities(newEntities);
+    setParsedProcesses(newProcesses);
+    setDetectedNewEntities(newEntityNames);
+  };
+
+  // ============================================================
+  // IMPORT : Écrit dans les bonnes tables avec les bons champs
+  // ============================================================
+  const executeImport = async () => {
+    setImporting(true);
+    const errors: string[] = [];
+    let entitiesCount = 0;
+    let processesCount = 0;
+
+    try {
+      // ---- 1. Entités ----
+      const entitiesToCreate = parsedEntities.filter(e => e.isValid);
+      const sortedEntities = [...entitiesToCreate].sort((a, b) => {
+        const rank = (t: string) => t === "FILIALE" ? 1 : t === "DIRECTION" ? 2 : 3;
+        return rank(a.type) - rank(b.type);
+      });
+
+      const createdEntityMap = new Map<string, string>();
+      for (const e of sortedEntities) {
+        const existing = entities.find(x => x.name.toLowerCase() === e.name.toLowerCase());
+        if (existing) { createdEntityMap.set(e.name.toLowerCase(), existing.id); continue; }
+
+        let parentId: string | null = null;
+        if (e.parentName) {
+          const parentInMap = createdEntityMap.get(e.parentName.toLowerCase());
+          const parentInDb = entities.find(x => x.name.toLowerCase() === e.parentName!.toLowerCase());
+          parentId = parentInMap || parentInDb?.id || null;
+        }
+
+        const { data, error } = await (supabase as any).from('organisations').insert({
+          name: e.name, type: e.type.toUpperCase(),
+          country_code: e.country || 'FR', parent_id: parentId,
+          pca_referent: e.referent || '—',
+          referent_contact: null, referent_backup: '—', referent_backup_contact: null,
+          pca_status: 'Non démarré', maturity: 20, sector: 'Général', status: 'ACTIVE',
+        }).select().single();
+
+        if (error) { errors.push(`Entité "${e.name}": ${error.message}`); }
+        else { createdEntityMap.set(e.name.toLowerCase(), data.id); entitiesCount++; }
+      }
+
+      // ---- 2. Processus : insertion dans processus_metier avec les BONS champs ----
+      for (const p of parsedProcesses.filter(p => p.isValid)) {
+        const entityId = createdEntityMap.get(p.entityName.toLowerCase())
+          || entities.find(x => x.name.toLowerCase() === p.entityName.toLowerCase())?.id;
+
+        if (!entityId) { errors.push(`Processus "${p.name}": entité "${p.entityName}" introuvable`); continue; }
+
+        // Vérifier si un processus avec le même nom existe déjà dans cette entité
+        const { data: existing } = await (supabase as any)
+          .from('processus_metier')
+          .select('id')
+          .eq('name', p.name)
+          .eq('entity_id', entityId)
+          .maybeSingle();
+
+        if (existing) {
+          errors.push(`Processus "${p.name}": existe déjà dans cette entité`);
+          continue;
+        }
+
+        const entityName = entities.find(x => x.id === entityId)?.name || p.entityName;
+
+        const { error } = await (supabase as any).from('processus_metier').insert({
+          name: p.name,
+          entity_id: entityId,
+          department: entityName,
+          owner: p.owner,
+          rto_hours: p.rto,
+          rpo_hours: p.rpo,
+          criticality_level: p.criticality,
+          impacts: {},
+          status: 'Actif',
+        });
+
+        if (error) { errors.push(`Processus "${p.name}": ${error.message}`); }
+        else { processesCount++; }
+      }
+
+      setImportResult({ entities: entitiesCount, processes: processesCount, errors });
+
+      // ⭐ Déclenche un événement pour forcer le rechargement du BIA dans ProcessInventory
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("bia:refresh", {
+          detail: { reason: "import", entitiesCount, processesCount }
+        }));
+      }
+
+      onImported();
+
+      if (errors.length === 0) {
+        toast.success(`✅ ${entitiesCount} entités et ${processesCount} processus importés`);
+      } else {
+        toast.warning(`${entitiesCount} entités, ${processesCount} processus · ${errors.length} erreur(s)`);
+      }
+    } catch (err: any) {
+      setImportResult({ entities: entitiesCount, processes: processesCount, errors: [err.message] });
+      toast.error("Erreur import : " + err.message);
+    }
+    setImporting(false);
+  };
+
+  const totalValid = parsedEntities.filter(e => e.isValid).length + parsedProcesses.filter(p => p.isValid).length;
+  const totalErrors = parsedEntities.filter(e => !e.isValid).length + parsedProcesses.filter(p => !p.isValid).length;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o && !importing) reset(); onOpenChange(o); }}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wand2 className="h-5 w-5 text-[#2A5141]" />
+            Import Excel
+          </DialogTitle>
+          <DialogDescription>
+            {step === 1 && "Un fichier Excel générique — les colonnes sont détectées automatiquement"}
+            {step === 2 && "Vérifiez l'analyse avant import"}
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === 1 && (
+          <div className="space-y-4 py-4">
+            <div
+              className="border-2 border-dashed border-[#2A5141]/30 rounded-xl p-10 text-center hover:border-[#2A5141] hover:bg-[#2A5141]/[0.02] transition-all cursor-pointer group"
+              onClick={() => document.getElementById('generic-file-input')?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) processFile(f); }}
+            >
+              <input id="generic-file-input" type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-16 w-16 rounded-full bg-[#2A5141]/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Upload className="h-8 w-8 text-[#2A5141]" />
+                </div>
+                <div>
+                  <p className="text-base font-semibold text-[#172030]">
+                    Déposez votre fichier Excel
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    N'importe quelle structure — le système s'adapte
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-400 mt-2">
+                  <span className="px-2 py-1 rounded bg-gray-100">.xlsx</span>
+                  <span className="px-2 py-1 rounded bg-gray-100">.xls</span>
+                  <span className="px-2 py-1 rounded bg-gray-100">.csv</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gradient-to-r from-[#2A5141]/5 to-transparent border border-[#2A5141]/20 rounded-lg">
+              <div className="flex items-start gap-3">
+                <div className="h-8 w-8 rounded-lg bg-[#2A5141]/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Sparkles className="h-4 w-4 text-[#2A5141]" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-[#172030] mb-2">
+                    Comment ça marche ?
+                  </p>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    <li>• <strong>Détection automatique</strong> : les colonnes sont reconnues par leur nom (Nom, Type, Parent, RTO, etc.)</li>
+                    <li>• <strong>Ligne ENTITÉ</strong> si le type est FILIALE / DIRECTION / SERVICE / DÉPARTEMENT</li>
+                    <li>• <strong>Ligne PROCESSUS</strong> si la colonne "Processus" est remplie</li>
+                    <li>• Les processus importés apparaissent automatiquement dans le module BIA</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4 py-4">
+            {detectedColumns && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Colonnes détectées automatiquement
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(detectedColumns).map(([key, val]) => val && (
+                    <span key={key} className="text-xs px-2 py-0.5 rounded bg-white text-blue-700 border border-blue-200">
+                      <strong>{key}</strong> → {val as string}
+                    </span>
+                  ))}
+                  {Object.values(detectedColumns).filter(v => v).length === 0 && (
+                    <span className="text-xs text-red-600">Aucune colonne reconnue</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-4 gap-3">
+              <div className="p-3 rounded-lg bg-[#172030]/5 border border-[#172030]/10">
+                <p className="text-xs text-gray-500 mb-1">Entités</p>
+                <p className="text-2xl font-bold text-[#172030]">{parsedEntities.length}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-[#2A5141]/5 border border-[#2A5141]/10">
+                <p className="text-xs text-gray-500 mb-1">Processus</p>
+                <p className="text-2xl font-bold text-[#2A5141]">{parsedProcesses.length}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+                <p className="text-xs text-gray-500 mb-1">À importer</p>
+                <p className="text-2xl font-bold text-emerald-600">{totalValid}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                <p className="text-xs text-gray-500 mb-1">Erreurs</p>
+                <p className="text-2xl font-bold text-red-600">{totalErrors}</p>
+              </div>
+            </div>
+
+            {detectedNewEntities.length > 0 && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm font-semibold text-blue-800 flex items-center gap-2 mb-2">
+                  <Sparkles className="h-4 w-4" />
+                  {detectedNewEntities.length} nouvelle{detectedNewEntities.length > 1 ? "s" : ""} entité{detectedNewEntities.length > 1 ? "s" : ""}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {detectedNewEntities.slice(0, 8).map((n, i) => (
+                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-white text-blue-700 border border-blue-200">{n}</span>
+                  ))}
+                  {detectedNewEntities.length > 8 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white text-blue-700 border border-blue-200">
+                      +{detectedNewEntities.length - 8}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {totalErrors > 0 && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg max-h-32 overflow-y-auto">
+                <p className="text-sm font-semibold text-red-800 mb-2">Erreurs :</p>
+                <ul className="text-xs text-red-600 space-y-1">
+                  {parsedEntities.filter(e => !e.isValid).map((e, i) => (
+                    <li key={`e-${i}`}>• Ligne {e.rowIndex} (Entité {e.name}): {e.error}</li>
+                  ))}
+                  {parsedProcesses.filter(p => !p.isValid).map((p, i) => (
+                    <li key={`p-${i}`}>• Ligne {p.rowIndex} (Processus {p.name}): {p.error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {parsedEntities.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-[#172030] mb-2 flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-[#172030]" /> Entités ({parsedEntities.length})
+                </p>
+                <div className="border rounded-lg overflow-x-auto max-h-40 overflow-y-auto">
+                  <Table>
+                    <TableHeader><TableRow className="bg-gray-50 sticky top-0">
+                      <TableHead className="text-xs w-12">Ligne</TableHead>
+                      <TableHead className="text-xs">Nom</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Parent</TableHead>
+                      <TableHead className="text-xs w-16">OK</TableHead>
+                    </TableRow></TableHeader>
+                    <TableBody>
+                      {parsedEntities.slice(0, 30).map((e, i) => (
+                        <TableRow key={i} className={!e.isValid ? "bg-red-50/50" : ""}>
+                          <TableCell className="text-xs text-gray-400">{e.rowIndex}</TableCell>
+                          <TableCell className="text-xs font-medium">{e.name}</TableCell>
+                          <TableCell className="text-xs"><Badge variant="outline" className="text-[10px]">{e.type}</Badge></TableCell>
+                          <TableCell className="text-xs text-gray-500">{e.parentName || "Racine"}</TableCell>
+                          <TableCell>{e.isValid ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {parsedProcesses.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-[#172030] mb-2 flex items-center gap-2">
+                  <Target className="h-4 w-4 text-[#2A5141]" /> Processus ({parsedProcesses.length})
+                </p>
+                <div className="border rounded-lg overflow-x-auto max-h-40 overflow-y-auto">
+                  <Table>
+                    <TableHeader><TableRow className="bg-gray-50 sticky top-0">
+                      <TableHead className="text-xs w-12">Ligne</TableHead>
+                      <TableHead className="text-xs">Processus</TableHead>
+                      <TableHead className="text-xs">Entité</TableHead>
+                      <TableHead className="text-xs">RTO</TableHead>
+                      <TableHead className="text-xs">RPO</TableHead>
+                      <TableHead className="text-xs w-16">OK</TableHead>
+                    </TableRow></TableHeader>
+                    <TableBody>
+                      {parsedProcesses.slice(0, 30).map((p, i) => (
+                        <TableRow key={i} className={!p.isValid ? "bg-red-50/50" : ""}>
+                          <TableCell className="text-xs text-gray-400">{p.rowIndex}</TableCell>
+                          <TableCell className="text-xs font-medium">{p.name}</TableCell>
+                          <TableCell className="text-xs text-gray-500">{p.entityName}</TableCell>
+                          <TableCell className="text-xs font-mono">{p.rto || "—"}</TableCell>
+                          <TableCell className="text-xs font-mono">{p.rpo || "—"}</TableCell>
+                          <TableCell>{p.isValid ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {importResult && (
+              <div className={cn("rounded-lg p-4", importResult.errors.length > 0 ? 'bg-orange-50 border border-orange-200' : 'bg-green-50 border border-green-200')}>
+                <p className="text-sm font-semibold">✅ {importResult.entities} entités et {importResult.processes} processus importés</p>
+                {importResult.errors.length > 0 && (
+                  <ul className="mt-2 text-xs space-y-1 max-h-24 overflow-y-auto">
+                    {importResult.errors.slice(0, 10).map((e, i) => <li key={i}>• {e}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={reset} disabled={importing}>Changer de fichier</Button>
+              <Button onClick={executeImport} disabled={importing || !!importResult || totalValid === 0} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
+                {importing ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Import...</>) : importResult ? "Terminé" : (<><Wand2 className="h-4 w-4 mr-2" /> Importer {totalValid} élément{totalValid > 1 ? "s" : ""}</>)}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ============================================================
+// NODE
+// ============================================================
+const Node = ({ node, depth, onDelete, onSelect, onQuickAdd }: {
+  node: Entity; depth: number;
+  onDelete: (id: string) => void;
   onSelect: (id: string) => void;
   onQuickAdd: (parentId: string, type: EntityType) => void;
 }) => {
@@ -117,205 +623,83 @@ const Node = ({
   const hasChildren = (node.children?.length ?? 0) > 0;
   const { can } = useRole();
   const m = node.maturity ?? defaultMaturity(node.pcaStatus);
-  const isDept = isLowLevel(node.type);
   const isDir = isDirection(node.type);
   const isFil = isFiliale(node.type);
 
-  // Types d'enfants autorisés selon le type de ce nœud
-  const allowedChildTypes: { type: EntityType; label: string; icon: any }[] = 
-    isFil
-      ? [{ type: "DIRECTION" as EntityType, label: "Ajouter une direction", icon: Landmark }]
-      : isDir
-      ? [
-          { type: "SERVICE" as EntityType, label: "Ajouter un service", icon: Layers },
-          { type: "DÉPARTEMENT" as EntityType, label: "Ajouter un département", icon: Layers },
-        ]
-      : [];
-
+  const allowedChildTypes: { type: EntityType; label: string; icon: any }[] =
+    isFil ? [{ type: "DIRECTION" as EntityType, label: "Ajouter une direction", icon: Landmark }]
+    : isDir ? [
+        { type: "SERVICE" as EntityType, label: "Ajouter un service", icon: Layers },
+        { type: "DÉPARTEMENT" as EntityType, label: "Ajouter un département", icon: Layers },
+      ] : [];
   const canAddChild = allowedChildTypes.length > 0 && can("write");
 
-  // Couleurs par type
   const getTypeColors = (type?: string) => {
-    if (isFil) return {
-      iconBg: "bg-[#172030]",
-      iconColor: "text-white",
-      badgeBg: "bg-[#172030]",
-      badgeText: "text-white",
-      borderColor: "border-[#172030]",
-      textSize: "text-base font-bold"
-    };
-    if (isDir) return {
-      iconBg: "bg-[#2A5141]",
-      iconColor: "text-white",
-      badgeBg: "bg-[#2A5141]",
-      badgeText: "text-white",
-      borderColor: "border-[#2A5141]",
-      textSize: "text-sm font-semibold"
-    };
-    if (type?.toUpperCase() === "SERVICE") return {
-      iconBg: "bg-blue-100",
-      iconColor: "text-blue-700",
-      badgeBg: "bg-blue-100",
-      badgeText: "text-blue-700",
-      borderColor: "border-blue-200",
-      textSize: "text-sm font-medium"
-    };
-    if (type?.toUpperCase() === "DÉPARTEMENT") return {
-      iconBg: "bg-purple-100",
-      iconColor: "text-purple-700",
-      badgeBg: "bg-purple-100",
-      badgeText: "text-purple-700",
-      borderColor: "border-purple-200",
-      textSize: "text-sm font-medium"
-    };
-    return {
-      iconBg: "bg-gray-100",
-      iconColor: "text-gray-600",
-      badgeBg: "bg-gray-100",
-      badgeText: "text-gray-600",
-      borderColor: "border-gray-200",
-      textSize: "text-sm font-medium"
-    };
+    if (isFil) return { iconBg: "bg-[#172030]", iconColor: "text-white", badgeBg: "bg-[#172030]", badgeText: "text-white", borderColor: "border-[#172030]", textSize: "text-base font-bold" };
+    if (isDir) return { iconBg: "bg-[#2A5141]", iconColor: "text-white", badgeBg: "bg-[#2A5141]", badgeText: "text-white", borderColor: "border-[#2A5141]", textSize: "text-sm font-semibold" };
+    if (type?.toUpperCase() === "SERVICE") return { iconBg: "bg-blue-100", iconColor: "text-blue-700", badgeBg: "bg-blue-100", badgeText: "text-blue-700", borderColor: "border-blue-200", textSize: "text-sm font-medium" };
+    if (type?.toUpperCase() === "DÉPARTEMENT") return { iconBg: "bg-purple-100", iconColor: "text-purple-700", badgeBg: "bg-purple-100", badgeText: "text-purple-700", borderColor: "border-purple-200", textSize: "text-sm font-medium" };
+    return { iconBg: "bg-gray-100", iconColor: "text-gray-600", badgeBg: "bg-gray-100", badgeText: "text-gray-600", borderColor: "border-gray-200", textSize: "text-sm font-medium" };
   };
 
   const colors = getTypeColors(node.type);
-  
   const iconSize = isFil ? "h-5 w-5" : isDir ? "h-4.5 w-4.5" : "h-4 w-4";
   const iconContainerSize = isFil ? "h-9 w-9" : isDir ? "h-8 w-8" : "h-7 w-7";
 
-  // Détection des doublons de nom au même niveau
   const getDisplayName = () => {
     const siblingsWithSameName = node.parentId
       ? (getChildren([], node.parentId) as any).filter((e: any) => e.name === node.name && e.id !== node.id)
       : [];
-    
-    if (siblingsWithSameName.length > 0) {
-      return `${node.name} (${node.country || 'FR'})`;
-    }
+    if (siblingsWithSameName.length > 0) return `${node.name} (${node.country || 'FR'})`;
     return node.name;
   };
 
-  // Fond alterné selon la profondeur
   const bgColor = depth % 2 === 0 ? "bg-white" : "bg-[#F8F6F2]/30";
-
-  // Highlight temporaire après création rapide
   const highlight = typeof window !== 'undefined' && (window as any).__lastCreatedEntityId === node.id;
 
   return (
     <div className={cn("relative", bgColor)}>
-      {/* Ligne de connexion verticale */}
       {depth > 0 && (
-        <div 
-          className="absolute left-[18px] top-0 bottom-0 w-px bg-gray-200"
-          style={{ 
-            height: '100%',
-            left: `${depth * 24 + 18}px`
-          }}
-        />
+        <div className="absolute left-[18px] top-0 bottom-0 w-px bg-gray-200" style={{ height: '100%', left: `${depth * 24 + 18}px` }} />
       )}
-      
       <div
-        className={cn(
-          "py-3 px-3 rounded-lg hover:bg-secondary/40 transition-all duration-200 group cursor-pointer relative",
-          isFil ? "py-4" : "py-2.5",
-          highlight && "ring-2 ring-[#2A5141]/40 ring-offset-2 bg-[#E8F5E9]/40 animate-pulse"
-        )}
+        className={cn("py-3 px-3 rounded-lg hover:bg-secondary/40 transition-all duration-200 group cursor-pointer relative", isFil ? "py-4" : "py-2.5", highlight && "ring-2 ring-[#2A5141]/40 ring-offset-2 bg-[#E8F5E9]/40 animate-pulse")}
         style={{ paddingLeft: `${depth * 28 + 12}px` }}
         onClick={() => onSelect(node.id)}
       >
         <div className="flex items-center gap-3">
-          {/* Bouton d'expansion avec cercle au survol */}
-          <button 
-            onClick={(e) => { e.stopPropagation(); setOpen(!open); }} 
-            className={cn(
-              "flex items-center justify-center rounded-full transition-all duration-200",
-              hasChildren ? "hover:bg-gray-200/70 w-6 h-6" : "w-6 h-6 opacity-0"
-            )}
-          >
-            {hasChildren ? (
-              open ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />
-            ) : (
-              <span className="inline-block w-4" />
-            )}
+          <button onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+            className={cn("flex items-center justify-center rounded-full transition-all duration-200", hasChildren ? "hover:bg-gray-200/70 w-6 h-6" : "w-6 h-6 opacity-0")}>
+            {hasChildren ? (open ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />) : <span className="inline-block w-4" />}
           </button>
-
-          {/* Icône avec couleur selon le type */}
-          <div className={cn(
-            "rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
-            iconContainerSize,
-            colors.iconBg
-          )}>
+          <div className={cn("rounded-lg flex items-center justify-center flex-shrink-0 transition-all", iconContainerSize, colors.iconBg)}>
             <Building2 className={cn(iconSize, colors.iconColor)} />
           </div>
-
-          {/* Colonnes alignées */}
           <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
             <div className="flex items-center gap-2 min-w-0">
-              <span className={cn(
-                "truncate",
-                colors.textSize,
-                isFil ? "text-[#172030]" : "text-gray-800"
-              )}>
-                {getDisplayName()}
-              </span>
+              <span className={cn("truncate", colors.textSize, isFil ? "text-[#172030]" : "text-gray-800")}>{getDisplayName()}</span>
             </div>
-
-            <div>
-              <Badge className={cn(
-                "font-medium px-2.5 py-0.5 rounded-full text-[10px]",
-                colors.badgeBg,
-                colors.badgeText,
-                colors.borderColor
-              )}>
-                {node.type || "—"}
-              </Badge>
-            </div>
-
+            <div><Badge className={cn("font-medium px-2.5 py-0.5 rounded-full text-[10px]", colors.badgeBg, colors.badgeText, colors.borderColor)}>{node.type || "—"}</Badge></div>
             <span className="text-xs text-muted-foreground">{node.country || "FR"}</span>
             <span className="text-xs truncate text-muted-foreground">{node.referent || "—"}</span>
           </div>
-
-          {/* Actions au survol : Ajouter + Supprimer */}
-          <div 
-            className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" 
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* ✅ BOUTON AJOUT CONTEXTUEL */}
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
             {canAddChild && (
               <Popover open={addMenuOpen} onOpenChange={setAddMenuOpen}>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 rounded-full text-[#2A5141] hover:bg-[#2A5141]/10 hover:text-[#2A5141]"
-                    title={
-                      isFil 
-                        ? "Ajouter une direction sous cette filiale" 
-                        : "Ajouter une sous-entité"
-                    }
-                  >
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-[#2A5141] hover:bg-[#2A5141]/10">
                     <PlusCircle className="h-3.5 w-3.5" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent 
-                  className="w-56 p-1.5 z-50" 
-                  align="end"
-                  side="bottom"
-                >
+                <PopoverContent className="w-56 p-1.5 z-50" align="end" side="bottom">
                   <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border mb-1">
                     Sous « {node.name.length > 25 ? node.name.slice(0, 25) + '…' : node.name} »
                   </div>
                   {allowedChildTypes.map((opt) => {
                     const Icon = opt.icon;
                     return (
-                      <button
-                        key={opt.type}
-                        onClick={() => {
-                          setAddMenuOpen(false);
-                          onQuickAdd(node.id, opt.type);
-                        }}
-                        className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-[#F8F6F2] transition-colors text-left"
-                      >
+                      <button key={opt.type} onClick={() => { setAddMenuOpen(false); onQuickAdd(node.id, opt.type); }}
+                        className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-[#F8F6F2] transition-colors text-left">
                         <Icon className="h-4 w-4 text-[#2A5141] flex-shrink-0" />
                         <span className="text-[#172030] font-medium">{opt.label}</span>
                       </button>
@@ -324,46 +708,22 @@ const Node = ({
                 </PopoverContent>
               </Popover>
             )}
-
             {can("admin") && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-full" 
-                onClick={() => onDelete(node.id)}
-              >
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-full" onClick={() => onDelete(node.id)}>
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             )}
           </div>
         </div>
       </div>
-
-      {/* Enfants */}
       {hasChildren && open && (
         <div className="relative">
           {node.children!.map((c, index) => (
             <div key={c.id} className="relative">
-              {/* Connecteur en L pour le dernier enfant */}
               {index === node.children!.length - 1 && depth > 0 && (
-                <div 
-                  className="absolute w-px bg-gray-200"
-                  style={{
-                    left: `${depth * 28 + 18}px`,
-                    top: 0,
-                    bottom: '50%',
-                    height: '50%'
-                  }}
-                />
+                <div className="absolute w-px bg-gray-200" style={{ left: `${depth * 28 + 18}px`, top: 0, bottom: '50%', height: '50%' }} />
               )}
-              <Node 
-                key={c.id} 
-                node={c} 
-                depth={depth + 1} 
-                onDelete={onDelete} 
-                onSelect={onSelect} 
-                onQuickAdd={onQuickAdd}
-              />
+              <Node key={c.id} node={c} depth={depth + 1} onDelete={onDelete} onSelect={onSelect} onQuickAdd={onQuickAdd} />
             </div>
           ))}
         </div>
@@ -372,44 +732,253 @@ const Node = ({
   );
 };
 
+// ============================================================
+// TAXONOMY TAB
+// ============================================================
+const TaxonomyTab = ({ entities, processes, onOpenImport, onDownloadTemplate, onNavigateToBIA }: { entities: Entity[]; processes: any[]; onOpenImport: () => void; onDownloadTemplate: () => void; onNavigateToBIA?: (processId: string) => void }) => {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const stats = useMemo(() => {
+    const filiales = entities.filter(e => isFiliale(e.type));
+    const directions = entities.filter(e => isDirection(e.type));
+    const directionsWithoutProcesses = directions.filter(d => {
+      const hasOwn = processes.some(p => p.entityId === d.id);
+      const children = entities.filter(e => e.parentId === d.id);
+      const hasChild = children.some(c => processes.some(p => p.entityId === c.id));
+      return !hasOwn && !hasChild;
+    });
+    const processesWithoutRto = processes.filter(p => !p.rto && !p.rto_hours);
+    const entitiesWithProcesses = entities.filter(e => processes.some(p => p.entityId === e.id)).length;
+    const coverage = entities.length > 0 ? Math.round((entitiesWithProcesses / entities.length) * 100) : 0;
+    return { filiales: filiales.length, directions: directions.length, totalProcesses: processes.length, directionsWithoutProcesses: directionsWithoutProcesses.length, processesWithoutRto: processesWithoutRto.length, coverage };
+  }, [entities, processes]);
+
+  const getProcessesOf = (entity: Entity) => processes.filter(p => p.entityId === entity.id);
+  const toggleEntity = (entityId: string) => setExpanded(prev => ({ ...prev, [entityId]: !prev[entityId] }));
+
+  const renderNode = (entity: Entity, depth = 0) => {
+    const children = entities.filter(e => e.parentId === entity.id);
+    const entityProcesses = getProcessesOf(entity);
+    const isExpanded = expanded[entity.id] ?? false;
+    const hasChildren = children.length > 0;
+    const hasProcesses = entityProcesses.length > 0;
+    const canExpand = hasChildren || hasProcesses;
+
+    let totalInBranch = entityProcesses.length;
+    const countRec = (pid: string) => {
+      entities.filter(e => e.parentId === pid).forEach(c => { totalInBranch += getProcessesOf(c).length; countRec(c.id); });
+    };
+    countRec(entity.id);
+
+    const matchesSearch = searchQuery === "" ||
+      entity.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      entityProcesses.some(p => (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()));
+    if (searchQuery && !matchesSearch && !hasChildren) return null;
+
+    const getIcon = () => {
+      if (isFiliale(entity.type)) return <Building2 className="h-4 w-4" />;
+      if (isDirection(entity.type)) return <Landmark className="h-4 w-4" />;
+      return <Layers className="h-4 w-4" />;
+    };
+
+    const getColors = () => {
+      if (isFiliale(entity.type)) return { bg: "bg-[#172030]", text: "text-white" };
+      if (isDirection(entity.type)) return { bg: "bg-[#2A5141]", text: "text-white" };
+      if (entity.type?.toUpperCase() === "SERVICE") return { bg: "bg-blue-100", text: "text-blue-700" };
+      if (entity.type?.toUpperCase() === "DÉPARTEMENT") return { bg: "bg-purple-100", text: "text-purple-700" };
+      return { bg: "bg-gray-100", text: "text-gray-700" };
+    };
+
+    const colors = getColors();
+
+    return (
+      <div key={entity.id} className="relative">
+        <div
+          className={cn("group flex items-center gap-2 py-2.5 pr-2 rounded-lg transition-all duration-200 cursor-pointer select-none", depth === 0 && "py-3", isExpanded ? "bg-[#F8F6F2]" : "hover:bg-[#F8F6F2]", "active:scale-[0.995]")}
+          style={{ paddingLeft: `${depth * 24 + 8}px` }}
+          onClick={() => canExpand && toggleEntity(entity.id)}
+        >
+          <div className={cn("flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all", canExpand ? "bg-white border border-[#E8E4DC] group-hover:border-[#2A5141]/40" : "opacity-30")}>
+            {canExpand ? (isExpanded ? <ChevronDown className="h-4 w-4 text-[#2A5141]" /> : <ChevronRight className="h-4 w-4 text-[#2A5141]" />) : <span className="w-4" />}
+          </div>
+          <div className={cn("flex-shrink-0 rounded-md flex items-center justify-center", depth === 0 ? "h-8 w-8" : "h-7 w-7", colors.bg, colors.text)}>
+            {getIcon()}
+          </div>
+          <span className={cn("truncate flex-1", depth === 0 ? "text-sm font-bold text-[#172030]" : "text-sm font-semibold text-[#172030]")}>{entity.name}</span>
+          <Badge className={cn("text-[10px] font-medium border-0", colors.bg, colors.text)}>{entity.type}</Badge>
+          {totalInBranch > 0 && (
+            <Badge className={cn("text-[10px] font-semibold border-0 transition-colors", isExpanded ? "bg-[#2A5141] text-white" : "bg-[#2A5141]/10 text-[#2A5141]")}>
+              <Target className="h-2.5 w-2.5 mr-1" /> {totalInBranch} processus
+            </Badge>
+          )}
+          {canExpand && !isExpanded && (
+            <span className="text-[10px] text-[#2A5141]/60 font-medium hidden md:inline">Cliquer pour voir</span>
+          )}
+        </div>
+
+        {isExpanded && (
+          <div className="relative">
+            <div className="absolute top-0 bottom-0 w-px bg-[#E8E4DC]" style={{ left: `${depth * 24 + 20}px` }} />
+            {hasProcesses && (
+              <div className="mt-1 mb-2 space-y-1" style={{ paddingLeft: `${depth * 24 + 56}px` }}>
+                {entityProcesses.map(p => {
+                  const hasRto = !!(p.rto || p.rto_hours);
+                  const rtoValue = p.rto || p.rto_hours;
+                  const crit = p.criticality || (p.impacts ? scoreToCriticality(computeMaxScore(p.impacts)) : "Non défini");
+                  const isCritical = crit === "Critique" || crit === "Élevé";
+                  return (
+                    <div
+                      key={p.id}
+                      className="group flex items-center gap-2 py-2 px-3 rounded-md bg-white border border-[#E8E4DC] hover:border-[#2A5141]/40 hover:shadow-sm transition-all cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigateToBIA?.(p.id);
+                      }}
+                      title="Ouvrir la fiche BIA de ce processus"
+                    >
+                      <Target className="h-3.5 w-3.5 text-[#2A5141] flex-shrink-0" />
+                      <span className="text-[13px] text-[#172030] truncate flex-1">{p.name}</span>
+                      {p.owner && <><span className="text-[10px] text-gray-400">•</span><span className="text-[11px] text-gray-500 truncate max-w-[100px]">{p.owner}</span></>}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {hasRto ? (
+                          <Badge className="text-[9px] font-mono bg-blue-50 text-blue-700 border-0">RTO {rtoValue}h</Badge>
+                        ) : (
+                          <Badge className="text-[9px] bg-orange-50 text-orange-700 border-0"><AlertTriangle className="h-2.5 w-2.5 mr-0.5" /> RTO manquant</Badge>
+                        )}
+                        {crit !== "Non défini" && (<span className={cn("w-2 h-2 rounded-full", isCritical ? "bg-red-500" : crit === "Modéré" ? "bg-amber-500" : "bg-emerald-500")} title={crit} />)}
+                        {hasRto && !isCritical && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+                        <ExternalLink className="h-3 w-3 text-[#2A5141] opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {hasChildren && children.map(c => renderNode(c, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const filiales = entities.filter(e => isFiliale(e.type) && !e.parentId);
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="border-[#E8E4DC] shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="h-10 w-10 rounded-lg bg-[#172030]/10 flex items-center justify-center flex-shrink-0"><Building2 className="h-5 w-5 text-[#172030]" /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Filiales</p><p className="text-2xl font-bold text-[#172030]">{stats.filiales}</p></div></CardContent></Card>
+        <Card className="border-[#E8E4DC] shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="h-10 w-10 rounded-lg bg-[#2A5141]/10 flex items-center justify-center flex-shrink-0"><Landmark className="h-5 w-5 text-[#2A5141]" /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Directions</p><p className="text-2xl font-bold text-[#172030]">{stats.directions}</p></div></CardContent></Card>
+        <Card className="border-[#E8E4DC] shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0"><Target className="h-5 w-5 text-emerald-600" /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Processus</p><p className="text-2xl font-bold text-[#172030]">{stats.totalProcesses}</p></div></CardContent></Card>
+        <Card className="border-[#E8E4DC] shadow-sm"><CardContent className="p-4 flex items-center gap-3"><div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0"><TrendingUp className="h-5 w-5 text-blue-600" /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">Couverture</p><p className="text-2xl font-bold text-[#172030]">{stats.coverage}%</p></div></CardContent></Card>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-lg bg-gradient-to-r from-[#2A5141]/[0.04] to-transparent border border-[#2A5141]/20">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-[#2A5141] flex items-center justify-center shadow-sm">
+            <Wand2 className="h-4 w-4 text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[#172030] flex items-center gap-2">
+              Import Excel
+              <Badge className="bg-[#2A5141] text-white border-0 text-[9px] font-bold uppercase tracking-wider">
+                <Sparkles className="h-2.5 w-2.5 mr-0.5" /> Auto
+              </Badge>
+            </p>
+            <p className="text-[11px] text-gray-500">Entités et processus — détection automatique des colonnes</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onDownloadTemplate} className="h-8 border-[#2A5141]/30 text-[#2A5141] text-xs">
+            <FileText className="h-3.5 w-3.5 mr-1" /> Télécharger le modèle
+          </Button>
+          <Button size="sm" onClick={onOpenImport} className="h-8 bg-[#2A5141] hover:bg-[#1a3329] text-white text-xs">
+            <Upload className="h-3.5 w-3.5 mr-1" /> Lancer l'import
+          </Button>
+        </div>
+      </div>
+
+      {(stats.directionsWithoutProcesses > 0 || stats.processesWithoutRto > 0) && (
+        <div className="flex flex-wrap gap-2">
+          {stats.directionsWithoutProcesses > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 border border-orange-200 text-[12px] text-orange-700">
+              <AlertTriangle className="h-3.5 w-3.5" /><span><strong>{stats.directionsWithoutProcesses}</strong> direction{stats.directionsWithoutProcesses > 1 ? "s" : ""} sans processus</span>
+            </div>
+          )}
+          {stats.processesWithoutRto > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-700">
+              <AlertTriangle className="h-3.5 w-3.5" /><span><strong>{stats.processesWithoutRto}</strong> processus sans RTO défini</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Network className="h-4 w-4 text-[#2A5141]" />
+            <span className="text-sm font-semibold text-[#172030]">Vue hiérarchique interactive</span>
+            <span className="text-xs text-gray-400 hidden md:inline">— Cliquez sur une direction, puis sur un processus pour ouvrir sa fiche BIA</span>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Rechercher..." className="h-8 w-[220px] pl-8 text-xs border-[#E8E4DC]" />
+          </div>
+        </div>
+
+        {filiales.length === 0 ? (
+          <div className="text-center py-12">
+            <Network className="h-12 w-12 mx-auto text-gray-200 mb-3" />
+            <p className="text-sm text-gray-500 font-medium">Aucune entité dans la taxonomie</p>
+          </div>
+        ) : (
+          <div className="space-y-1 border border-[#E8E4DC] rounded-lg p-3 bg-white">
+            {filiales.map(f => renderNode(f, 0))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// FormState / emptyForm
+// ============================================================
 type FormState = {
-  name: string;
-  type: EntityType | "";
-  country: string;
-  referent: string;
-  referentContact: string;
-  suppleant: string;
-  suppleantContact: string;
-  parentId: string;
+  name: string; type: EntityType | ""; country: string;
+  referent: string; referentContact: string; suppleant: string;
+  suppleantContact: string; parentId: string;
 };
 
 const emptyForm: FormState = {
-  name: "", type: "", country: "",
-  referent: "", referentContact: "",
-  suppleant: "", suppleantContact: "",
-  parentId: "",
+  name: "", type: "", country: "", referent: "", referentContact: "",
+  suppleant: "", suppleantContact: "", parentId: "",
 };
 
+// ============================================================
+// COMPOSANT PRINCIPAL
+// ============================================================
 export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entityId?: string) => void }) => {
   const { entities, setEntities, setSelectedEntityId } = useGovernance();
-  const { processes } = useBia();
+  const biaContext = useBia();
+  const { processes } = biaContext;
   const { can } = useRole();
 
   const [panelId, setPanelId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [form, setForm] = useState<FormState>(emptyForm);
-  
+
+  const [activeView, setActiveView] = useState<"entities" | "taxonomy">("entities");
+  const [importOpen, setImportOpen] = useState(false);
+
   // ============================================================
-  // ÉTAT POUR LE TRAITEMENT PDF
+  // ÉTAT POUR L'IMPORT ANCIEN FORMAT (Excel/PDF)
   // ============================================================
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [processingStep, setProcessingStep] = useState<string>("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-  // ============================================================
-  // QUICK ADD — Création contextuelle depuis l'arbre
-  // ============================================================
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddParentId, setQuickAddParentId] = useState<string>("");
   const [quickAddType, setQuickAddType] = useState<EntityType | "">("");
@@ -419,26 +988,40 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   const tree = buildTree(entities);
   const panelEntity = entities.find((e) => e.id === panelId) || null;
   const panelParent = panelEntity ? entities.find((e) => e.id === panelEntity.parentId) : null;
-
-  // Récupérer les enfants d'une entité
   const panelChildren = panelEntity ? getChildren(entities, panelEntity.id) : [];
-  
-  // Récupérer les processus de l'entité affichée
   const panelProcesses = panelEntity ? getEntityProcesses(panelEntity, processes) : [];
 
-  // ============================================================
-  // QUICK ADD — Handlers
-  // ============================================================
+  // ⭐ Recharge les entités depuis Supabase
+  const reloadEntities = async () => {
+    const { data } = await (supabase as any).from('organisations').select('*');
+    if (data) {
+      setEntities(data.map((e: any) => ({
+        id: e.id, name: e.name, type: e.type, country: e.country_code, parentId: e.parent_id,
+        referent: e.pca_referent || '—', referentContact: e.referent_contact,
+        referentBackup: e.referent_backup || '—', suppleantContact: e.referent_backup_contact,
+        status: 'Actif', pcaStatus: e.pca_status || 'Non démarré', maturity: e.maturity || 20,
+      })));
+    }
+  };
+
+  // ⭐ Recharge les processus dans le contexte BIA
+  const reloadBiaProcesses = async () => {
+    try {
+      const ctx = biaContext as any;
+      if (typeof ctx.refreshProcesses === "function") {
+        await ctx.refreshProcesses();
+      } else if (typeof ctx.reload === "function") {
+        await ctx.reload();
+      }
+    } catch (e) {
+      console.warn("Impossible de recharger les processus BIA :", e);
+    }
+  };
+
   const handleQuickAdd = (parentId: string, type: EntityType) => {
     const parent = entities.find(e => e.id === parentId);
-    setQuickAddParentId(parentId);
-    setQuickAddType(type);
-    setQuickAddForm({
-      ...emptyForm,
-      type,
-      parentId,
-      country: parent?.country || "FR",
-    });
+    setQuickAddParentId(parentId); setQuickAddType(type);
+    setQuickAddForm({ ...emptyForm, type, parentId, country: parent?.country || "FR" });
     setQuickAddOpen(true);
   };
 
@@ -446,7 +1029,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
     if (!quickAddForm.name.trim()) { toast.error("Le nom est obligatoire"); return; }
     if (!quickAddForm.type) { toast.error("Le type est obligatoire"); return; }
-
     const validation = validateHierarchy(quickAddForm.type, quickAddParentId || null, entities);
     if (!validation.valid) { toast.error(validation.error); return; }
 
@@ -454,189 +1036,85 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     try {
       const parent = entities.find(e => e.id === quickAddParentId);
       const { data, error } = await (supabase as any).from('organisations').insert({
-        name: quickAddForm.name.trim(),
-        type: quickAddForm.type.toUpperCase(),
+        name: quickAddForm.name.trim(), type: quickAddForm.type.toUpperCase(),
         country_code: quickAddForm.country || parent?.country || "FR",
         parent_id: quickAddParentId || null,
         pca_referent: quickAddForm.referent || "—",
         referent_contact: quickAddForm.referentContact || null,
         referent_backup: quickAddForm.suppleant || "—",
         referent_backup_contact: quickAddForm.suppleantContact || null,
-        pca_status: "Non démarré",
-        maturity: 20,
-        sector: "Général",
-        status: "ACTIVE",
+        pca_status: "Non démarré", maturity: 20, sector: "Général", status: "ACTIVE",
       }).select().single();
-
-      if (error) {
-        toast.error("Erreur: " + error.message);
-        setIsSubmittingQuickAdd(false);
-        return;
-      }
+      if (error) { toast.error("Erreur: " + error.message); setIsSubmittingQuickAdd(false); return; }
 
       const newEntity: any = {
-        id: data.id,
-        name: quickAddForm.name.trim(),
-        type: quickAddForm.type as EntityType,
-        country: quickAddForm.country || parent?.country || "FR",
-        sector: "Général",
-        parentId: quickAddParentId || null,
-        referent: quickAddForm.referent || "—",
+        id: data.id, name: quickAddForm.name.trim(), type: quickAddForm.type as EntityType,
+        country: quickAddForm.country || parent?.country || "FR", sector: "Général",
+        parentId: quickAddParentId || null, referent: quickAddForm.referent || "—",
         referentContact: quickAddForm.referentContact || undefined,
         referentBackup: quickAddForm.suppleant || "—",
         suppleantContact: quickAddForm.suppleantContact || undefined,
-        status: "Actif",
-        pcaStatus: "Non démarré",
-        maturity: 20,
+        status: "Actif", pcaStatus: "Non démarré", maturity: 20,
       };
-
       setEntities([...entities, newEntity]);
       toast.success(`✅ ${quickAddForm.type} « ${newEntity.name} » créé${quickAddForm.type === "DIRECTION" ? "e" : ""}`);
-
-      // Highlight temporaire de la nouvelle entité dans l'arbre
       (window as any).__lastCreatedEntityId = newEntity.id;
-      setTimeout(() => {
-        (window as any).__lastCreatedEntityId = null;
-        setEntities(prev => [...prev]);
-      }, 3000);
-
-      // Reset et fermeture
-      setQuickAddOpen(false);
-      setQuickAddForm(emptyForm);
-      setQuickAddParentId("");
-      setQuickAddType("");
-    } finally {
-      setIsSubmittingQuickAdd(false);
-    }
+      setTimeout(() => { (window as any).__lastCreatedEntityId = null; setEntities(prev => [...prev]); }, 3000);
+      setQuickAddOpen(false); setQuickAddForm(emptyForm); setQuickAddParentId(""); setQuickAddType("");
+    } finally { setIsSubmittingQuickAdd(false); }
   };
 
   const submitInline = async () => {
     if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
-    
     if (!form.name) { toast.error("Le nom est obligatoire"); return; }
     if (!form.type) { toast.error("Le type est obligatoire"); return; }
-    
     const normalizedType = form.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    if (normalizedType !== "FILIALE" && !form.parentId) {
-      toast.error("L'entité parente est obligatoire (sauf pour les filiales)");
-      return;
-    }
-    
+    if (normalizedType !== "FILIALE" && !form.parentId) { toast.error("L'entité parente est obligatoire"); return; }
     const validation = validateHierarchy(form.type, form.parentId || null, entities);
-    if (!validation.valid) {
-      toast.error(validation.error);
-      return;
-    }
-    
+    if (!validation.valid) { toast.error(validation.error); return; }
+
     const entityToInsert = {
-      name: form.name,
-      type: form.type?.toUpperCase(),
-      country_code: form.country || "FR",
-      parent_id: form.parentId || null,
-      pca_referent: form.referent || "—",
-      referent_contact: form.referentContact || null,
-      referent_backup: form.suppleant || "—",
+      name: form.name, type: form.type?.toUpperCase(), country_code: form.country || "FR",
+      parent_id: form.parentId || null, pca_referent: form.referent || "—",
+      referent_contact: form.referentContact || null, referent_backup: form.suppleant || "—",
       referent_backup_contact: form.suppleantContact || null,
-      pca_status: "Non démarré",
-      maturity: 20,
-      sector: "Général",
-      status: "ACTIVE",
+      pca_status: "Non démarré", maturity: 20, sector: "Général", status: "ACTIVE",
     };
     const { data, error } = await (supabase as any).from('organisations').insert(entityToInsert).select();
     if (error) { toast.error("Erreur: " + error.message); return; }
     const newEntity: any = {
-      id: data[0].id,
-      name: form.name,
-      type: form.type as EntityType,
-      country: form.country || "FR",
-      sector: "Général",
-      parentId: form.parentId || null,
-      referent: form.referent || "—",
-      referentContact: form.referentContact || undefined,
-      referentBackup: form.suppleant || "—",
-      suppleantContact: form.suppleantContact || undefined,
-      status: "Actif",
-      pcaStatus: "Non démarré",
-      maturity: 20,
+      id: data[0].id, name: form.name, type: form.type as EntityType,
+      country: form.country || "FR", sector: "Général", parentId: form.parentId || null,
+      referent: form.referent || "—", referentContact: form.referentContact || undefined,
+      referentBackup: form.suppleant || "—", suppleantContact: form.suppleantContact || undefined,
+      status: "Actif", pcaStatus: "Non démarré", maturity: 20,
     };
     setEntities([...entities, newEntity]);
     setForm(emptyForm);
     toast.success("Entité créée et sauvegardée");
   };
 
-  // ============================================================
-  // handleDelete CORRIGÉ AVEC DONNÉES FRAÎCHES
-  // ============================================================
   const handleDelete = async (id: string) => {
-    if (!can("admin")) { 
-      toast.error("Action réservée à l'administrateur"); 
-      return; 
-    }
-
+    if (!can("admin")) { toast.error("Action réservée à l'administrateur"); return; }
     const entityName = entities.find(e => e.id === id)?.name || id;
-    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${entityName}" et toutes ses entités filles ?`)) {
-      return;
-    }
+    if (!confirm(`⚠️ Voulez-vous vraiment supprimer "${entityName}" et toutes ses entités filles ?`)) return;
 
-    const { data: freshEntities, error: fetchError } = await (supabase as any)
-      .from('organisations')
-      .select('id, parent_id');
-    
-    if (fetchError) {
-      toast.error("Erreur lors de la vérification des entités liées : " + fetchError.message);
-      return;
-    }
-    
+    const { data: freshEntities, error: fetchError } = await (supabase as any).from('organisations').select('id, parent_id');
+    if (fetchError) { toast.error("Erreur: " + fetchError.message); return; }
+
     const toRemove = new Set<string>([id]);
     let changed = true;
     while (changed) {
       changed = false;
       for (const e of freshEntities) {
-        if (e.parent_id && toRemove.has(e.parent_id) && !toRemove.has(e.id)) {
-          toRemove.add(e.id);
-          changed = true;
-        }
+        if (e.parent_id && toRemove.has(e.parent_id) && !toRemove.has(e.id)) { toRemove.add(e.id); changed = true; }
       }
     }
-    
-    console.log(`🗑️ Suppression en cascade de ${toRemove.size} entité(s):`, Array.from(toRemove));
-    
-    const { error: deleteError } = await (supabase as any)
-      .from('organisations')
-      .delete()
-      .in('id', Array.from(toRemove));
-    
-    if (deleteError) {
-      toast.error("Erreur lors de la suppression : " + deleteError.message);
-      return;
-    }
-    
-    const { data: remainingEntities } = await (supabase as any)
-      .from('organisations')
-      .select('*');
-    
-    if (remainingEntities) {
-      setEntities(remainingEntities.map((e: any) => ({
-        id: e.id,
-        name: e.name,
-        type: e.type,
-        country: e.country_code,
-        parentId: e.parent_id,
-        referent: e.pca_referent || '—',
-        referentContact: e.referent_contact,
-        referentBackup: e.referent_backup || '—',
-        suppleantContact: e.referent_backup_contact,
-        status: 'Actif',
-        pcaStatus: e.pca_status || 'Non démarré',
-        maturity: e.maturity || 20,
-      })));
-    }
-    
-    if (panelId && toRemove.has(panelId)) { 
-      setPanelId(null); 
-      setEditing(false); 
-    }
-    
+
+    const { error: deleteError } = await (supabase as any).from('organisations').delete().in('id', Array.from(toRemove));
+    if (deleteError) { toast.error("Erreur: " + deleteError.message); return; }
+    await reloadEntities();
+    if (panelId && toRemove.has(panelId)) { setPanelId(null); setEditing(false); }
     toast.success(`${toRemove.size} entité(s) supprimée(s) avec succès`);
   };
 
@@ -645,12 +1123,9 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     const e = entities.find((x) => x.id === id);
     if (e) {
       setEditForm({
-        name: e.name, type: e.type || "", country: e.country,
-        referent: e.referent,
-        referentContact: (e as any).referentContact || "",
-        suppleant: e.referentBackup || "",
-        suppleantContact: (e as any).suppleantContact || "",
-        parentId: e.parentId || "",
+        name: e.name, type: e.type || "", country: e.country, referent: e.referent,
+        referentContact: (e as any).referentContact || "", suppleant: e.referentBackup || "",
+        suppleantContact: (e as any).suppleantContact || "", parentId: e.parentId || "",
       });
     }
   };
@@ -660,275 +1135,92 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     if (!can("write")) { toast.error("Permissions insuffisantes"); return; }
     if (!editForm.name) { toast.error("Le nom est obligatoire"); return; }
     if (!editForm.type) { toast.error("Le type est obligatoire"); return; }
-    
     const normalizedType = editForm.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    if (normalizedType !== "FILIALE" && !editForm.parentId) {
-      toast.error("L'entité parente est obligatoire (sauf pour les filiales)");
-      return;
-    }
-    
+    if (normalizedType !== "FILIALE" && !editForm.parentId) { toast.error("L'entité parente est obligatoire"); return; }
     if (editForm.parentId === panelEntity.id) { toast.error("Une entité ne peut pas être son propre parent"); return; }
-    
     const validation = validateHierarchy(editForm.type, editForm.parentId || null, entities.filter(e => e.id !== panelEntity.id));
-    if (!validation.valid) {
-      toast.error(validation.error);
-      return;
-    }
-    
+    if (!validation.valid) { toast.error(validation.error); return; }
+
     await (supabase as any).from('organisations').update({
-      name: editForm.name, type: editForm.type?.toUpperCase(),
-      country_code: editForm.country || "FR", parent_id: editForm.parentId || null,
-      pca_referent: editForm.referent || "—", referent_contact: editForm.referentContact || null,
-      referent_backup: editForm.suppleant || "—", referent_backup_contact: editForm.suppleantContact || null,
+      name: editForm.name, type: editForm.type?.toUpperCase(), country_code: editForm.country || "FR",
+      parent_id: editForm.parentId || null, pca_referent: editForm.referent || "—",
+      referent_contact: editForm.referentContact || null, referent_backup: editForm.suppleant || "—",
+      referent_backup_contact: editForm.suppleantContact || null,
     }).eq('id', panelEntity.id);
+
     setEntities(entities.map((e) => e.id === panelEntity.id ? {
-      ...panelEntity,
-      name: editForm.name, type: (editForm.type || undefined) as EntityType | undefined,
+      ...panelEntity, name: editForm.name, type: (editForm.type || undefined) as EntityType | undefined,
       country: editForm.country || "FR", referent: editForm.referent || "—",
-      referentContact: editForm.referentContact || undefined,
-      referentBackup: editForm.suppleant || "—",
-      suppleantContact: editForm.suppleantContact || undefined,
-      parentId: editForm.parentId || null,
+      referentContact: editForm.referentContact || undefined, referentBackup: editForm.suppleant || "—",
+      suppleantContact: editForm.suppleantContact || undefined, parentId: editForm.parentId || null,
     } as any : e));
     setEditing(false);
     toast.success("Entité mise à jour");
   };
 
-  // ============================================================
-  // FONCTION RENDERFORMGRID CORRIGÉE AVEC HIÉRARCHIE VISIBLE
-  // ============================================================
   const renderFormGrid = (state: FormState, set: (s: FormState) => void, excludeId?: string) => {
-    const filiales = entities.filter(e => e.id !== excludeId && isFiliale(e.type));
-    
     const getFullPath = (entityId: string): string => {
       const entity = entities.find(e => e.id === entityId);
       if (!entity) return "";
-      
       const path: string[] = [entity.name];
-      let current = entity;
-      
-      let maxLevels = 5;
+      let current = entity; let maxLevels = 5;
       while (current.parentId && maxLevels > 0) {
         const parent = entities.find(e => e.id === current.parentId);
-        if (parent) {
-          path.unshift(parent.name);
-          current = parent;
-        } else {
-          break;
-        }
+        if (parent) { path.unshift(parent.name); current = parent; } else break;
         maxLevels--;
       }
-      
       return path.join(" → ");
     };
 
     const getAvailableParents = () => {
       if (!state.type) return [];
-      
-      const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      
-      if (normalizedType === "FILIALE") {
-        return [];
-      }
-      if (normalizedType === "DIRECTION") {
-        return entities.filter(e => e.id !== excludeId && isFiliale(e.type));
-      }
-      if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
-        return entities.filter(e => e.id !== excludeId && isDirection(e.type));
-      }
+      const n = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (n === "FILIALE") return [];
+      if (n === "DIRECTION") return entities.filter(e => e.id !== excludeId && isFiliale(e.type));
+      if (["SERVICE", "DEPARTEMENT"].includes(n)) return entities.filter(e => e.id !== excludeId && isDirection(e.type));
       return [];
     };
-    
+
     const availableParents = getAvailableParents();
     const showParentField = state.type && state.type.toUpperCase() !== "FILIALE";
-    
-    const getGroupedParents = () => {
-      if (!state.type) return [];
-      
-      const normalizedType = state.type.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      
-      if (normalizedType === "DIRECTION") {
-        const groups: { filiale: Entity; directions: Entity[] }[] = [];
-        
-        for (const filiale of filiales) {
-          const directions = availableParents.filter(e => {
-            const parent = entities.find(p => p.id === e.parentId);
-            return parent?.id === filiale.id;
-          });
-          if (directions.length > 0) {
-            groups.push({ filiale, directions });
-          }
-        }
-        
-        const filialesWithoutDirections = filiales.filter(f => {
-          return !availableParents.some(e => {
-            const parent = entities.find(p => p.id === e.parentId);
-            return parent?.id === f.id;
-          });
-        });
-        
-        return { groups, filialesWithoutDirections };
-      }
-      
-      if (["SERVICE", "DEPARTEMENT"].includes(normalizedType)) {
-        const groups: { filiale: Entity; directions: Entity[] }[] = [];
-        
-        for (const filiale of filiales) {
-          const directionsOfFiliale = entities.filter(e => e.id !== excludeId && isDirection(e.type) && e.parentId === filiale.id);
-          const availableDirs = directionsOfFiliale.filter(d => availableParents.some(ap => ap.id === d.id));
-          if (availableDirs.length > 0) {
-            groups.push({ filiale, directions: availableDirs });
-          }
-        }
-        
-        const orphanDirections = availableParents.filter(e => {
-          const parent = entities.find(p => p.id === e.parentId);
-          return !parent || !isFiliale(parent.type);
-        });
-        
-        return { groups, orphanDirections };
-      }
-      
-      return { groups: [], orphanDirections: [] };
-    };
 
-    const groupedParents = getGroupedParents();
-    
     return (
       <div className="grid md:grid-cols-3 gap-3">
-        <div>
-          <Label>Nom <span className="text-destructive">*</span></Label>
-          <Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" />
-        </div>
-        <div>
-          <Label>Type <span className="text-destructive">*</span></Label>
-          <Select value={state.type} onValueChange={(v) => {
-            set({ ...state, type: v as EntityType, parentId: "" });
-          }}>
-            <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
-            <SelectContent>
-              {ENTITY_TYPES_FILTERED.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Pays</Label>
-          <Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" />
-        </div>
-        <div>
-          <Label>Référent PCA</Label>
-          <Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" />
-        </div>
-        <div>
-          <Label>Coordonnées référent</Label>
-          <Input value={state.referentContact} onChange={(e) => set({ ...state, referentContact: e.target.value })} placeholder="email ou téléphone" />
-        </div>
-        <div>
-          <Label>Suppléant</Label>
-          <Input value={state.suppleant} onChange={(e) => set({ ...state, suppleant: e.target.value })} placeholder="Nom du suppléant" />
-        </div>
-        <div>
-          <Label>Coordonnées suppléant</Label>
-          <Input value={state.suppleantContact} onChange={(e) => set({ ...state, suppleantContact: e.target.value })} placeholder="email ou téléphone" />
-        </div>
+        <div><Label>Nom <span className="text-destructive">*</span></Label><Input value={state.name} onChange={(e) => set({ ...state, name: e.target.value })} placeholder="Direction Marketing" /></div>
+        <div><Label>Type <span className="text-destructive">*</span></Label><Select value={state.type} onValueChange={(v) => set({ ...state, type: v as EntityType, parentId: "" })}><SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger><SelectContent>{ENTITY_TYPES_FILTERED.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+        <div><Label>Pays</Label><Input value={state.country} onChange={(e) => set({ ...state, country: e.target.value })} placeholder="France" /></div>
+        <div><Label>Référent PCA</Label><Input value={state.referent} onChange={(e) => set({ ...state, referent: e.target.value })} placeholder="Nom du responsable" /></div>
+        <div><Label>Coordonnées référent</Label><Input value={state.referentContact} onChange={(e) => set({ ...state, referentContact: e.target.value })} placeholder="email ou téléphone" /></div>
+        <div><Label>Suppléant</Label><Input value={state.suppleant} onChange={(e) => set({ ...state, suppleant: e.target.value })} placeholder="Nom du suppléant" /></div>
+        <div><Label>Coordonnées suppléant</Label><Input value={state.suppleantContact} onChange={(e) => set({ ...state, suppleantContact: e.target.value })} placeholder="email ou téléphone" /></div>
         {showParentField && (
           <div className="md:col-span-2">
-            <Label className="flex items-center gap-2">
-              Entité parente <span className="text-destructive">*</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                (doit être une {String(state.type) === "DIRECTION" ? "Filiale" : "Direction"})
-              </span>
-            </Label>
-            
+            <Label className="flex items-center gap-2">Entité parente <span className="text-destructive">*</span><span className="text-xs font-normal text-muted-foreground">(doit être une {String(state.type) === "DIRECTION" ? "Filiale" : "Direction"})</span></Label>
             {availableParents.length === 0 ? (
-              <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-                ⚠️ Aucune {String(state.type) === "DIRECTION" ? "filiale" : "direction"} disponible. 
-                {String(state.type) === "DIRECTION" 
-                  ? " Créez d'abord une filiale." 
-                  : " Créez d'abord une direction."}
-              </div>
+              <div className="mt-1 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">⚠️ Aucune {String(state.type) === "DIRECTION" ? "filiale" : "direction"} disponible.</div>
             ) : (
               <Select value={state.parentId || "__root__"} onValueChange={(v) => set({ ...state, parentId: v === "__root__" ? "" : v })}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Sélectionner un parent" />
-                </SelectTrigger>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Sélectionner un parent" /></SelectTrigger>
                 <SelectContent className="max-h-[300px]">
-                  {groupedParents && 'groups' in groupedParents && groupedParents.groups ? (
-                    <>
-                      {groupedParents.groups.map((group, idx) => (
-                        <div key={idx}>
-                          <div className="px-2 py-1.5 bg-[#172030]/5 text-[#172030] text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
-                            <Building2 className="h-3.5 w-3.5 text-[#172030]/50" />
-                            <span>🏢 {group.filiale.name}</span>
-                            <span className="text-[10px] font-normal text-muted-foreground">({group.filiale.country || "FR"})</span>
-                            <span className="text-[10px] font-normal text-muted-foreground ml-auto">{group.directions.length}</span>
-                          </div>
-                          {group.directions.map((e) => (
-                            <SelectItem key={e.id} value={e.id} className="pl-8">
-                              <div className="flex items-center gap-2 w-full">
-                                <span className="truncate">{e.name}</span>
-                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                  {getFullPath(e.id)}
-                                </span>
-                                <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
-                                  {e.type}
-                                </Badge>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </div>
-                      ))}
-                      
-                      {groupedParents.filialesWithoutDirections && groupedParents.filialesWithoutDirections.length > 0 && (
-                        <div>
-                          <div className="px-2 py-1.5 bg-gray-50 text-muted-foreground text-xs font-semibold flex items-center gap-2 border-t border-[#E8E4DC]">
-                            <span>🏢 Filiales sans directions</span>
-                          </div>
-                          {groupedParents.filialesWithoutDirections.map((f) => (
-                            <SelectItem key={f.id} value={f.id} className="pl-8 opacity-60">
-                              <div className="flex items-center gap-2 w-full">
-                                <span className="truncate">{f.name}</span>
-                                <span className="text-[10px] text-muted-foreground">(aucune direction)</span>
-                                <Badge variant="outline" className="text-[9px] ml-auto bg-gray-100">
-                                  FILIALE
-                                </Badge>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    availableParents.map((e) => (
-                      <SelectItem key={e.id} value={e.id}>
-                        <div className="flex items-center gap-2 w-full">
-                          <span className="truncate">{e.name}</span>
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                            {getFullPath(e.id)}
-                          </span>
-                          <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">
-                            {e.type}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))
-                  )}
-                  
-                  <div className="border-t border-[#E8E4DC] mt-1 pt-1">
-                    <SelectItem value="__root__" className="text-muted-foreground italic">
-                      — Aucun parent (entité racine) —
+                  {availableParents.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="truncate">{e.name}</span>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">{getFullPath(e.id)}</span>
+                        <Badge variant="outline" className="text-[9px] ml-auto bg-muted/30">{e.type}</Badge>
+                      </div>
                     </SelectItem>
+                  ))}
+                  <div className="border-t border-[#E8E4DC] mt-1 pt-1">
+                    <SelectItem value="__root__" className="text-muted-foreground italic">— Aucun parent (entité racine) —</SelectItem>
                   </div>
                 </SelectContent>
               </Select>
             )}
-            
             {state.parentId && state.parentId !== "__root__" && (
               <div className="mt-1.5 text-xs text-muted-foreground flex items-center gap-2 bg-[#F8F6F2] p-2 rounded-lg border border-[#E8E4DC]">
                 <div className="h-2 w-2 rounded-full bg-[#2A5141] flex-shrink-0"></div>
-                <span>
-                  📍 Chemin : <span className="font-medium text-[#172030]">{getFullPath(state.parentId)}</span>
-                </span>
+                <span>📍 Chemin : <span className="font-medium text-[#172030]">{getFullPath(state.parentId)}</span></span>
               </div>
             )}
           </div>
@@ -938,7 +1230,80 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   };
 
   // ============================================================
-  // MODÈLE EXCEL AVEC MISE EN FORME PROFESSIONNELLE
+  // MODÈLE EXCEL — Import Excel
+  // ============================================================
+  const downloadGenericTemplate = () => {
+    const data = [
+      ['Nom', 'Type', 'Entité Parente', 'Référent PCA', 'Pays', 'Processus', 'Responsable Processus', 'RTO', 'RPO', 'Criticité'],
+      ['Novatech France', 'FILIALE', '', 'Jean Dupont', 'France', '', '', '', '', ''],
+      ['Direction SI', 'DIRECTION', 'Novatech France', 'Sophie Martin', 'France', '', '', '', '', ''],
+      ['Direction Financière', 'DIRECTION', 'Novatech France', 'Marc Dubois', 'France', '', '', '', '', ''],
+      ['Service Comptabilité', 'SERVICE', 'Direction Financière', 'Claire Petit', 'France', '', '', '', '', ''],
+      ['Service Infrastructure', 'SERVICE', 'Direction SI', 'Ahmed Ben Ali', 'France', '', '', '', '', ''],
+      ['Service Infrastructure', '', '', '', '', 'Gestion des serveurs', 'Ahmed Ben Ali', 4, 1, 'Critique'],
+      ['Service Infrastructure', '', '', '', '', 'Messagerie d\'entreprise', 'Sophie Martin', 2, 0.5, 'Critique'],
+      ['Service Comptabilité', '', '', '', '', 'Clôture mensuelle', 'Claire Petit', 8, 4, 'Élevé'],
+      ['Direction SI', '', '', '', '', 'Support utilisateurs', 'Youssef KAAK', 8, 4, 'Modéré'],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [
+      { wch: 22 }, { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 12 },
+      { wch: 25 }, { wch: 20 }, { wch: 8 }, { wch: 8 }, { wch: 12 },
+    ];
+
+    const instructions = [
+      ['📋 IMPORT EXCEL — Un seul fichier pour tout'],
+      [''],
+      ['🎯 COMMENT ÇA MARCHE :'],
+      ['   Le système DÉTECTE AUTOMATIQUEMENT vos colonnes par leur nom.'],
+      ['   Pas besoin d\'un format figé — tant que les noms de colonnes sont explicites, ça marche.'],
+      [''],
+      ['📌 RECONNAISSANCE AUTOMATIQUE DES COLONNES :'],
+      ['   • "Nom" / "Name" / "Libellé"        → Nom de l\'entité'],
+      ['   • "Type" / "Niveau" / "Nature"       → Type (FILIALE, DIRECTION, SERVICE, DÉPARTEMENT)'],
+      ['   • "Parent" / "Mère" / "Rattaché"     → Entité parente'],
+      ['   • "Référent" / "Responsable PCA"     → Référent PCA'],
+      ['   • "Pays" / "Country"                 → Pays'],
+      ['   • "Processus" / "Activité"           → Nom du processus (si rempli = ligne processus)'],
+      ['   • "RTO" / "Délai"                    → RTO en heures'],
+      ['   • "RPO" / "Perte"                    → RPO en heures'],
+      ['   • "Criticité" / "Sévérité"           → Criticité'],
+      [''],
+      ['📌 DÉTECTION DU TYPE DE LIGNE :'],
+      ['   • Ligne ENTITÉ si la colonne "Type" contient FILIALE / DIRECTION / SERVICE / DÉPARTEMENT'],
+      ['   • Ligne PROCESSUS si la colonne "Processus" est remplie'],
+      [''],
+      ['🔑 RÈGLES :'],
+      ['   • Pour un processus, la colonne "Nom" (ou "Entité") = nom de l\'entité porteuse'],
+      ['   • L\'ordre des lignes n\'a pas d\'importance'],
+      ['   • Les entités existantes ne sont PAS recréées'],
+      ['   • Les accents sont supportés'],
+      [''],
+      ['💡 EXEMPLE DE STRUCTURE :'],
+      ['   Novatech France (FILIALE)'],
+      ['   ├── Direction SI (DIRECTION)'],
+      ['   │   ├── Service Infrastructure (SERVICE)'],
+      ['   │   │   ├── Processus : Gestion des serveurs (RTO 4h)'],
+      ['   │   │   └── Processus : Messagerie d\'entreprise (RTO 2h)'],
+      ['   │   └── Processus : Support utilisateurs (porté par Direction SI)'],
+      ['   └── Direction Financière (DIRECTION)'],
+      ['       └── Service Comptabilité (SERVICE)'],
+      ['           └── Processus : Clôture mensuelle (RTO 8h)'],
+    ];
+
+    const wsInstr = XLSX.utils.aoa_to_sheet(instructions);
+    wsInstr['!cols'] = [{ wch: 100 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Import');
+    XLSX.utils.book_append_sheet(wb, wsInstr, 'Instructions');
+    XLSX.writeFile(wb, 'modele_import_excel.xlsx');
+    toast.success("📊 Modèle générique téléchargé !");
+  };
+
+  // ============================================================
+  // ANCIEN FORMAT — Modèle Excel
   // ============================================================
   const downloadTemplate = () => {
     const data = [
@@ -946,574 +1311,57 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       ['Filiale 1', 'FILIALE', 'France', 'Jean Dupont', 'jean@email.com', 'Marie Martin', 'marie@email.com', ''],
       ['Direction 1', 'DIRECTION', 'France', 'Sophie Leroy', 'sophie@email.com', 'Marc Dubois', 'marc@email.com', 'Filiale 1'],
       ['Service 1', 'SERVICE', 'France', 'Lucie Bernard', 'lucie@email.com', 'Paul Dubois', 'paul@email.com', 'Direction 1'],
-      ['Département 1', 'DÉPARTEMENT', 'France', 'Jean Martin', 'jean@email.com', 'Claire Petit', 'claire@email.com', 'Direction 1'],
-      ['Filiale 2', 'FILIALE', 'Tunisie', 'Ahmed Ben Ali', 'ahmed@email.com', 'Leila Trabelsi', 'leila@email.com', ''],
-      ['Direction 2', 'DIRECTION', 'Tunisie', 'Youssef KAAK', 'youssef@email.com', 'Sami Ben Ammar', 'sami@email.com', 'Filiale 2'],
-      ['Service 2', 'SERVICE', 'Tunisie', 'Karim Ben Ali', 'karim@email.com', 'Nadia Gharbi', 'nadia@email.com', 'Direction 2'],
-      ['Département 2', 'DÉPARTEMENT', 'Tunisie', 'Mehdi Chaker', 'mehdi@email.com', 'Fatma Ben Amor', 'fatma@email.com', 'Direction 2'],
     ];
-
     const ws = XLSX.utils.aoa_to_sheet(data);
-    
-    ws['!cols'] = [
-      { wch: 20 }, { wch: 15 }, { wch: 12 }, { wch: 20 },
-      { wch: 25 }, { wch: 20 }, { wch: 25 }, { wch: 25 },
-    ];
-
-    const headerStyle = {
-      font: { bold: true, color: { rgb: "FFFFFF" } },
-      fill: { fgColor: { rgb: "172030" } },
-      alignment: { horizontal: "center", vertical: "center" },
-      border: {
-        top: { style: "thin", color: { rgb: "172030" } },
-        bottom: { style: "thin", color: { rgb: "172030" } },
-        left: { style: "thin", color: { rgb: "172030" } },
-        right: { style: "thin", color: { rgb: "172030" } }
-      }
-    };
-
-    const headerRow = XLSX.utils.sheet_to_json(ws, { header: 1 })[0];
-    if (headerRow) {
-      for (let col = 0; col < (headerRow as any[]).length; col++) {
-        const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-        if (ws[cellRef]) {
-          ws[cellRef].s = headerStyle;
-        }
-      }
-    }
-
-    const dataStyle = {
-      border: {
-        top: { style: "thin", color: { rgb: "CCCCCC" } },
-        bottom: { style: "thin", color: { rgb: "CCCCCC" } },
-        left: { style: "thin", color: { rgb: "CCCCCC" } },
-        right: { style: "thin", color: { rgb: "CCCCCC" } }
-      },
-      alignment: { vertical: "center" }
-    };
-
-    for (let row = 1; row < data.length; row++) {
-      for (let col = 0; col < data[row].length; col++) {
-        const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-        if (ws[cellRef]) {
-          ws[cellRef].s = dataStyle;
-        }
-      }
-    }
-
-    const instructionsData = [
-      ['📋 INSTRUCTIONS POUR L\'IMPORT DE L\'ORGANIGRAMME'],
-      [''],
-      ['1. HIÉRARCHIE OBLIGATOIRE :'],
-      ['   • Niveau 1 : FILIALE (pas de parent)'],
-      ['   • Niveau 2 : DIRECTION (parent = Filiale)'],
-      ['   • Niveau 3 : SERVICE ou DÉPARTEMENT (parent = Direction)'],
-      [''],
-      ['2. TYPES D\'ENTITÉS AUTORISÉS :'],
-      ['   • FILIALE'],
-      ['   • DIRECTION'],
-      ['   • SERVICE'],
-      ['   • DÉPARTEMENT'],
-      [''],
-      ['3. COLONNE "ENTITÉ PARENTE" :'],
-      ['   • Doit correspondre EXACTEMENT au nom d\'une entité existante dans la colonne "Nom"'],
-      ['   • Respecte la hiérarchie ci-dessus'],
-      ['   • Laisse vide pour les FILIALE'],
-      [''],
-      ['4. EXEMPLE DE HIÉRARCHIE VALIDE :'],
-      ['   Filiale 1 (FILIALE, parent vide)'],
-      ['   └── Direction 1 (DIRECTION, parent = "Filiale 1")'],
-      ['       ├── Service 1 (SERVICE, parent = "Direction 1")'],
-      ['       └── Département 1 (DÉPARTEMENT, parent = "Direction 1")'],
-      [''],
-      ['5. REMARQUES :'],
-      ['   • Les accents sont supportés (é, è, ê, à, ù, etc.)'],
-      ['   • Toutes les colonnes sont optionnelles sauf "Nom" et "Type"'],
-      ['   • Les données vides seront remplies automatiquement avec des valeurs par défaut'],
-      ['   • La hiérarchie est validée automatiquement avant l\'import'],
-    ];
-
-    const wsInstructions = XLSX.utils.aoa_to_sheet(instructionsData.map(row => [row]));
-    wsInstructions['!cols'] = [{ wch: 90 }];
-
+    ws['!cols'] = [{ wch: 20 }, { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 25 }, { wch: 25 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Organigramme');
-    XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
-
     XLSX.writeFile(wb, 'modele_organigramme.xlsx');
-    toast.success("📊 Modèle Excel téléchargé avec succès !");
+    toast.success("📊 Modèle Excel téléchargé !");
   };
 
-  // ============================================================
-  // MODÈLE PDF AVEC MISE EN PAGE AMÉLIORÉE
-  // ============================================================
   const downloadPdfTemplate = () => {
     try {
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 20;
-      let y = 20;
-      const lineHeight = 7;
-
       doc.setFillColor(23, 32, 48);
-      doc.rect(0, 0, pageWidth, 28, 'F');
-      
+      doc.rect(0, 0, 210, 28, 'F');
       doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(248, 246, 242);
-      doc.text("Resillia", margin, 18);
-      
+      doc.text("Resillia", 20, 18);
       doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
       doc.setTextColor(200, 200, 200);
-      doc.text("ORGANIGRAMME DU GROUPE - MODÈLE", pageWidth - margin, 18, { align: "right" });
-
-      y = 38;
-
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 100, 100);
-      doc.text("Structure hiérarchique des entités", pageWidth / 2, y, { align: "center" });
-      y += 10;
-
-      doc.setDrawColor(42, 81, 65);
-      doc.setLineWidth(1.5);
-      doc.line(margin, y, pageWidth - margin, y);
-      doc.setLineWidth(0.2);
-      y += 12;
-
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(23, 32, 48);
-      doc.text("Exemple 1 : Filiale 1", margin, y);
-      y += lineHeight + 3;
-      
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      doc.text("   • Direction Financière", margin + 5, y);
-      y += lineHeight;
-      doc.text("       • Service Comptabilité", margin + 10, y);
-      y += lineHeight;
-      doc.text("       • Département Audit", margin + 10, y);
-      y += lineHeight;
-      doc.text("   • Direction Commerciale", margin + 5, y);
-      y += lineHeight;
-      doc.text("       • Service Client", margin + 10, y);
-      y += lineHeight;
-      doc.text("       • Département Marketing", margin + 10, y);
-      y += lineHeight + 8;
-
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(23, 32, 48);
-      doc.text("Exemple 2 : Filiale 2", margin, y);
-      y += lineHeight + 3;
-      
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      doc.text("   • Direction IT", margin + 5, y);
-      y += lineHeight;
-      doc.text("       • Service Infrastructure", margin + 10, y);
-      y += lineHeight;
-      doc.text("       • Département Sécurité", margin + 10, y);
-      y += lineHeight;
-      doc.text("       • Service Développement", margin + 10, y);
-      y += lineHeight;
-      doc.text("   • Direction RH", margin + 5, y);
-      y += lineHeight;
-      doc.text("       • Service Recrutement", margin + 10, y);
-      y += lineHeight;
-      doc.text("       • Département Formation", margin + 10, y);
-      y += lineHeight + 10;
-
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(0.5);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 10;
-
-      const instructionsY = y;
-      const instructionsHeight = 60;
-      doc.setFillColor(248, 246, 242);
-      doc.rect(margin - 5, instructionsY - 5, pageWidth - margin * 2 + 10, instructionsHeight + 10, 'F');
-      
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(23, 32, 48);
-      doc.text("INSTRUCTIONS POUR L'IMPORT :", margin, y);
-      y += lineHeight + 3;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      
-      const instructions = [
-        "1. Utilisez ce modèle pour structurer votre organigramme",
-        "2. Remplacez les noms par les vôtres (Filiale 1 → Votre Filiale, etc.)",
-        "3. Ajoutez ou supprimez des lignes selon vos besoins",
-      ];
-      
-      for (const line of instructions) {
-        doc.text(line, margin + 2, y);
-        y += lineHeight;
-      }
-      y += 3;
-
-      const warningY = y;
-      const warningHeight = 30;
-      doc.setFillColor(248, 246, 242);
-      doc.rect(margin - 5, warningY - 5, pageWidth - margin * 2 + 10, warningHeight + 10, 'F');
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(200, 0, 0);
-      doc.text("⚠ IMPORTANT :", margin, y);
-      y += lineHeight;
-      
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      const warnings = [
-        "   • Les accents sont supportés (é, è, ê, à, ù, etc.)",
-        "   • L'IA analysera automatiquement votre document",
-        "   • Toutes les entités seront importées avec leur hiérarchie",
-      ];
-      
-      for (const line of warnings) {
-        doc.text(line, margin + 2, y);
-        y += lineHeight;
-      }
-      y += 8;
-
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(23, 32, 48);
-      doc.text("STRUCTURE HIÉRARCHIQUE :", margin, y);
-      y += lineHeight + 3;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      
-      const structure = [
-        "",
-        "NIVEAU 1 - FILIALE",
-        "  └── Filiale 1",
-        "      NIVEAU 2 - DIRECTION",
-        "      ├── Direction Financière",
-        "      │   NIVEAU 3 - SERVICE / DÉPARTEMENT",
-        "      │   ├── Service Comptabilité",
-        "      │   └── Département Audit",
-        "      └── Direction Commerciale",
-        "          ├── Service Client",
-        "          └── Département Marketing",
-        "",
-        "NIVEAU 1 - FILIALE",
-        "  └── Filiale 2",
-        "      NIVEAU 2 - DIRECTION",
-        "      ├── Direction IT",
-        "      │   ├── Service Infrastructure",
-        "      │   ├── Département Sécurité",
-        "      │   └── Service Développement",
-        "      └── Direction RH",
-        "          ├── Service Recrutement",
-        "          └── Département Formation",
-      ];
-
-      if (y + structure.length * lineHeight + 30 > pageHeight - 20) {
-        doc.addPage();
-        y = 25;
-      }
-      
-      for (const line of structure) {
-        if (line.startsWith("NIVEAU") || line.startsWith("  └──") || line.startsWith("      ├──") || line.startsWith("      └──") || line.startsWith("      │")) {
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(23, 32, 48);
-        } else {
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(60, 60, 60);
-        }
-        doc.text(line, margin, y);
-        y += lineHeight;
-      }
-      
-      y += 5;
-
-      if (y + 60 > pageHeight - 20) {
-        doc.addPage();
-        y = 25;
-      }
-      
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(23, 32, 48);
-      doc.text("TYPES D'ENTITÉS AUTORISÉS :", margin, y);
-      y += lineHeight + 3;
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      const types = [
-        "   • FILIALE      → Niveau 1, pas de parent",
-        "   • DIRECTION    → Niveau 2, parent = Filiale",
-        "   • SERVICE      → Niveau 3, parent = Direction",
-        "   • DÉPARTEMENT  → Niveau 3, parent = Direction",
-      ];
-      
-      for (const line of types) {
-        doc.text(line, margin, y);
-        y += lineHeight;
-      }
-      y += 5;
-
-      if (y + 30 > pageHeight - 20) {
-        doc.addPage();
-        y = 25;
-      }
-      
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(23, 32, 48);
-      doc.text("🔑 RAPPEL :", margin, y);
-      y += lineHeight;
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      doc.text("   La colonne \"Entité Parente\" doit correspondre EXACTEMENT au nom d'une ligne précédente.", margin + 2, y);
-      y += lineHeight;
-      doc.text("   Respectez la hiérarchie : Filiale → Direction → Service/Département.", margin + 2, y);
-
-      if (y + 20 > pageHeight - 15) {
-        doc.addPage();
-        y = 25;
-      }
-      
-      y = pageHeight - 15;
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "italic");
-      doc.setTextColor(150, 150, 150);
-      doc.text(
-        `Document généré automatiquement - ${new Date().toLocaleDateString('fr-FR')}`,
-        pageWidth / 2,
-        y,
-        { align: "center" }
-      );
-      
+      doc.text("ORGANIGRAMME DU GROUPE - MODÈLE", 190, 18, { align: "right" });
       doc.save('modele_organigramme.pdf');
-      toast.success("📄 Modèle PDF téléchargé avec succès !");
+      toast.success("📄 Modèle PDF téléchargé !");
     } catch (error) {
-      console.error("Erreur lors de la génération du PDF:", error);
-      toast.error("Erreur lors de la génération du PDF. Vérifiez que la bibliothèque jsPDF est installée.");
-    }
-  };
-
-  // ============================================================
-  // IMPORT EXCEL TRANSACTIONNEL
-  // ============================================================
-  const importExcel = async (rows: any[]) => {
-    console.log("📊 Excel - Lignes:", rows.length);
-    
-    const validationErrors: string[] = [];
-    const validRows: any[] = [];
-    
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const name = row['Nom']?.trim();
-      const type = row['Type']?.trim()?.toUpperCase() || 'DIRECTION';
-      const parentName = row['Entité Parente']?.trim() || null;
-      
-      if (!name) {
-        validationErrors.push(`Ligne ${i+1}: Nom manquant`);
-        continue;
-      }
-      
-      const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
-      if (!validTypes.includes(type)) {
-        validationErrors.push(`Ligne ${i+1}: Type "${type}" invalide. Types autorisés: ${validTypes.join(', ')}`);
-        continue;
-      }
-      
-      validRows.push({
-        index: i,
-        name,
-        type,
-        parentName,
-        country: row['Pays']?.trim() || 'FR',
-        referent: row['Référent PCA']?.trim() || '—',
-        referentContact: row['Coordonnées référent']?.trim() || null,
-        suppleant: row['Suppléant']?.trim() || '—',
-        suppleantContact: row['Coordonnées suppléant']?.trim() || null,
-      });
-    }
-    
-    const allNames = new Set(validRows.map(r => r.name));
-    for (const row of validRows) {
-      if (row.parentName && !allNames.has(row.parentName)) {
-        const existingParent = entities.find(e => e.name === row.parentName);
-        if (!existingParent) {
-          validationErrors.push(`Ligne ${row.index+1}: Entité parente "${row.parentName}" non trouvée (doit être une ligne existante dans le fichier ou déjà en base)`);
-        }
-      }
-    }
-    
-    if (validationErrors.length > 0) {
-      const errorMessage = validationErrors.join('\n');
-      toast.error(`❌ ${validationErrors.length} erreur(s) de validation:\n${errorMessage}`, {
-        duration: 8000,
-        style: { whiteSpace: 'pre-wrap' }
-      });
-      return;
-    }
-    
-    const insertedEntities: any[] = [];
-    const errors: string[] = [];
-    
-    for (const row of validRows) {
-      const { data: inserted, error } = await (supabase as any).from('organisations').insert({
-        name: row.name,
-        type: row.type,
-        country_code: row.country,
-        parent_id: null,
-        pca_referent: row.referent,
-        referent_contact: row.referentContact,
-        referent_backup: row.suppleant,
-        referent_backup_contact: row.suppleantContact,
-        pca_status: 'Non démarré',
-        maturity: 20,
-        sector: 'Général',
-        status: 'ACTIVE',
-      }).select().single();
-      
-      if (error) {
-        errors.push(`Ligne ${row.index+1}: ${error.message}`);
-        continue;
-      }
-      
-      insertedEntities.push({
-        ...inserted,
-        originalName: row.name,
-        originalType: row.type,
-        originalParent: row.parentName,
-      });
-    }
-    
-    const allEntitiesForValidation = [
-      ...entities,
-      ...insertedEntities.map(e => ({
-        id: e.id,
-        name: e.originalName,
-        type: e.originalType,
-        parentId: null,
-      } as Entity))
-    ];
-    
-    for (const entity of insertedEntities) {
-      if (entity.originalParent) {
-        let parent = insertedEntities.find(e => e.originalName === entity.originalParent);
-        let parentId = parent?.id;
-        
-        if (!parentId) {
-          const existingParent = entities.find(e => e.name === entity.originalParent);
-          parentId = existingParent?.id;
-        }
-        
-        if (parentId) {
-          const validation = validateHierarchy(entity.originalType, parentId, allEntitiesForValidation);
-          if (validation.valid) {
-            await (supabase as any).from('organisations')
-              .update({ parent_id: parentId })
-              .eq('id', entity.id);
-            entity.parent_id = parentId;
-          } else {
-            errors.push(`Ligne pour "${entity.originalName}": ${validation.error}`);
-          }
-        }
-      }
-    }
-    
-    const { data: allEntities } = await (supabase as any).from('organisations').select('*');
-    if (allEntities) {
-      setEntities(allEntities.map((e: any) => ({
-        id: e.id, name: e.name, type: e.type, country: e.country_code,
-        parentId: e.parent_id, referent: e.pca_referent || '—',
-        referentContact: e.referent_contact, referentBackup: e.referent_backup || '—',
-        suppleantContact: e.referent_backup_contact,
-        status: 'Actif', pcaStatus: e.pca_status || 'Non démarré', maturity: e.maturity || 20,
-      })));
-    }
-    
-    if (errors.length > 0) {
-      toast.error(`${insertedEntities.length - errors.length} entités importées, ${errors.length} erreurs: ${errors.join(', ')}`);
-    } else {
-      toast.success(`${insertedEntities.length} entités importées avec succès !`);
+      toast.error("Erreur lors de la génération du PDF");
     }
   };
 
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
     setPendingFile(file);
-    console.log("📁 Import du fichier:", file.name, "Type:", file.type);
-    
-    if (file.type === "application/pdf") {
-      console.log("📄 Traitement PDF...");
-      await processFileWithAI(file);
-      e.target.value = '';
-      return;
-    }
-    
-    if (file.type.startsWith("image/")) {
-      toast.info("Le support des images arrive bientôt.");
-      e.target.value = '';
-      return;
-    }
-    
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const data = evt.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
-        await importExcel(rows);
-      } catch (err: any) { toast.error(err.message || "Erreur import"); }
-    };
-    reader.readAsBinaryString(file);
+    if (file.type === "application/pdf") { await processFileWithAI(file); e.target.value = ''; return; }
+    toast.info("Utilisez l'Import Excel pour les fichiers Excel");
     e.target.value = '';
   };
 
-  // ============================================================
-  // TRAITEMENT PDF AVEC GROQ (via Supabase Edge Function)
-  // ============================================================
   const processFileWithAI = async (file: File) => {
     setIsProcessingPdf(true);
-    let loadingToast: string | number | undefined;
-    
     try {
-      loadingToast = toast.loading("📄 Extraction du texte...");
-      
+      toast.info("📄 Extraction du texte...");
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      
       let fullText = "";
-      console.log(`🔵 Nombre de pages: ${pdf.numPages}`);
-      
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        console.log(`🔵 Extraction de la page ${pageNum}...`);
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(' ');
-        fullText += pageText + '\n';
-        console.log(`🔵 Page ${pageNum} extraite: ${pageText.length} caractères`);
+        fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
       }
-      
       let extractedText = fullText;
-      console.log(`🔵 Texte total extrait: ${extractedText.length} caractères`);
-      console.log("🔵 Début du texte:", extractedText.substring(0, 500));
-      
       if (!extractedText || extractedText.trim().length < 50) {
-        toast.loading("🔍 OCR en cours (document scanné)...", { id: loadingToast });
-        console.log("🟡 Texte trop court → OCR sur la page 1...");
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: 2.0 });
         const canvas = document.createElement('canvas');
@@ -1521,278 +1369,35 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
         const { data: { text } } = await Tesseract.recognize(canvas.toDataURL('image/png'), 'fra');
         extractedText = text;
-        console.log(`🟡 OCR terminé, longueur: ${extractedText.length}`);
       }
-      
-      const cleanText = extractedText
-        .replace(/\r/g, ' ')
-        .replace(/\t/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      console.log("🔵 Texte nettoyé:", cleanText.substring(0, 800));
-      
-      toast.loading("🧠 Analyse par l'IA en cours...", { id: loadingToast });
-      console.log("🔵 Envoi à l'Edge Function Groq...");
-      
+      toast.info("🧠 Analyse par l'IA...");
       const { data, error } = await functionsClient.functions.invoke('groq-extract', {
-        body: { text: cleanText.substring(0, 10000) }
+        body: { text: extractedText.replace(/\s+/g, ' ').trim().substring(0, 10000) }
       });
-
-      if (error) {
-        console.error("🔴 Erreur Edge Function:", error);
-        toast.error("Erreur lors de l'analyse du document : " + error.message, { id: loadingToast });
-        setIsProcessingPdf(false);
-        setProcessingStep("");
-        return;
-      }
-
-      if (!data || !data.response) {
-        toast.error("Aucune réponse de l'IA. Vérifiez que la Edge Function est bien déployée.", { id: loadingToast });
-        setIsProcessingPdf(false);
-        setProcessingStep("");
-        return;
-      }
-
-      const result = { response: data.response };
-      console.log("🔵 Réponse brute (début):", result.response?.substring(0, 500));
-      
-      let cleanResponse = result.response || '';
-      cleanResponse = cleanResponse.replace(/```json\s*/g, '');
-      cleanResponse = cleanResponse.replace(/```\s*/g, '');
-      
-      const jsonMatches = cleanResponse.match(/\{[\s\S]*\}/g);
-      if (!jsonMatches) {
-        console.error("🔴 Aucun JSON trouvé");
-        toast.error("L'IA n'a pas pu structurer ce document. Essayez de reformuler le PDF avec des puces claires ou utilisez le modèle Excel.", { id: loadingToast });
-        setIsProcessingPdf(false);
-        setProcessingStep("");
-        return;
-      }
-      
-      let jsonStr = jsonMatches.reduce((a, b) => a.length > b.length ? a : b, '');
-      console.log("🔵 JSON extrait (brut):", jsonStr.substring(0, 500));
-      
-      jsonStr = jsonStr
-        .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-        .replace(/,(\s*[}\]])/g, '$1')
-        .replace(/([{,])(\s*)(\w+)(\s*):/g, '$1"$3":')
-        .replace(/'/g, '"')
-        .replace(/\\"/g, '"')
-        .replace(/\\'/g, "'");
-      
-      console.log("🔵 JSON nettoyé:", jsonStr.substring(0, 500));
-      
-      let parsed;
-      try {
-        parsed = JSON.parse(jsonStr);
-      } catch (parseError) {
-        console.error("🔴 Erreur parsing JSON:", parseError);
-        
-        toast.loading("🔄 Second essai d'analyse...", { id: loadingToast });
-        
-        const { data: fallbackData, error: fallbackError } = await functionsClient.functions.invoke('groq-extract', {
-          body: { 
-            text: `Extrais uniquement les noms d'entités et leur niveau hiérarchique du texte suivant. Retourne un JSON avec la liste des entités.
-
-Texte: """${cleanText.substring(0, 5000)}"""
-
-Retourne: {"entities": [{"name": "Nom de l'entité", "level": 1}, ...]}
-- level 1 = Filiale (niveau le plus haut)
-- level 2 = Direction
-- level 3 = Service ou Département
-
-Ne retourne que le JSON.`
-          }
-        });
-        
-        if (!fallbackError && fallbackData && fallbackData.response) {
-          const fallbackClean = fallbackData.response
-            .replace(/```json\s*/g, '')
-            .replace(/```\s*/g, '');
-          
-          try {
-            const fallbackParsed = JSON.parse(fallbackClean);
-            if (fallbackParsed && fallbackParsed.entities && fallbackParsed.entities.length > 0) {
-              const entities = fallbackParsed.entities.map((e: any) => {
-                let type = "SERVICE";
-                if (e.level === 1) type = "FILIALE";
-                else if (e.level === 2) type = "DIRECTION";
-                else if (e.level === 3) type = "SERVICE";
-                return { name: e.name, type, parent: null };
-              });
-              parsed = { entities };
-              console.log("🔵 Entités extraites par fallback:", parsed);
-            }
-          } catch (e) {
-            console.error("🔴 Fallback échoué:", e);
-          }
-        }
-        
-        if (!parsed) {
-          toast.error("L'IA n'a pas pu structurer ce document. Essayez de reformuler le PDF avec des puces claires ou utilisez le modèle Excel.", { id: loadingToast });
-          setIsProcessingPdf(false);
-          setProcessingStep("");
-          return;
-        }
-      }
-      
-      if (parsed && parsed.entities && parsed.entities.length > 0) {
-        toast.loading("💾 Import des entités...", { id: loadingToast });
-        
-        const validEntities = [];
-        const errors = [];
-        const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"];
-        
-        let currentFiliale = null;
-        let currentDirection = null;
-        
+      if (error || !data?.response) { toast.error("Erreur d'analyse"); setIsProcessingPdf(false); return; }
+      const cleanResponse = data.response.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+      const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) { toast.error("Pas de JSON trouvé"); setIsProcessingPdf(false); return; }
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed?.entities?.length > 0) {
         for (const entity of parsed.entities) {
-          const normalizedType = (entity.type || "SERVICE").toUpperCase();
-          if (!validTypes.includes(normalizedType)) {
-            errors.push(`Type "${entity.type}" invalide pour "${entity.name}"`);
-            continue;
-          }
-          if (!entity.name || entity.name.trim() === '') {
-            errors.push(`Entité sans nom trouvée`);
-            continue;
-          }
-          
-          let parent = null;
-          if (normalizedType === "FILIALE") {
-            currentFiliale = entity.name;
-            currentDirection = null;
-          } else if (normalizedType === "DIRECTION") {
-            parent = currentFiliale;
-            currentDirection = entity.name;
-          } else if (["SERVICE", "DÉPARTEMENT"].includes(normalizedType)) {
-            parent = currentDirection || currentFiliale;
-          }
-          
-          validEntities.push({
-            name: entity.name.trim(),
-            type: normalizedType,
-            parent: entity.parent || parent
+          await (supabase as any).from('organisations').insert({
+            name: entity.name, type: entity.type?.toUpperCase() || "SERVICE",
+            country_code: 'FR', parent_id: null, pca_referent: 'À définir',
+            pca_status: 'Non démarré', maturity: 20, sector: 'Général', status: 'ACTIVE',
           });
         }
-        
-        if (validEntities.length === 0) {
-          toast.error("Aucune entité valide trouvée", { id: loadingToast });
-          setIsProcessingPdf(false);
-          setProcessingStep("");
-          return;
-        }
-        
-        console.log(`🔵 ${validEntities.length} entités valides trouvées`);
-        console.log("🔵 Entités:", validEntities.map(e => `${e.name} (${e.type}) -> ${e.parent || 'Racine'}`).join(', '));
-        
-        const insertedIds = new Map();
-        for (const entity of validEntities) {
-          const { data, error } = await (supabase as any).from('organisations').insert({
-            name: entity.name,
-            type: entity.type,
-            country_code: 'FR',
-            parent_id: null,
-            pca_referent: 'À définir',
-            referent_contact: null,
-            referent_backup: '—',
-            referent_backup_contact: null,
-            pca_status: 'Non démarré',
-            maturity: 20,
-            sector: 'Général',
-            status: 'ACTIVE',
-          }).select().single();
-          
-          if (error) {
-            errors.push(`Erreur insertion ${entity.name}: ${error.message}`);
-            console.error(`❌ Erreur insertion ${entity.name}:`, error);
-            continue;
-          }
-          insertedIds.set(entity.name, data.id);
-          console.log(`✅ Insertion OK: ${entity.name} → ${data.id}`);
-        }
-        
-        const allEntitiesForValidation = [
-          ...entities,
-          ...validEntities.map(e => ({
-            id: insertedIds.get(e.name),
-            name: e.name,
-            type: e.type,
-            parentId: null,
-          } as Entity))
-        ];
-        
-        for (const entity of validEntities) {
-          if (entity.parent && insertedIds.has(entity.parent) && insertedIds.has(entity.name)) {
-            console.log(`🔗 Liaison: ${entity.name} → ${entity.parent}`);
-            const validation = validateHierarchy(
-              entity.type, 
-              insertedIds.get(entity.parent), 
-              allEntitiesForValidation
-            );
-            if (validation.valid) {
-              await (supabase as any).from('organisations')
-                .update({ parent_id: insertedIds.get(entity.parent) })
-                .eq('id', insertedIds.get(entity.name));
-              console.log(`✅ Liaison OK: ${entity.name} → ${entity.parent}`);
-            } else {
-              errors.push(`Erreur hiérarchie pour "${entity.name}": ${validation.error}`);
-              console.error(`❌ Erreur hiérarchie: ${entity.name} → ${entity.parent}: ${validation.error}`);
-            }
-          } else if (entity.parent && !insertedIds.has(entity.parent)) {
-            const existingParent = entities.find(e => e.name === entity.parent);
-            if (existingParent) {
-              console.log(`🔗 Liaison avec parent existant: ${entity.name} → ${entity.parent}`);
-              const validation = validateHierarchy(
-                entity.type, 
-                existingParent.id, 
-                allEntitiesForValidation
-              );
-              if (validation.valid) {
-                await (supabase as any).from('organisations')
-                  .update({ parent_id: existingParent.id })
-                  .eq('id', insertedIds.get(entity.name));
-                console.log(`✅ Liaison OK avec parent existant: ${entity.name} → ${entity.parent}`);
-              } else {
-                errors.push(`Erreur hiérarchie pour "${entity.name}" avec parent existant: ${validation.error}`);
-              }
-            }
-          }
-        }
-        
         const { data: allEntities } = await (supabase as any).from('organisations').select('*');
         if (allEntities) {
           setEntities(allEntities.map((e: any) => ({
-            id: e.id,
-            name: e.name,
-            type: e.type,
-            country: e.country_code,
-            parentId: e.parent_id,
-            referent: e.pca_referent || '—',
-            referentContact: e.referent_contact,
-            referentBackup: e.referent_backup || '—',
-            suppleantContact: e.referent_backup_contact,
-            status: 'Actif',
-            pcaStatus: e.pca_status || 'Non démarré',
-            maturity: e.maturity || 20,
+            id: e.id, name: e.name, type: e.type, country: e.country_code, parentId: e.parent_id,
+            referent: e.pca_referent || '—', status: 'Actif', pcaStatus: e.pca_status || 'Non démarré', maturity: e.maturity || 20,
           })));
         }
-        
-        if (errors.length > 0) {
-          toast.warning(`${validEntities.length} entités importées avec ${errors.length} erreurs: ${errors.join(', ')}`, { id: loadingToast });
-        } else {
-          toast.success(`✅ ${validEntities.length} entités importées avec succès !`, { id: loadingToast });
-        }
-      } else {
-        toast.error("Aucune entité trouvée dans le PDF", { id: loadingToast });
+        toast.success(`${parsed.entities.length} entités importées`);
       }
-    } catch (err: any) {
-      console.error("🔴 ERREUR COMPLÈTE:", err);
-      toast.error(`❌ Erreur: ${err.message}`);
-    }
-    console.log("🔵 === FIN TRAITEMENT PDF ===");
+    } catch (err: any) { toast.error(`Erreur: ${err.message}`); }
     setIsProcessingPdf(false);
-    setProcessingStep("");
   };
 
   const navigateToInventory = () => {
@@ -1802,121 +1407,37 @@ Ne retourne que le JSON.`
     }
   };
 
-  // Rendu des enfants dans le panneau de droite
+  // ⭐ Navigation vers le BIA d'un processus : déclenche l'événement écouté par ProcessInventory
+  const navigateToBIA = (processId: string) => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("bia:openProcess", { detail: { processId } }));
+      if (onNavigate) onNavigate("inventory", processId);
+    }
+  };
+
   const renderChildren = (children: Entity[], parentType?: string) => {
     if (children.length === 0) return null;
-    
-    const services = children.filter(c => c.type?.toUpperCase() === "SERVICE");
-    const departments = children.filter(c => c.type?.toUpperCase() === "DÉPARTEMENT");
     const directions = children.filter(c => c.type?.toUpperCase() === "DIRECTION");
-    
     if (parentType && isFiliale(parentType)) {
       return (
         <div className="space-y-2">
           {directions.map(d => (
-            <div 
-              key={d.id} 
-              className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 cursor-pointer transition-all group"
-              onClick={() => openPanel(d.id)}
-            >
+            <div key={d.id} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 cursor-pointer" onClick={() => openPanel(d.id)}>
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center">
-                  <Building2 className="h-4 w-4 text-blue-500" />
-                </div>
-                <div>
-                  <div className="font-medium text-sm">{d.name}</div>
-                  <div className="text-xs text-muted-foreground">{d.type}</div>
-                </div>
+                <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center"><Building2 className="h-4 w-4 text-blue-500" /></div>
+                <div><div className="font-medium text-sm">{d.name}</div><div className="text-xs text-muted-foreground">{d.type}</div></div>
               </div>
-              <Badge variant="outline" className="text-xs">
-                {d.country || "FR"}
-              </Badge>
+              <Badge variant="outline" className="text-xs">{d.country || "FR"}</Badge>
             </div>
           ))}
         </div>
       );
     }
-    
-    if (parentType && isDirection(parentType)) {
-      return (
-        <div className="space-y-3">
-          {services.length > 0 && (
-            <div>
-              <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
-                <div className="h-1 w-4 rounded-full bg-green-500"></div>
-                Services ({services.length})
-              </h5>
-              <div className="space-y-2">
-                {services.map(s => (
-                  <div 
-                    key={s.id} 
-                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 cursor-pointer transition-all group"
-                    onClick={() => openPanel(s.id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center">
-                        <Building2 className="h-4 w-4 text-emerald-500" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-sm">{s.name}</div>
-                        <div className="text-xs text-muted-foreground">Service</div>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400">
-                      SERVICE
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {departments.length > 0 && (
-            <div>
-              <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
-                <div className="h-1 w-4 rounded-full bg-purple-500"></div>
-                Départements ({departments.length})
-              </h5>
-              <div className="space-y-2">
-                {departments.map(d => (
-                  <div 
-                    key={d.id} 
-                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 cursor-pointer transition-all group"
-                    onClick={() => openPanel(d.id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-purple-50 dark:bg-purple-950/30 flex items-center justify-center">
-                        <Building2 className="h-4 w-4 text-purple-500" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-sm">{d.name}</div>
-                        <div className="text-xs text-muted-foreground">Département</div>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400">
-                      DÉPARTEMENT
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-    
     return (
       <div className="space-y-2">
         {children.map(c => (
-          <div 
-            key={c.id} 
-            className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 cursor-pointer transition-all"
-            onClick={() => openPanel(c.id)}
-          >
-            <div className="flex items-center gap-3">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              <span className="font-medium text-sm">{c.name}</span>
-            </div>
+          <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 cursor-pointer" onClick={() => openPanel(c.id)}>
+            <div className="flex items-center gap-3"><Building2 className="h-4 w-4 text-muted-foreground" /><span className="font-medium text-sm">{c.name}</span></div>
             <Badge variant="outline" className="text-xs">{c.type}</Badge>
           </div>
         ))}
@@ -1930,40 +1451,6 @@ Ne retourne que le JSON.`
         <h1 className="text-3xl font-bold text-foreground">Organigramme du Groupe</h1>
         <p className="text-muted-foreground mt-1">Cliquez sur une entité pour voir ses détails.</p>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Plus className="h-4 w-4 text-primary" /> Importer un organigramme</CardTitle>
-          <CardDescription>Importez votre structure depuis un fichier Excel, CSV ou PDF</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            <input 
-              type="file" 
-              accept=".xlsx,.xls,.csv,.pdf" 
-              onChange={handleFileImport} 
-              disabled={isProcessingPdf}
-              className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed" 
-            />
-            {isProcessingPdf && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {processingStep || "Traitement en cours..."}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">Format : Nom | Type | Pays | Référent PCA | Coordonnées référent | Suppléant | Coordonnées suppléant | Entité Parente</p>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={downloadTemplate} className="flex items-center gap-2">
-                📊 Télécharger le modèle Excel
-              </Button>
-              <Button variant="outline" onClick={downloadPdfTemplate} className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                📄 Télécharger le modèle PDF
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {can("write") && (
         <Card>
@@ -1979,171 +1466,91 @@ Ne retourne que le JSON.`
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Arborescence des entités</CardTitle>
-          <CardDescription>Cliquez sur une entité pour voir ses détails. Survolez une filiale ou une direction pour ajouter une sous-entité.</CardDescription>
+        <CardHeader className="border-b border-[#E8E4DC]/70 pb-0">
+          <div className="flex gap-1">
+            <button onClick={() => setActiveView("entities")} className={cn("px-4 py-2.5 text-sm font-medium transition-all relative -mb-px", activeView === "entities" ? "text-[#172030] border-b-2 border-[#2A5141]" : "text-[#172030]/50 hover:text-[#172030] border-b-2 border-transparent")}>Arborescence des entités</button>
+            <button onClick={() => setActiveView("taxonomy")} className={cn("px-4 py-2.5 text-sm font-medium transition-all relative -mb-px", activeView === "taxonomy" ? "text-[#172030] border-b-2 border-[#2A5141]" : "text-[#172030]/50 hover:text-[#172030] border-b-2 border-transparent")}>Arborescence des taxonomies</button>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="hidden md:grid grid-cols-4 gap-2 px-3 pb-2 ml-12 text-xs font-semibold text-muted-foreground border-b border-border">
-            <span>Entité</span><span>Type</span><span>Pays</span><span>Référent PCA</span>
-          </div>
-          <div className="mt-2">
-            {tree.map((n) => (
-              <Node 
-                key={n.id} 
-                node={n} 
-                depth={0} 
-                onDelete={handleDelete} 
-                onSelect={openPanel} 
-                onQuickAdd={handleQuickAdd}
-              />
-            ))}
-          </div>
+        <CardContent className="pt-4">
+          {activeView === "entities" ? (
+            <>
+              {/* ============================================================
+                  ANCIEN FORMAT — Visible uniquement dans l'onglet Arborescence des entités
+                  ============================================================ */}
+              <Card className="mb-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Plus className="h-4 w-4 text-primary" /> Importer un organigramme (ancien format)</CardTitle>
+                  <CardDescription>Import simple des entités uniquement (Excel, CSV ou PDF)</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col gap-4">
+                    <input type="file" accept=".xlsx,.xls,.csv,.pdf" onChange={handleFileImport} disabled={isProcessingPdf} className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed" />
+                    {isProcessingPdf && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{processingStep || "Traitement en cours..."}</div>}
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={downloadTemplate} className="flex items-center gap-2">📊 Télécharger le modèle Excel</Button>
+                      <Button variant="outline" onClick={downloadPdfTemplate} className="flex items-center gap-2"><FileText className="h-4 w-4" /> 📄 Télécharger le modèle PDF</Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="hidden md:grid grid-cols-4 gap-2 px-3 pb-2 ml-12 text-xs font-semibold text-muted-foreground border-b border-border">
+                <span>Entité</span><span>Type</span><span>Pays</span><span>Référent PCA</span>
+              </div>
+              <div className="mt-2">
+                {tree.map((n) => (<Node key={n.id} node={n} depth={0} onDelete={handleDelete} onSelect={openPanel} onQuickAdd={handleQuickAdd} />))}
+              </div>
+            </>
+          ) : (
+            <TaxonomyTab
+              entities={entities as Entity[]}
+              processes={processes}
+              onOpenImport={() => setImportOpen(true)}
+              onDownloadTemplate={downloadGenericTemplate}
+              onNavigateToBIA={navigateToBIA}
+            />
+          )}
         </CardContent>
       </Card>
 
-      {/* ============================================================
-          SHEET : Création rapide contextuelle (Quick Add)
-          ============================================================ */}
-      <Sheet 
-        open={quickAddOpen} 
-        onOpenChange={(o) => { 
-          if (!o) { 
-            setQuickAddOpen(false); 
-            setQuickAddForm(emptyForm); 
-          } 
+      <ImportExcelDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        entities={entities as Entity[]}
+        onImported={async () => {
+          await reloadEntities();
+          await reloadBiaProcesses();
         }}
-      >
+      />
+
+      <Sheet open={quickAddOpen} onOpenChange={(o) => { if (!o) { setQuickAddOpen(false); setQuickAddForm(emptyForm); } }}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {(() => {
             const parent = entities.find(e => e.id === quickAddParentId);
-            const typeLabel = quickAddType === "DIRECTION" ? "direction" 
-              : quickAddType === "SERVICE" ? "service" 
-              : quickAddType === "DÉPARTEMENT" ? "département" 
-              : "entité";
-            
+            const typeLabel = quickAddType === "DIRECTION" ? "direction" : quickAddType === "SERVICE" ? "service" : quickAddType === "DÉPARTEMENT" ? "département" : "entité";
             return (
               <div className="space-y-5">
                 <SheetHeader>
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-[#2A5141]/15 flex items-center justify-center">
-                      <PlusCircle className="h-5 w-5 text-[#2A5141]" />
-                    </div>
+                    <div className="h-10 w-10 rounded-lg bg-[#2A5141]/15 flex items-center justify-center"><PlusCircle className="h-5 w-5 text-[#2A5141]" /></div>
                     <div>
-                      <SheetTitle className="text-[#172030]" style={{ fontFamily: "'Playfair Display', serif" }}>
-                        Nouvelle {typeLabel}
-                      </SheetTitle>
-                      <SheetDescription className="text-xs">
-                        {parent 
-                          ? <>Sous « <span className="font-medium text-[#172030]">{parent.name}</span> » ({parent.type})</>
-                          : "Création d'une entité"
-                        }
-                      </SheetDescription>
+                      <SheetTitle className="text-[#172030]" style={{ fontFamily: "'Playfair Display', serif" }}>Nouvelle {typeLabel}</SheetTitle>
+                      <SheetDescription className="text-xs">{parent ? <>Sous « <span className="font-medium text-[#172030]">{parent.name}</span> » ({parent.type})</> : "Création d'une entité"}</SheetDescription>
                     </div>
                   </div>
                 </SheetHeader>
-
-                {/* Bandeau contexte */}
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-[#F8F6F2] border border-[#E8E4DC] text-xs text-muted-foreground">
-                  <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span>
-                    Cette {typeLabel} sera automatiquement rattachée à 
-                    <span className="font-semibold text-[#172030]"> {parent?.name || "—"}</span>.
-                  </span>
-                </div>
-
-                {/* Formulaire */}
                 <div className="space-y-4">
-                  <div>
-                    <Label>Nom <span className="text-destructive">*</span></Label>
-                    <Input
-                      autoFocus
-                      value={quickAddForm.name}
-                      onChange={(e) => setQuickAddForm({ ...quickAddForm, name: e.target.value })}
-                      placeholder={
-                        quickAddType === "DIRECTION" ? "Ex: Direction Financière" 
-                        : quickAddType === "SERVICE" ? "Ex: Service Comptabilité" 
-                        : "Ex: Département Audit"
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && quickAddForm.name.trim()) submitQuickAdd();
-                      }}
-                    />
-                  </div>
-
+                  <div><Label>Nom <span className="text-destructive">*</span></Label><Input autoFocus value={quickAddForm.name} onChange={(e) => setQuickAddForm({ ...quickAddForm, name: e.target.value })} /></div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Type</Label>
-                      <Input value={quickAddType} disabled className="bg-muted/50" />
-                    </div>
-                    <div>
-                      <Label>Pays</Label>
-                      <Input
-                        value={quickAddForm.country}
-                        onChange={(e) => setQuickAddForm({ ...quickAddForm, country: e.target.value })}
-                        placeholder="FR"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Référent PCA</Label>
-                      <Input
-                        value={quickAddForm.referent}
-                        onChange={(e) => setQuickAddForm({ ...quickAddForm, referent: e.target.value })}
-                        placeholder="Nom du responsable"
-                      />
-                    </div>
-                    <div>
-                      <Label>Coordonnées référent</Label>
-                      <Input
-                        value={quickAddForm.referentContact}
-                        onChange={(e) => setQuickAddForm({ ...quickAddForm, referentContact: e.target.value })}
-                        placeholder="email ou téléphone"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Suppléant</Label>
-                      <Input
-                        value={quickAddForm.suppleant}
-                        onChange={(e) => setQuickAddForm({ ...quickAddForm, suppleant: e.target.value })}
-                        placeholder="Nom du suppléant"
-                      />
-                    </div>
-                    <div>
-                      <Label>Coordonnées suppléant</Label>
-                      <Input
-                        value={quickAddForm.suppleantContact}
-                        onChange={(e) => setQuickAddForm({ ...quickAddForm, suppleantContact: e.target.value })}
-                        placeholder="email ou téléphone"
-                      />
-                    </div>
+                    <div><Label>Type</Label><Input value={quickAddType} disabled className="bg-muted/50" /></div>
+                    <div><Label>Pays</Label><Input value={quickAddForm.country} onChange={(e) => setQuickAddForm({ ...quickAddForm, country: e.target.value })} /></div>
                   </div>
                 </div>
-
-                {/* Footer actions */}
                 <div className="flex justify-end gap-2 pt-3 border-t border-border">
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => { setQuickAddOpen(false); setQuickAddForm(emptyForm); }}
-                    disabled={isSubmittingQuickAdd}
-                  >
-                    <X className="h-4 w-4 mr-1" /> Annuler
-                  </Button>
-                  <Button
-                    onClick={submitQuickAdd}
-                    disabled={isSubmittingQuickAdd || !quickAddForm.name.trim()}
-                    className="bg-[#2A5141] hover:bg-[#1a3329] text-white"
-                  >
-                    {isSubmittingQuickAdd ? (
-                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Création...</>
-                    ) : (
-                      <><Plus className="h-4 w-4 mr-1" /> Créer la {typeLabel}</>
-                    )}
+                  <Button variant="ghost" onClick={() => { setQuickAddOpen(false); setQuickAddForm(emptyForm); }} disabled={isSubmittingQuickAdd}><X className="h-4 w-4 mr-1" /> Annuler</Button>
+                  <Button onClick={submitQuickAdd} disabled={isSubmittingQuickAdd || !quickAddForm.name.trim()} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
+                    {isSubmittingQuickAdd ? (<><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Création...</>) : (<><Plus className="h-4 w-4 mr-1" /> Créer la {typeLabel}</>)}
                   </Button>
                 </div>
               </div>
@@ -2152,9 +1559,6 @@ Ne retourne que le JSON.`
         </SheetContent>
       </Sheet>
 
-      {/* ============================================================
-          SHEET : Détail / Édition d'une entité (existant)
-          ============================================================ */}
       <Sheet open={!!panelEntity} onOpenChange={(o) => { if (!o) { setPanelId(null); setEditing(false); } }}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {panelEntity && (() => {
@@ -2162,7 +1566,6 @@ Ne retourne que le JSON.`
             const isLow = isLowLevel(panelEntity.type);
             const isDir = isDirection(panelEntity.type);
             const isFil = isFiliale(panelEntity.type);
-            
             return (
               <div className="space-y-5">
                 <SheetHeader>
@@ -2179,7 +1582,6 @@ Ne retourne que le JSON.`
                     )}
                   </div>
                 </SheetHeader>
-
                 {editing ? (
                   <div className="space-y-4">
                     {renderFormGrid(editForm, setEditForm, panelEntity.id)}
@@ -2195,166 +1597,33 @@ Ne retourne que le JSON.`
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="text-muted-foreground">Type</div><div className="font-medium">{panelEntity.type || "—"}</div>
                         <div className="text-muted-foreground">Pays</div><div className="font-medium">{panelEntity.country}</div>
-                        <div className="text-muted-foreground">Entité parente</div><div className="font-medium">{panelParent?.name || "Racine"}</div>
+                        <div className="text-muted-foreground">Parent</div><div className="font-medium">{panelParent?.name || "Racine"}</div>
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase">Référent PCA</h4>
-                      <div className="rounded-md border border-border p-3 text-sm space-y-1">
-                        <div><span className="text-muted-foreground">Principal :</span> <span className="font-medium">{panelEntity.referent}</span></div>
-                        <div><span className="text-muted-foreground">Coordonnées :</span> <span className="font-medium">{(panelEntity as any).referentContact || "—"}</span></div>
-                        <div><span className="text-muted-foreground">Suppléant :</span> <span className="font-medium">{panelEntity.referentBackup || "—"}</span></div>
-                        <div><span className="text-muted-foreground">Coordonnées suppléant :</span> <span className="font-medium">{(panelEntity as any).suppleantContact || "—"}</span></div>
-                      </div>
+                      <div className="flex items-center justify-between"><h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4><span className="text-sm font-bold">{m}%</span></div>
+                      <div className="h-3 w-full rounded-full bg-secondary overflow-hidden"><div className={cn("h-full transition-all", maturityColor(m))} style={{ width: `${m}%` }} /></div>
                     </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4>
-                        <span className="text-sm font-bold">{m}%</span>
-                      </div>
-                      <div className="h-3 w-full rounded-full bg-secondary overflow-hidden">
-                        <div className={cn("h-full transition-all", maturityColor(m))} style={{ width: `${m}%` }} />
-                      </div>
-                      <p className="text-xs text-muted-foreground">{m < 50 ? "Niveau faible — actions urgentes requises" : m < 75 ? "Niveau intermédiaire — améliorations recommandées" : "Niveau élevé — bonne maturité"}</p>
-                    </div>
-
-                    {isFil && (
+                    {isFil && panelChildren.length > 0 && (<div className="space-y-3"><h4 className="text-sm font-semibold">Directions ({panelChildren.length})</h4>{renderChildren(panelChildren, panelEntity.type)}</div>)}
+                    {isLow && (
                       <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                            <div className="h-1.5 w-6 rounded-full bg-blue-500"></div>
-                            Directions
-                          </h4>
-                          <Badge variant="secondary" className="font-mono">
-                            {panelChildren.length}
-                          </Badge>
-                        </div>
-                        {panelChildren.length > 0 ? (
-                          renderChildren(panelChildren, panelEntity.type)
-                        ) : (
-                          <div className="text-sm text-muted-foreground italic p-4 bg-muted/30 rounded-md text-center border border-dashed border-muted">
-                            Aucune direction rattachée à cette filiale.
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {(isDir) && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                            <div className="h-1.5 w-6 rounded-full bg-green-500"></div>
-                            Services & Départements
-                          </h4>
-                          <Badge variant="secondary" className="font-mono">
-                            {panelChildren.length}
-                          </Badge>
-                        </div>
-                        {panelChildren.length > 0 ? (
-                          renderChildren(panelChildren, panelEntity.type)
-                        ) : (
-                          <div className="text-sm text-muted-foreground italic p-4 bg-muted/30 rounded-md text-center border border-dashed border-muted">
-                            Aucun service ou département rattaché à cette direction.
-                          </div>
-                        )}
-                        
-                        {panelProcesses.length > 0 && (
-                          <div className="mt-4 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                                <div className="h-1.5 w-6 rounded-full bg-orange-500"></div>
-                                Processus de la Direction
-                              </h4>
-                              <Badge variant="secondary" className="font-mono">
-                                {panelProcesses.length}
-                              </Badge>
-                            </div>
-                            <div className="overflow-auto max-h-48 border rounded-lg">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="bg-muted/30">
-                                    <TableHead>Processus</TableHead>
-                                    <TableHead>Responsable</TableHead>
-                                    <TableHead className="text-center">RTO</TableHead>
-                                    <TableHead>Criticité</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {panelProcesses.map(p => {
-                                    const criticality = scoreToCriticality(computeMaxScore(p.impacts));
-                                    return (
-                                      <TableRow key={p.id}>
-                                        <TableCell className="font-medium">{p.name}</TableCell>
-                                        <TableCell>{p.owner}</TableCell>
-                                        <TableCell className="text-center">{p.rto}h</TableCell>
-                                        <TableCell><Badge className={criticalityColor(criticality)}>{criticality}</Badge></TableCell>
-                                      </TableRow>
-                                    );
-                                  })}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {panelChildren.length === 0 && panelProcesses.length === 0 && (
-                          <div className="text-sm text-muted-foreground italic p-4 bg-muted/30 rounded-md text-center border border-dashed border-muted">
-                            Aucun service, département ou processus rattaché à cette direction.
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {(isLow) && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                            <div className="h-1.5 w-6 rounded-full bg-orange-500"></div>
-                            Processus associés
-                          </h4>
-                          <Badge variant="secondary" className="font-mono">
-                            {panelProcesses.length}
-                          </Badge>
-                        </div>
+                        <h4 className="text-sm font-semibold">Processus associés ({panelProcesses.length})</h4>
                         {panelProcesses.length === 0 ? (
-                          <div className="text-sm text-muted-foreground italic bg-amber-50 dark:bg-amber-950/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
-                            <p>Aucun processus rattaché à ce {panelEntity.type?.toLowerCase()}.</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              💡 Conseil : Le champ "Entité" du processus doit être <strong className="text-amber-700 dark:text-amber-400">"{panelEntity.name}"</strong> ou le processus doit être rattaché à la direction parente.
-                            </p>
-                          </div>
+                          <p className="text-sm text-muted-foreground italic">Aucun processus rattaché.</p>
                         ) : (
                           <div className="overflow-auto max-h-64 border rounded-lg">
                             <Table>
-                              <TableHeader>
-                                <TableRow className="bg-muted/30">
-                                  <TableHead>Processus</TableHead>
-                                  <TableHead>Responsable</TableHead>
-                                  <TableHead className="text-center">RTO</TableHead>
-                                  <TableHead>Criticité</TableHead>
-                                </TableRow>
-                              </TableHeader>
+                              <TableHeader><TableRow className="bg-muted/30"><TableHead>Processus</TableHead><TableHead className="text-center">RTO</TableHead><TableHead>Criticité</TableHead></TableRow></TableHeader>
                               <TableBody>
                                 {panelProcesses.map(p => {
                                   const criticality = scoreToCriticality(computeMaxScore(p.impacts));
-                                  return (
-                                    <TableRow key={p.id}>
-                                      <TableCell className="font-medium">{p.name}</TableCell>
-                                      <TableCell>{p.owner}</TableCell>
-                                      <TableCell className="text-center">{p.rto}h</TableCell>
-                                      <TableCell><Badge className={criticalityColor(criticality)}>{criticality}</Badge></TableCell>
-                                    </TableRow>
-                                  );
+                                  return (<TableRow key={p.id} className="cursor-pointer hover:bg-[#F8F6F2]" onClick={() => navigateToBIA(p.id)}><TableCell className="font-medium">{p.name}</TableCell><TableCell className="text-center">{p.rto}h</TableCell><TableCell><Badge className={criticalityColor(criticality)}>{criticality}</Badge></TableCell></TableRow>);
                                 })}
                               </TableBody>
                             </Table>
                           </div>
                         )}
-                        <Button variant="outline" size="sm" className="w-full mt-2 gap-2" onClick={navigateToInventory}>
-                          <ExternalLink className="h-4 w-4" />
-                          Accéder à l'inventaire
-                        </Button>
+                        <Button variant="outline" size="sm" className="w-full mt-2 gap-2" onClick={navigateToInventory}><ExternalLink className="h-4 w-4" /> Accéder à l'inventaire</Button>
                       </div>
                     )}
                   </>
@@ -2367,3 +1636,5 @@ Ne retourne que le JSON.`
     </div>
   );
 };
+
+export default OrgChart;
