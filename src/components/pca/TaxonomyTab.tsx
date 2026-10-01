@@ -59,7 +59,6 @@ export const TaxonomyTab = ({
     const directions = entities.filter(e => e.type === "DIRECTION");
     const services = entities.filter(e => ["SERVICE", "DÉPARTEMENT"].includes(e.type));
 
-    // Directions sans processus
     const directionsWithoutProcesses = directions.filter(d => {
       const hasOwnProcesses = processes.some(p => p.entity === d.name || p.entityId === d.id);
       const children = entities.filter(e => e.parentId === d.id);
@@ -69,10 +68,8 @@ export const TaxonomyTab = ({
       return !hasOwnProcesses && !hasChildProcesses;
     });
 
-    // Processus sans RTO
     const processesWithoutRto = processes.filter(p => !p.rto);
 
-    // Taux de couverture
     const totalEntitiesWithProcesses = entities.filter(e => {
       return processes.some(p => p.entity === e.name || p.entityId === e.id);
     }).length;
@@ -91,19 +88,16 @@ export const TaxonomyTab = ({
     };
   }, [entities, processes]);
 
-  // ============ Helper processus par entité ============
   const getEntityProcesses = (entity: Entity) => {
     return processes.filter(p => p.entity === entity.name || p.entityId === entity.id);
   };
 
-  // ============ Rendu récursif d'un nœud ============
   const renderNode = (entity: Entity, depth = 0) => {
     const children = entities.filter(e => e.parentId === entity.id);
     const entityProcesses = getEntityProcesses(entity);
     const isExpanded = expanded[entity.id] ?? depth < 1;
     const hasChildren = children.length > 0;
 
-    // Comptage total (processus directs + descendants)
     const totalProcessesInBranch = useMemo(() => {
       let total = entityProcesses.length;
       const countRecursive = (parentId: string) => {
@@ -117,14 +111,12 @@ export const TaxonomyTab = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [entity.id, entities, processes]);
 
-    // Filtrage par recherche
     const matchesSearch = searchQuery === "" ||
       entity.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       entityProcesses.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     if (searchQuery && !matchesSearch && hasChildren === false) return null;
 
-    // Icône selon le type
     const getIcon = () => {
       const t = entity.type?.toUpperCase();
       if (t === "FILIALE") return <Building2 className="h-4 w-4" />;
@@ -132,7 +124,6 @@ export const TaxonomyTab = ({
       return <Layers className="h-4 w-4" />;
     };
 
-    // Couleur selon le type
     const getColors = () => {
       const t = entity.type?.toUpperCase();
       if (t === "FILIALE") return { bg: "bg-[#172030]", text: "text-white", badge: "bg-[#172030]" };
@@ -187,12 +178,12 @@ export const TaxonomyTab = ({
             {entity.name}
           </span>
 
-          {/* Badge type */}
+          {/* Badge type — ✅ parent <div>, OK */}
           <Badge className={cn("text-[10px] font-medium", colors.badge, colors.text, "border-0")}>
             {entity.type}
           </Badge>
 
-          {/* Compteur processus */}
+          {/* Compteur processus — ✅ parent <div>, OK */}
           {totalProcessesInBranch > 0 && (
             <Badge className="text-[10px] bg-[#2A5141]/10 text-[#2A5141] border-0">
               {totalProcessesInBranch} processus
@@ -222,7 +213,7 @@ export const TaxonomyTab = ({
           </div>
         </div>
 
-        {/* Processus de cette entité */}
+        {/* Processus de cette entité — ✅ remplacé les <>...</> par <div>...</div> */}
         {isExpanded && entityProcesses.length > 0 && (
           <div className="mt-1 space-y-1" style={{ paddingLeft: `${depth * 24 + 56}px` }}>
             {entityProcesses.map(p => {
@@ -234,16 +225,20 @@ export const TaxonomyTab = ({
                 <div
                   key={p.id}
                   className="group flex items-center gap-2 py-1.5 px-3 rounded-md bg-white border border-[#E8E4DC] hover:border-[#2A5141]/40 hover:shadow-sm transition-all cursor-pointer"
-                  onClick={() => onOpenProcess?.(p.id)}
+                  onClick={() => {
+                    console.log("🔵 Clic processus (TaxonomyTab):", p.id, p.name);
+                    onOpenProcess?.(p.id);
+                  }}
                 >
                   <Target className="h-3.5 w-3.5 text-[#2A5141] flex-shrink-0" />
                   <span className="text-[13px] text-[#172030] truncate flex-1">{p.name}</span>
 
+                  {/* ✅ Remplacé le fragment <>...</> par un <div> inline : plus de <span> "orphelins" */}
                   {p.owner && (
-                    <>
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <span className="text-[10px] text-gray-400">•</span>
                       <span className="text-[11px] text-gray-500 truncate max-w-[100px]">{p.owner}</span>
-                    </>
+                    </div>
                   )}
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -281,7 +276,6 @@ export const TaxonomyTab = ({
         {/* Enfants */}
         {isExpanded && hasChildren && (
           <div className="relative">
-            {/* Ligne verticale de connexion */}
             <div
               className="absolute top-0 bottom-0 w-px bg-[#E8E4DC]"
               style={{ left: `${depth * 24 + 20}px` }}

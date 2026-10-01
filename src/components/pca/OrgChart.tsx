@@ -79,15 +79,31 @@ const getEntityProcesses = (entity: Entity, allProcesses: any[]) => allProcesses
 const buildTree = (entities: Entity[], parentId: string | null = null): Entity[] =>
   entities.filter((e) => e.parentId === parentId).map((e) => ({ ...e, children: buildTree(entities, e.id) }));
 
+const normalizeCriticite = (raw: string | null): string | null => {
+  if (!raw) return null;
+  const n = raw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (n === "CRITIQUE" || n === "TRES SEVERE" || n === "SEVERE" || n === "ELEVE" || n === "HAUT" || n === "HAUTE") return "CRITIQUE";
+  if (n === "MAJEUR") return "MAJEUR";
+  if (n === "MODERE" || n === "MOYEN" || n === "MOYENNE") return "MODERE";
+  if (n === "MINEUR" || n === "FAIBLE" || n === "BAS") return "MINEUR";
+  return "MINEUR";
+};
+
+const normalizeProcessStatus = (raw: string | null): string => {
+  if (!raw) return "ACTIF";
+  const n = raw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (n === "ACTIF" || n === "ACTIVE" || n === "EN COURS") return "ACTIF";
+  if (n === "INACTIF" || n === "INACTIVE" || n === "DESACTIVE") return "INACTIF";
+  if (n === "EN_REVISION" || n === "EN REVISION" || n === "REVISION" || n === "A REVISER") return "EN_REVISION";
+  return "ACTIF";
+};
+
 const maturityColor = (m: number) => {
   if (m < 50) return "bg-destructive";
   if (m < 75) return "bg-warning";
   return "bg-success";
 };
 
-// ============================================================
-// DÉTECTION AUTOMATIQUE DES COLONNES
-// ============================================================
 const COLUMN_PATTERNS = {
   name: ['nom', 'name', 'libelle', 'libellé', 'intitulé', 'intitule', 'entité', 'entite'],
   type: ['type', 'niveau', 'nature', 'categorie', 'catégorie'],
@@ -130,9 +146,6 @@ const detectAllColumns = (headers: string[]) => {
   };
 };
 
-// ============================================================
-// IMPORT EXCEL — Entités + Processus
-// ============================================================
 type ParsedEntity = {
   name: string;
   type: string;
@@ -156,6 +169,15 @@ type ParsedProcess = {
   error?: string;
 };
 
+type AIAnalysis = {
+  summary: string;
+  hierarchyDepth: number;
+  entities: { name: string; type: string; parentName: string | null; referent: string | null }[];
+  processes: { name: string; entityName: string; owner: string | null; rto: number | null; rpo: number | null; criticality: string | null }[];
+  warnings: string[];
+  model?: string;
+};
+
 const ImportExcelDialog = ({
   open,
   onOpenChange,
@@ -170,6 +192,9 @@ const ImportExcelDialog = ({
   const [step, setStep] = useState<1 | 2>(1);
   const [file, setFile] = useState<File | null>(null);
   const [detectedColumns, setDetectedColumns] = useState<any>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [parsedEntities, setParsedEntities] = useState<ParsedEntity[]>([]);
   const [parsedProcesses, setParsedProcesses] = useState<ParsedProcess[]>([]);
   const [detectedNewEntities, setDetectedNewEntities] = useState<string[]>([]);
@@ -178,14 +203,15 @@ const ImportExcelDialog = ({
 
   const reset = () => {
     setStep(1); setFile(null); setDetectedColumns(null);
+    setAiAnalysis(null); setAiError(null); setAiLoading(false);
     setParsedEntities([]); setParsedProcesses([]);
     setDetectedNewEntities([]); setImportResult(null);
   };
 
-  const processFile = (f: File) => {
+  const processFile = async (f: File) => {
     setFile(f);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
@@ -209,7 +235,7 @@ const ImportExcelDialog = ({
         const detected = detectAllColumns(headers);
         setDetectedColumns(detected);
 
-        analyzeData(normalized, detected);
+        await analyzeWithAI(normalized, headers, f.name, detected);
         setStep(2);
       } catch (err: any) {
         toast.error("Erreur lecture Excel : " + err.message);
@@ -218,7 +244,75 @@ const ImportExcelDialog = ({
     reader.readAsArrayBuffer(f);
   };
 
-  const analyzeData = (data: any[], cols: any) => {
+  const analyzeWithAI = async (rows: any[], headers: string[], fileName: string, fallbackDetected: any) => {
+    setAiLoading(true);
+    setAiError(null);
+    setAiAnalysis(null);
+
+    try {
+      const { data, error } = await functionsClient.functions.invoke("groq-import-taxonomy", {
+        body: { rows, headers, fileName },
+      });
+
+      if (error) throw new Error(error.message || "Erreur Edge Function");
+      if (!data || !data.success) throw new Error(data?.error || "Réponse invalide");
+
+      const analysis: AIAnalysis = {
+        summary: data.summary || "Analyse terminée.",
+        hierarchyDepth: data.hierarchyDepth || 3,
+        entities: data.entities || [],
+        processes: data.processes || [],
+        warnings: data.warnings || [],
+        model: data.model,
+      };
+      setAiAnalysis(analysis);
+
+      const newEntities: ParsedEntity[] = analysis.entities.map((e, i) => ({
+        name: e.name,
+        type: e.type,
+        parentName: e.parentName,
+        referent: e.referent || "",
+        country: "FR",
+        rowIndex: i + 1,
+        isValid: true,
+      }));
+
+      const entityNameSet = new Set(newEntities.map(e => e.name.toLowerCase()));
+      const newProcesses: ParsedProcess[] = analysis.processes.map((p, i) => {
+        const valid = entityNameSet.has((p.entityName || "").toLowerCase());
+        return {
+          name: p.name,
+          entityName: p.entityName,
+          owner: p.owner,
+          rto: p.rto,
+          rpo: p.rpo,
+          criticality: p.criticality,
+          rowIndex: i + 1,
+          isValid: valid,
+          error: valid ? undefined : `Entité "${p.entityName}" non trouvée dans l'analyse`,
+        };
+      });
+
+      const existingNames = new Set(entities.map(e => e.name.toLowerCase()));
+      const newEntityNames = newEntities
+        .filter(e => !existingNames.has(e.name.toLowerCase()))
+        .map(e => e.name);
+
+      setParsedEntities(newEntities);
+      setParsedProcesses(newProcesses);
+      setDetectedNewEntities(newEntityNames);
+      toast.success(`✨ IA : ${analysis.entities.length} entités, ${analysis.processes.length} processus détectés`);
+    } catch (err: any) {
+      console.warn("Fallback sur pattern-matching:", err);
+      setAiError(err.message || "Erreur IA");
+      analyzeDataFallback(rows, fallbackDetected);
+      toast.warning("⚠️ IA indisponible — mode secours activé");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const analyzeDataFallback = (data: any[], cols: any) => {
     const newEntities: ParsedEntity[] = [];
     const newProcesses: ParsedProcess[] = [];
 
@@ -230,7 +324,6 @@ const ImportExcelDialog = ({
 
     data.forEach((row, idx) => {
       const rowIndex = idx + 2;
-
       const name = getValue(row, cols.name);
       const type = getValue(row, cols.type).toUpperCase();
       const parentName = getValue(row, cols.parent) || null;
@@ -251,8 +344,7 @@ const ImportExcelDialog = ({
           isValid: isValidParent,
           error: isValidParent ? undefined : `Entité parente "${entityParent}" introuvable`,
         });
-      }
-      else if (processName) {
+      } else if (processName) {
         const entityName = name;
         const isValidEntity = entityName && (
           entities.some(e => e.name.toLowerCase() === entityName.toLowerCase())
@@ -281,7 +373,7 @@ const ImportExcelDialog = ({
   };
 
   // ============================================================
-  // IMPORT : Écrit dans les bonnes tables avec les bons champs
+  // IMPORT : exécution robuste + hiérarchie stricte
   // ============================================================
   const executeImport = async () => {
     setImporting(true);
@@ -289,82 +381,184 @@ const ImportExcelDialog = ({
     let entitiesCount = 0;
     let processesCount = 0;
 
+    const norm = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, ' ');
+
     try {
-      // ---- 1. Entités ----
+      // ---- 1. ENTITÉS : tri STRICT ----
+      const rankType = (t: string): number => {
+        const n = (t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        if (n === "FILIALE") return 1;
+        if (n === "DIRECTION") return 2;
+        if (n === "SERVICE" || n === "DEPARTEMENT") return 3;
+        return 4;
+      };
+
       const entitiesToCreate = parsedEntities.filter(e => e.isValid);
-      const sortedEntities = [...entitiesToCreate].sort((a, b) => {
-        const rank = (t: string) => t === "FILIALE" ? 1 : t === "DIRECTION" ? 2 : 3;
-        return rank(a.type) - rank(b.type);
-      });
+      const sortedEntities = [...entitiesToCreate].sort(
+        (a, b) => rankType(a.type) - rankType(b.type)
+      );
 
       const createdEntityMap = new Map<string, string>();
-      for (const e of sortedEntities) {
-        const existing = entities.find(x => x.name.toLowerCase() === e.name.toLowerCase());
-        if (existing) { createdEntityMap.set(e.name.toLowerCase(), existing.id); continue; }
-
-        let parentId: string | null = null;
-        if (e.parentName) {
-          const parentInMap = createdEntityMap.get(e.parentName.toLowerCase());
-          const parentInDb = entities.find(x => x.name.toLowerCase() === e.parentName!.toLowerCase());
-          parentId = parentInMap || parentInDb?.id || null;
-        }
-
-        const { data, error } = await (supabase as any).from('organisations').insert({
-          name: e.name, type: e.type.toUpperCase(),
-          country_code: e.country || 'FR', parent_id: parentId,
-          pca_referent: e.referent || '—',
-          referent_contact: null, referent_backup: '—', referent_backup_contact: null,
-          pca_status: 'Non démarré', maturity: 20, sector: 'Général', status: 'ACTIVE',
-        }).select().single();
-
-        if (error) { errors.push(`Entité "${e.name}": ${error.message}`); }
-        else { createdEntityMap.set(e.name.toLowerCase(), data.id); entitiesCount++; }
+      for (const e of entities) {
+        createdEntityMap.set(norm(e.name), e.id);
       }
 
-      // ---- 2. Processus : insertion dans processus_metier avec les BONS champs ----
-      for (const p of parsedProcesses.filter(p => p.isValid)) {
-        const entityId = createdEntityMap.get(p.entityName.toLowerCase())
-          || entities.find(x => x.name.toLowerCase() === p.entityName.toLowerCase())?.id;
+      // Suivi du type réel par id (pour valider côté processus)
+      const entityTypeById = new Map<string, string>();
 
-        if (!entityId) { errors.push(`Processus "${p.name}": entité "${p.entityName}" introuvable`); continue; }
-
-        // Vérifier si un processus avec le même nom existe déjà dans cette entité
-        const { data: existing } = await (supabase as any)
-          .from('processus_metier')
-          .select('id')
-          .eq('name', p.name)
-          .eq('entity_id', entityId)
-          .maybeSingle();
-
-        if (existing) {
-          errors.push(`Processus "${p.name}": existe déjà dans cette entité`);
+      for (const e of sortedEntities) {
+        const key = norm(e.name);
+        if (createdEntityMap.has(key)) {
+          // déjà existant → on stocke son type
+          const existingId = createdEntityMap.get(key)!;
+          entityTypeById.set(existingId, (e.type || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
           continue;
         }
 
-        const entityName = entities.find(x => x.id === entityId)?.name || p.entityName;
+        const typeNorm = (e.type || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        let parentId: string | null = null;
+        if (e.parentName) {
+          parentId = createdEntityMap.get(norm(e.parentName)) || null;
+        }
+
+        // ✅ CONTRÔLE SERVICE/DÉPARTEMENT
+        if (["SERVICE", "DEPARTEMENT"].includes(typeNorm)) {
+          if (!parentId) {
+            errors.push(`Entité "${e.name}" (${e.type}) ignorée : parent "${e.parentName || "—"}" introuvable ou non inséré avant.`);
+            continue;
+          }
+          const parentType = entityTypeById.get(parentId);
+          if (parentType && parentType !== "DIRECTION") {
+            errors.push(`Entité "${e.name}" (${e.type}) ignorée : son parent "${e.parentName}" n'est pas une DIRECTION (type : ${parentType}).`);
+            continue;
+          }
+        }
+
+        // ✅ CONTRÔLE DIRECTION
+        if (typeNorm === "DIRECTION") {
+          if (!parentId) {
+            errors.push(`Direction "${e.name}" ignorée : parent "${e.parentName || "—"}" introuvable.`);
+            continue;
+          }
+          const parentType = entityTypeById.get(parentId);
+          if (parentType && parentType !== "FILIALE") {
+            errors.push(`Direction "${e.name}" ignorée : son parent "${e.parentName}" n'est pas une FILIALE (type : ${parentType}).`);
+            continue;
+          }
+        }
+
+        // ✅ FILIALE sans parent
+        if (typeNorm === "FILIALE" && parentId) {
+          errors.push(`Filiale "${e.name}" : parent ignoré (une filiale est toujours racine).`);
+          parentId = null;
+        }
+
+        let normalizedType = typeNorm;
+        if (normalizedType === "DEPARTEMENT") normalizedType = "DÉPARTEMENT";
+        if (!["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT"].includes(normalizedType)) {
+          normalizedType = "SERVICE";
+        }
+
+        const { data, error } = await (supabase as any).from('organisations').insert({
+          name: e.name,
+          type: normalizedType,
+          country_code: e.country || 'FR',
+          parent_id: parentId,
+          pca_referent: e.referent || '—',
+          pca_status: 'Non démarré',
+          maturity_score: 20,
+          sector: 'Général',
+          status: 'ACTIVE',
+        }).select().single();
+
+        if (error) {
+          errors.push(`Entité "${e.name}": ${error.message}`);
+        } else {
+          createdEntityMap.set(key, data.id);
+          entityTypeById.set(data.id, normalizedType);
+          entitiesCount++;
+        }
+      }
+
+      // Ajouter aussi les types des entités déjà en base
+      for (const e of entities) {
+        const t = (e.type || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        entityTypeById.set(e.id, t);
+      }
+
+      // ---- 2. PROCESSUS ----
+      const existingProcessesByEntity: Record<string, Set<string>> = {};
+      const { data: existingProcesses } = await (supabase as any)
+        .from('processus_metier')
+        .select('name, entity_id');
+
+      if (existingProcesses) {
+        for (const p of existingProcesses) {
+          if (!existingProcessesByEntity[p.entity_id]) existingProcessesByEntity[p.entity_id] = new Set();
+          existingProcessesByEntity[p.entity_id].add(norm(p.name));
+        }
+      }
+
+      for (const p of parsedProcesses.filter(p => p.isValid)) {
+        const entityId = createdEntityMap.get(norm(p.entityName));
+        if (!entityId) {
+          errors.push(`Processus "${p.name}": entité "${p.entityName}" introuvable.`);
+          continue;
+        }
+
+        // ⚠️ INTERDIRE un processus sur une FILIALE
+        const entityType = entityTypeById.get(entityId) || "";
+        if (entityType === "FILIALE") {
+          errors.push(
+            `Processus "${p.name}" ignoré : accroché à la filiale "${p.entityName}". ` +
+            `Un processus doit toujours être porté par une direction ou un service.`
+          );
+          continue;
+        }
+
+        if (!existingProcessesByEntity[entityId]) existingProcessesByEntity[entityId] = new Set();
+        const pKey = norm(p.name);
+        if (existingProcessesByEntity[entityId].has(pKey)) {
+          errors.push(`Processus "${p.name}": existe déjà dans cette entité.`);
+          continue;
+        }
+
+        const entityName = entities.find(x => x.id === entityId)?.name
+          || parsedEntities.find(e => norm(e.name) === norm(p.entityName))?.name
+          || p.entityName;
 
         const { error } = await (supabase as any).from('processus_metier').insert({
           name: p.name,
           entity_id: entityId,
-          department: entityName,
+          direction: entityName,
           owner: p.owner,
+          description: null,
+          criticality_level: normalizeCriticite(p.criticality),
           rto_hours: p.rto,
           rpo_hours: p.rpo,
-          criticality_level: p.criticality,
+          mtpd_hours: null,
+          mbco_percent: null,
+          status: normalizeProcessStatus('ACTIF'),
           impacts: {},
-          status: 'Actif',
+          depends_on: [],
+          resources: [],
+          apps_critiques: [],
         });
 
-        if (error) { errors.push(`Processus "${p.name}": ${error.message}`); }
-        else { processesCount++; }
+        if (error) {
+          errors.push(`Processus "${p.name}": ${error.message}`);
+        } else {
+          processesCount++;
+          existingProcessesByEntity[entityId].add(pKey);
+        }
       }
 
       setImportResult({ entities: entitiesCount, processes: processesCount, errors });
 
-      // ⭐ Déclenche un événement pour forcer le rechargement du BIA dans ProcessInventory
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("bia:refresh", {
-          detail: { reason: "import", entitiesCount, processesCount }
+          detail: { reason: "import", entitiesCount, processesCount, timestamp: Date.now() }
         }));
       }
 
@@ -385,6 +579,10 @@ const ImportExcelDialog = ({
   const totalValid = parsedEntities.filter(e => e.isValid).length + parsedProcesses.filter(p => p.isValid).length;
   const totalErrors = parsedEntities.filter(e => !e.isValid).length + parsedProcesses.filter(p => !p.isValid).length;
 
+  const aiFilialesCount = parsedEntities.filter(e => isFiliale(e.type)).length;
+  const aiDirectionsCount = parsedEntities.filter(e => isDirection(e.type)).length;
+  const aiServicesCount = parsedEntities.filter(e => isLowLevel(e.type)).length;
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o && !importing) reset(); onOpenChange(o); }}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -392,10 +590,15 @@ const ImportExcelDialog = ({
           <DialogTitle className="flex items-center gap-2">
             <Wand2 className="h-5 w-5 text-[#2A5141]" />
             Import Excel
+            {aiAnalysis && (
+              <Badge className="bg-[#2A5141] text-white border-0 text-[9px] font-bold uppercase tracking-wider ml-1">
+                <Sparkles className="h-2.5 w-2.5 mr-0.5" /> IA
+              </Badge>
+            )}
           </DialogTitle>
           <DialogDescription>
-            {step === 1 && "Un fichier Excel générique — les colonnes sont détectées automatiquement"}
-            {step === 2 && "Vérifiez l'analyse avant import"}
+            {step === 1 && "L'IA analyse votre fichier et reconstruit la structure automatiquement"}
+            {step === 2 && "Vérifiez ce que l'IA a compris avant d'importer"}
           </DialogDescription>
         </DialogHeader>
 
@@ -411,14 +614,18 @@ const ImportExcelDialog = ({
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
               <div className="flex flex-col items-center gap-3">
                 <div className="h-16 w-16 rounded-full bg-[#2A5141]/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Upload className="h-8 w-8 text-[#2A5141]" />
+                  {aiLoading
+                    ? <Loader2 className="h-8 w-8 text-[#2A5141] animate-spin" />
+                    : <Upload className="h-8 w-8 text-[#2A5141]" />}
                 </div>
                 <div>
                   <p className="text-base font-semibold text-[#172030]">
-                    Déposez votre fichier Excel
+                    {aiLoading ? "Analyse par l'IA en cours..." : "Déposez votre fichier Excel"}
                   </p>
                   <p className="text-sm text-gray-500 mt-1">
-                    N'importe quelle structure — le système s'adapte
+                    {aiLoading
+                      ? "L'IA lit votre fichier et reconstruit la structure"
+                      : "N'importe quelle structure — l'IA s'adapte"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-gray-400 mt-2">
@@ -435,14 +642,13 @@ const ImportExcelDialog = ({
                   <Sparkles className="h-4 w-4 text-[#2A5141]" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-[#172030] mb-2">
-                    Comment ça marche ?
-                  </p>
+                  <p className="text-sm font-semibold text-[#172030] mb-2">Analyse IA — comment ça marche ?</p>
                   <ul className="text-xs text-gray-600 space-y-1">
-                    <li>• <strong>Détection automatique</strong> : les colonnes sont reconnues par leur nom (Nom, Type, Parent, RTO, etc.)</li>
-                    <li>• <strong>Ligne ENTITÉ</strong> si le type est FILIALE / DIRECTION / SERVICE / DÉPARTEMENT</li>
-                    <li>• <strong>Ligne PROCESSUS</strong> si la colonne "Processus" est remplie</li>
-                    <li>• Les processus importés apparaissent automatiquement dans le module BIA</li>
+                    <li>• L'IA <strong>lit le fichier entier</strong> et comprend sa structure</li>
+                    <li>• Elle détecte la hiérarchie même si elle est encodée en plusieurs colonnes</li>
+                    <li>• Elle identifie les entités ET les processus métier</li>
+                    <li>• Les processus sont toujours rattachés à une direction ou un service (jamais une filiale)</li>
+                    <li>• En cas d'échec IA, un fallback automatique prend le relais</li>
                   </ul>
                 </div>
               </div>
@@ -452,11 +658,50 @@ const ImportExcelDialog = ({
 
         {step === 2 && (
           <div className="space-y-4 py-4">
-            {detectedColumns && (
+            {aiAnalysis && !aiError && (
+              <div className="p-4 bg-gradient-to-r from-[#2A5141] to-[#1a3329] text-white rounded-xl shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold mb-1 flex items-center gap-2">
+                      Analyse IA réussie
+                      {aiAnalysis.model && (
+                        <Badge className="bg-white/20 text-white border-0 text-[9px]">{aiAnalysis.model}</Badge>
+                      )}
+                    </p>
+                    <p className="text-xs text-white/80 leading-relaxed">{aiAnalysis.summary}</p>
+                    <p className="text-[11px] text-white/60 mt-2">
+                      Hiérarchie détectée : <strong className="text-white">{aiAnalysis.hierarchyDepth} niveaux</strong>
+                      {" · "}
+                      <strong className="text-white">{aiFilialesCount}</strong> filiale{aiFilialesCount > 1 ? "s" : ""}
+                      {" · "}
+                      <strong className="text-white">{aiDirectionsCount}</strong> direction{aiDirectionsCount > 1 ? "s" : ""}
+                      {" · "}
+                      <strong className="text-white">{aiServicesCount}</strong> service{aiServicesCount > 1 ? "s" : ""}
+                      {" · "}
+                      <strong className="text-white">{parsedProcesses.length}</strong> processus
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {aiError && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Analyse IA indisponible — mode secours activé
+                </p>
+                <p className="text-xs text-amber-700 mt-1">Raison : {aiError}.</p>
+              </div>
+            )}
+
+            {detectedColumns && !aiAnalysis && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4" />
-                  Colonnes détectées automatiquement
+                  <CheckCircle className="h-4 w-4" /> Colonnes détectées automatiquement
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(detectedColumns).map(([key, val]) => val && (
@@ -464,9 +709,6 @@ const ImportExcelDialog = ({
                       <strong>{key}</strong> → {val as string}
                     </span>
                   ))}
-                  {Object.values(detectedColumns).filter(v => v).length === 0 && (
-                    <span className="text-xs text-red-600">Aucune colonne reconnue</span>
-                  )}
                 </div>
               </div>
             )}
@@ -490,6 +732,15 @@ const ImportExcelDialog = ({
               </div>
             </div>
 
+            {aiAnalysis && aiAnalysis.warnings.length > 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm font-semibold text-amber-800 mb-1">⚠️ Points d'attention :</p>
+                <ul className="text-xs text-amber-700 space-y-1">
+                  {aiAnalysis.warnings.map((w, i) => <li key={i}>• {w}</li>)}
+                </ul>
+              </div>
+            )}
+
             {detectedNewEntities.length > 0 && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm font-semibold text-blue-800 flex items-center gap-2 mb-2">
@@ -497,12 +748,12 @@ const ImportExcelDialog = ({
                   {detectedNewEntities.length} nouvelle{detectedNewEntities.length > 1 ? "s" : ""} entité{detectedNewEntities.length > 1 ? "s" : ""}
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  {detectedNewEntities.slice(0, 8).map((n, i) => (
+                  {detectedNewEntities.slice(0, 10).map((n, i) => (
                     <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-white text-blue-700 border border-blue-200">{n}</span>
                   ))}
-                  {detectedNewEntities.length > 8 && (
+                  {detectedNewEntities.length > 10 && (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-white text-blue-700 border border-blue-200">
-                      +{detectedNewEntities.length - 8}
+                      +{detectedNewEntities.length - 10}
                     </span>
                   )}
                 </div>
@@ -514,10 +765,10 @@ const ImportExcelDialog = ({
                 <p className="text-sm font-semibold text-red-800 mb-2">Erreurs :</p>
                 <ul className="text-xs text-red-600 space-y-1">
                   {parsedEntities.filter(e => !e.isValid).map((e, i) => (
-                    <li key={`e-${i}`}>• Ligne {e.rowIndex} (Entité {e.name}): {e.error}</li>
+                    <li key={`e-${i}`}>• {e.name}: {e.error}</li>
                   ))}
                   {parsedProcesses.filter(p => !p.isValid).map((p, i) => (
-                    <li key={`p-${i}`}>• Ligne {p.rowIndex} (Processus {p.name}): {p.error}</li>
+                    <li key={`p-${i}`}>• {p.name}: {p.error}</li>
                   ))}
                 </ul>
               </div>
@@ -531,7 +782,6 @@ const ImportExcelDialog = ({
                 <div className="border rounded-lg overflow-x-auto max-h-40 overflow-y-auto">
                   <Table>
                     <TableHeader><TableRow className="bg-gray-50 sticky top-0">
-                      <TableHead className="text-xs w-12">Ligne</TableHead>
                       <TableHead className="text-xs">Nom</TableHead>
                       <TableHead className="text-xs">Type</TableHead>
                       <TableHead className="text-xs">Parent</TableHead>
@@ -540,7 +790,6 @@ const ImportExcelDialog = ({
                     <TableBody>
                       {parsedEntities.slice(0, 30).map((e, i) => (
                         <TableRow key={i} className={!e.isValid ? "bg-red-50/50" : ""}>
-                          <TableCell className="text-xs text-gray-400">{e.rowIndex}</TableCell>
                           <TableCell className="text-xs font-medium">{e.name}</TableCell>
                           <TableCell className="text-xs"><Badge variant="outline" className="text-[10px]">{e.type}</Badge></TableCell>
                           <TableCell className="text-xs text-gray-500">{e.parentName || "Racine"}</TableCell>
@@ -561,7 +810,6 @@ const ImportExcelDialog = ({
                 <div className="border rounded-lg overflow-x-auto max-h-40 overflow-y-auto">
                   <Table>
                     <TableHeader><TableRow className="bg-gray-50 sticky top-0">
-                      <TableHead className="text-xs w-12">Ligne</TableHead>
                       <TableHead className="text-xs">Processus</TableHead>
                       <TableHead className="text-xs">Entité</TableHead>
                       <TableHead className="text-xs">RTO</TableHead>
@@ -571,11 +819,10 @@ const ImportExcelDialog = ({
                     <TableBody>
                       {parsedProcesses.slice(0, 30).map((p, i) => (
                         <TableRow key={i} className={!p.isValid ? "bg-red-50/50" : ""}>
-                          <TableCell className="text-xs text-gray-400">{p.rowIndex}</TableCell>
                           <TableCell className="text-xs font-medium">{p.name}</TableCell>
                           <TableCell className="text-xs text-gray-500">{p.entityName}</TableCell>
-                          <TableCell className="text-xs font-mono">{p.rto || "—"}</TableCell>
-                          <TableCell className="text-xs font-mono">{p.rpo || "—"}</TableCell>
+                          <TableCell className="text-xs font-mono">{p.rto ?? "—"}</TableCell>
+                          <TableCell className="text-xs font-mono">{p.rpo ?? "—"}</TableCell>
                           <TableCell>{p.isValid ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}</TableCell>
                         </TableRow>
                       ))}
@@ -757,6 +1004,19 @@ const TaxonomyTab = ({ entities, processes, onOpenImport, onDownloadTemplate, on
   const getProcessesOf = (entity: Entity) => processes.filter(p => p.entityId === entity.id);
   const toggleEntity = (entityId: string) => setExpanded(prev => ({ ...prev, [entityId]: !prev[entityId] }));
 
+  const highlightMatch = (text: string, query: string) => {
+    if (!query || !text) return text;
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-yellow-200 text-[#172030] font-semibold px-0.5 rounded">{text.slice(idx, idx + query.length)}</mark>
+        {text.slice(idx + query.length)}
+      </>
+    );
+  };
+
   const renderNode = (entity: Entity, depth = 0) => {
     const children = entities.filter(e => e.parentId === entity.id);
     const entityProcesses = getProcessesOf(entity);
@@ -766,10 +1026,18 @@ const TaxonomyTab = ({ entities, processes, onOpenImport, onDownloadTemplate, on
     const canExpand = hasChildren || hasProcesses;
 
     let totalInBranch = entityProcesses.length;
+    let withRto = entityProcesses.filter(p => p.rto || p.rto_hours).length;
     const countRec = (pid: string) => {
-      entities.filter(e => e.parentId === pid).forEach(c => { totalInBranch += getProcessesOf(c).length; countRec(c.id); });
+      entities.filter(e => e.parentId === pid).forEach(c => {
+        const cp = getProcessesOf(c);
+        totalInBranch += cp.length;
+        withRto += cp.filter(p => p.rto || p.rto_hours).length;
+        countRec(c.id);
+      });
     };
     countRec(entity.id);
+
+    const coverage = totalInBranch > 0 ? Math.round((withRto / totalInBranch) * 100) : 0;
 
     const matchesSearch = searchQuery === "" ||
       entity.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -805,15 +1073,25 @@ const TaxonomyTab = ({ entities, processes, onOpenImport, onDownloadTemplate, on
           <div className={cn("flex-shrink-0 rounded-md flex items-center justify-center", depth === 0 ? "h-8 w-8" : "h-7 w-7", colors.bg, colors.text)}>
             {getIcon()}
           </div>
-          <span className={cn("truncate flex-1", depth === 0 ? "text-sm font-bold text-[#172030]" : "text-sm font-semibold text-[#172030]")}>{entity.name}</span>
+          <span className={cn("truncate flex-1", depth === 0 ? "text-sm font-bold text-[#172030]" : "text-sm font-semibold text-[#172030]")}>
+            {highlightMatch(entity.name, searchQuery)}
+          </span>
           <Badge className={cn("text-[10px] font-medium border-0", colors.bg, colors.text)}>{entity.type}</Badge>
           {totalInBranch > 0 && (
+            <div className="hidden md:flex items-center gap-1.5 flex-shrink-0">
+              <span className="text-[9px] font-semibold text-[#172030]/50">{coverage}%</span>
+              <div className="w-12 h-1.5 rounded-full bg-[#E8E4DC] overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${coverage}%`, backgroundColor: coverage >= 80 ? "#22c55e" : coverage >= 40 ? "#eab308" : "#ef4444" }} />
+              </div>
+            </div>
+          )}
+          {totalInBranch > 0 && (
             <Badge className={cn("text-[10px] font-semibold border-0 transition-colors", isExpanded ? "bg-[#2A5141] text-white" : "bg-[#2A5141]/10 text-[#2A5141]")}>
-              <Target className="h-2.5 w-2.5 mr-1" /> {totalInBranch} processus
+              <Target className="h-2.5 w-2.5 mr-1" /> {totalInBranch}
             </Badge>
           )}
           {canExpand && !isExpanded && (
-            <span className="text-[10px] text-[#2A5141]/60 font-medium hidden md:inline">Cliquer pour voir</span>
+            <span className="text-[10px] text-[#2A5141]/60 font-medium hidden lg:inline">Cliquer pour voir</span>
           )}
         </div>
 
@@ -825,20 +1103,20 @@ const TaxonomyTab = ({ entities, processes, onOpenImport, onDownloadTemplate, on
                 {entityProcesses.map(p => {
                   const hasRto = !!(p.rto || p.rto_hours);
                   const rtoValue = p.rto || p.rto_hours;
-                  const crit = p.criticality || (p.impacts ? scoreToCriticality(computeMaxScore(p.impacts)) : "Non défini");
-                  const isCritical = crit === "Critique" || crit === "Élevé";
+                  const crit = p.criticality_level || p.criticality || (p.impacts ? scoreToCriticality(computeMaxScore(p.impacts)) : "Non défini");
+                  const isCritical = crit === "Critique" || crit === "Élevé" || crit === "CRITIQUE";
+                  const dotColor = isCritical ? "#ef4444" : crit === "Modéré" || crit === "MODERE" ? "#eab308" : "#22c55e";
+
                   return (
                     <div
                       key={p.id}
                       className="group flex items-center gap-2 py-2 px-3 rounded-md bg-white border border-[#E8E4DC] hover:border-[#2A5141]/40 hover:shadow-sm transition-all cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNavigateToBIA?.(p.id);
-                      }}
+                      style={{ borderLeft: `3px solid ${dotColor}` }}
+                      onClick={(e) => { e.stopPropagation(); onNavigateToBIA?.(p.id); }}
                       title="Ouvrir la fiche BIA de ce processus"
                     >
                       <Target className="h-3.5 w-3.5 text-[#2A5141] flex-shrink-0" />
-                      <span className="text-[13px] text-[#172030] truncate flex-1">{p.name}</span>
+                      <span className="text-[13px] text-[#172030] truncate flex-1">{highlightMatch(p.name, searchQuery)}</span>
                       {p.owner && <><span className="text-[10px] text-gray-400">•</span><span className="text-[11px] text-gray-500 truncate max-w-[100px]">{p.owner}</span></>}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {hasRto ? (
@@ -846,7 +1124,7 @@ const TaxonomyTab = ({ entities, processes, onOpenImport, onDownloadTemplate, on
                         ) : (
                           <Badge className="text-[9px] bg-orange-50 text-orange-700 border-0"><AlertTriangle className="h-2.5 w-2.5 mr-0.5" /> RTO manquant</Badge>
                         )}
-                        {crit !== "Non défini" && (<span className={cn("w-2 h-2 rounded-full", isCritical ? "bg-red-500" : crit === "Modéré" ? "bg-amber-500" : "bg-emerald-500")} title={crit} />)}
+                        {crit !== "Non défini" && (<span className="w-2 h-2 rounded-full" style={{ backgroundColor: dotColor }} title={crit} />)}
                         {hasRto && !isCritical && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
                         <ExternalLink className="h-3 w-3 text-[#2A5141] opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
@@ -882,10 +1160,10 @@ const TaxonomyTab = ({ entities, processes, onOpenImport, onDownloadTemplate, on
             <p className="text-sm font-semibold text-[#172030] flex items-center gap-2">
               Import Excel
               <Badge className="bg-[#2A5141] text-white border-0 text-[9px] font-bold uppercase tracking-wider">
-                <Sparkles className="h-2.5 w-2.5 mr-0.5" /> Auto
+                <Sparkles className="h-2.5 w-2.5 mr-0.5" /> IA
               </Badge>
             </p>
-            <p className="text-[11px] text-gray-500">Entités et processus — détection automatique des colonnes</p>
+            <p className="text-[11px] text-gray-500">Analyse intelligente — détecte la structure automatiquement</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -972,9 +1250,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   const [activeView, setActiveView] = useState<"entities" | "taxonomy">("entities");
   const [importOpen, setImportOpen] = useState(false);
 
-  // ============================================================
-  // ÉTAT POUR L'IMPORT ANCIEN FORMAT (Excel/PDF)
-  // ============================================================
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [processingStep, setProcessingStep] = useState<string>("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -991,20 +1266,18 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
   const panelChildren = panelEntity ? getChildren(entities, panelEntity.id) : [];
   const panelProcesses = panelEntity ? getEntityProcesses(panelEntity, processes) : [];
 
-  // ⭐ Recharge les entités depuis Supabase
   const reloadEntities = async () => {
     const { data } = await (supabase as any).from('organisations').select('*');
     if (data) {
       setEntities(data.map((e: any) => ({
         id: e.id, name: e.name, type: e.type, country: e.country_code, parentId: e.parent_id,
-        referent: e.pca_referent || '—', referentContact: e.referent_contact,
-        referentBackup: e.referent_backup || '—', suppleantContact: e.referent_backup_contact,
-        status: 'Actif', pcaStatus: e.pca_status || 'Non démarré', maturity: e.maturity || 20,
+        referent: e.pca_referent || '—',
+        status: 'Actif', pcaStatus: e.pca_status || 'Non démarré',
+        maturity: e.maturity_score || 20,
       })));
     }
   };
 
-  // ⭐ Recharge les processus dans le contexte BIA
   const reloadBiaProcesses = async () => {
     try {
       const ctx = biaContext as any;
@@ -1036,15 +1309,17 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     try {
       const parent = entities.find(e => e.id === quickAddParentId);
       const { data, error } = await (supabase as any).from('organisations').insert({
-        name: quickAddForm.name.trim(), type: quickAddForm.type.toUpperCase(),
+        name: quickAddForm.name.trim(),
+        type: quickAddForm.type.toUpperCase(),
         country_code: quickAddForm.country || parent?.country || "FR",
         parent_id: quickAddParentId || null,
         pca_referent: quickAddForm.referent || "—",
-        referent_contact: quickAddForm.referentContact || null,
-        referent_backup: quickAddForm.suppleant || "—",
-        referent_backup_contact: quickAddForm.suppleantContact || null,
-        pca_status: "Non démarré", maturity: 20, sector: "Général", status: "ACTIVE",
+        pca_status: "Non démarré",
+        maturity_score: 20,
+        sector: "Général",
+        status: "ACTIVE",
       }).select().single();
+
       if (error) { toast.error("Erreur: " + error.message); setIsSubmittingQuickAdd(false); return; }
 
       const newEntity: any = {
@@ -1074,14 +1349,19 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     if (!validation.valid) { toast.error(validation.error); return; }
 
     const entityToInsert = {
-      name: form.name, type: form.type?.toUpperCase(), country_code: form.country || "FR",
-      parent_id: form.parentId || null, pca_referent: form.referent || "—",
-      referent_contact: form.referentContact || null, referent_backup: form.suppleant || "—",
-      referent_backup_contact: form.suppleantContact || null,
-      pca_status: "Non démarré", maturity: 20, sector: "Général", status: "ACTIVE",
+      name: form.name,
+      type: form.type?.toUpperCase(),
+      country_code: form.country || "FR",
+      parent_id: form.parentId || null,
+      pca_referent: form.referent || "—",
+      pca_status: "Non démarré",
+      maturity_score: 20,
+      sector: "Général",
+      status: "ACTIVE",
     };
     const { data, error } = await (supabase as any).from('organisations').insert(entityToInsert).select();
     if (error) { toast.error("Erreur: " + error.message); return; }
+
     const newEntity: any = {
       id: data[0].id, name: form.name, type: form.type as EntityType,
       country: form.country || "FR", sector: "Général", parentId: form.parentId || null,
@@ -1142,10 +1422,11 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     if (!validation.valid) { toast.error(validation.error); return; }
 
     await (supabase as any).from('organisations').update({
-      name: editForm.name, type: editForm.type?.toUpperCase(), country_code: editForm.country || "FR",
-      parent_id: editForm.parentId || null, pca_referent: editForm.referent || "—",
-      referent_contact: editForm.referentContact || null, referent_backup: editForm.suppleant || "—",
-      referent_backup_contact: editForm.suppleantContact || null,
+      name: editForm.name,
+      type: editForm.type?.toUpperCase(),
+      country_code: editForm.country || "FR",
+      parent_id: editForm.parentId || null,
+      pca_referent: editForm.referent || "—",
     }).eq('id', panelEntity.id);
 
     setEntities(entities.map((e) => e.id === panelEntity.id ? {
@@ -1229,9 +1510,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     );
   };
 
-  // ============================================================
-  // MODÈLE EXCEL — Import Excel
-  // ============================================================
   const downloadGenericTemplate = () => {
     const data = [
       ['Nom', 'Type', 'Entité Parente', 'Référent PCA', 'Pays', 'Processus', 'Responsable Processus', 'RTO', 'RPO', 'Criticité'],
@@ -1240,10 +1518,10 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       ['Direction Financière', 'DIRECTION', 'Novatech France', 'Marc Dubois', 'France', '', '', '', '', ''],
       ['Service Comptabilité', 'SERVICE', 'Direction Financière', 'Claire Petit', 'France', '', '', '', '', ''],
       ['Service Infrastructure', 'SERVICE', 'Direction SI', 'Ahmed Ben Ali', 'France', '', '', '', '', ''],
-      ['Service Infrastructure', '', '', '', '', 'Gestion des serveurs', 'Ahmed Ben Ali', 4, 1, 'Critique'],
-      ['Service Infrastructure', '', '', '', '', 'Messagerie d\'entreprise', 'Sophie Martin', 2, 0.5, 'Critique'],
-      ['Service Comptabilité', '', '', '', '', 'Clôture mensuelle', 'Claire Petit', 8, 4, 'Élevé'],
-      ['Direction SI', '', '', '', '', 'Support utilisateurs', 'Youssef KAAK', 8, 4, 'Modéré'],
+      ['Service Infrastructure', '', '', '', '', 'Gestion des serveurs', 'Ahmed Ben Ali', 4, 1, 'CRITIQUE'],
+      ['Service Infrastructure', '', '', '', '', 'Messagerie d\'entreprise', 'Sophie Martin', 2, 0.5, 'CRITIQUE'],
+      ['Service Comptabilité', '', '', '', '', 'Clôture mensuelle', 'Claire Petit', 8, 4, 'MAJEUR'],
+      ['Direction SI', '', '', '', '', 'Support utilisateurs', 'Youssef KAAK', 8, 4, 'MODERE'],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(data);
@@ -1268,7 +1546,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       ['   • "Processus" / "Activité"           → Nom du processus (si rempli = ligne processus)'],
       ['   • "RTO" / "Délai"                    → RTO en heures'],
       ['   • "RPO" / "Perte"                    → RPO en heures'],
-      ['   • "Criticité" / "Sévérité"           → Criticité'],
+      ['   • "Criticité" / "Sévérité"           → Criticité (CRITIQUE, MAJEUR, MODERE, MINEUR)'],
       [''],
       ['📌 DÉTECTION DU TYPE DE LIGNE :'],
       ['   • Ligne ENTITÉ si la colonne "Type" contient FILIALE / DIRECTION / SERVICE / DÉPARTEMENT'],
@@ -1276,6 +1554,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       [''],
       ['🔑 RÈGLES :'],
       ['   • Pour un processus, la colonne "Nom" (ou "Entité") = nom de l\'entité porteuse'],
+      ['   • Un processus doit toujours être rattaché à une DIRECTION ou un SERVICE, JAMAIS à une FILIALE'],
       ['   • L\'ordre des lignes n\'a pas d\'importance'],
       ['   • Les entités existantes ne sont PAS recréées'],
       ['   • Les accents sont supportés'],
@@ -1302,9 +1581,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     toast.success("📊 Modèle générique téléchargé !");
   };
 
-  // ============================================================
-  // ANCIEN FORMAT — Modèle Excel
-  // ============================================================
   const downloadTemplate = () => {
     const data = [
       ['Nom', 'Type', 'Pays', 'Référent PCA', 'Coordonnées référent', 'Suppléant', 'Coordonnées suppléant', 'Entité Parente'],
@@ -1382,16 +1658,23 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       if (parsed?.entities?.length > 0) {
         for (const entity of parsed.entities) {
           await (supabase as any).from('organisations').insert({
-            name: entity.name, type: entity.type?.toUpperCase() || "SERVICE",
-            country_code: 'FR', parent_id: null, pca_referent: 'À définir',
-            pca_status: 'Non démarré', maturity: 20, sector: 'Général', status: 'ACTIVE',
+            name: entity.name,
+            type: entity.type?.toUpperCase() || "SERVICE",
+            country_code: 'FR',
+            parent_id: null,
+            pca_referent: 'À définir',
+            pca_status: 'Non démarré',
+            maturity_score: 20,
+            sector: 'Général',
+            status: 'ACTIVE',
           });
         }
         const { data: allEntities } = await (supabase as any).from('organisations').select('*');
         if (allEntities) {
           setEntities(allEntities.map((e: any) => ({
             id: e.id, name: e.name, type: e.type, country: e.country_code, parentId: e.parent_id,
-            referent: e.pca_referent || '—', status: 'Actif', pcaStatus: e.pca_status || 'Non démarré', maturity: e.maturity || 20,
+            referent: e.pca_referent || '—', status: 'Actif', pcaStatus: e.pca_status || 'Non démarré',
+            maturity: e.maturity_score || 20,
           })));
         }
         toast.success(`${parsed.entities.length} entités importées`);
@@ -1407,12 +1690,23 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
     }
   };
 
-  // ⭐ Navigation vers le BIA d'un processus : déclenche l'événement écouté par ProcessInventory
-  const navigateToBIA = (processId: string) => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("bia:openProcess", { detail: { processId } }));
-      if (onNavigate) onNavigate("inventory", processId);
-    }
+   const navigateToBIA = (processId: string) => {
+    if (typeof window === "undefined") return;
+
+    // 1. Stocker le processId pour que ProcessInventory le lise au montage
+    sessionStorage.setItem("pendingBiaProcessId", processId);
+    localStorage.setItem("pendingBiaProcessId", processId);
+
+    // 2. Demander à l'app de basculer sur l'onglet BIA (module inventory)
+    window.dispatchEvent(new CustomEvent("app:navigate", {
+      detail: { section: "inventory", processId, module: "bia" }
+    }));
+
+    // 3. Émettre aussi l'événement BIA (si le module est déjà monté)
+    window.dispatchEvent(new CustomEvent("bia:openProcess", { detail: { processId } }));
+
+    // 4. Callback parent si fourni
+    if (onNavigate) onNavigate("inventory", processId);
   };
 
   const renderChildren = (children: Entity[], parentType?: string) => {
@@ -1475,9 +1769,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         <CardContent className="pt-4">
           {activeView === "entities" ? (
             <>
-              {/* ============================================================
-                  ANCIEN FORMAT — Visible uniquement dans l'onglet Arborescence des entités
-                  ============================================================ */}
               <Card className="mb-4">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Plus className="h-4 w-4 text-primary" /> Importer un organigramme (ancien format)</CardTitle>

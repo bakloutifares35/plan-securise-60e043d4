@@ -3762,7 +3762,7 @@ const BIAFicheDetail = ({
     return chain;
   }, [entities, service.id]);
 
-  // ✅ Import Excel — avec refresh + scroll
+    // ✅ Import Excel — avec refresh + scroll
   const handleImportSuccess = useCallback(async (processIds: string[]) => {
     if (onImported) await onImported(processIds);
     if (onRefreshProcesses) await onRefreshProcesses();
@@ -5152,6 +5152,9 @@ export const ProcessInventory = ({
     };
   }, []);
 
+  // ============================================================
+  // ✅ handleOpenProcessDetail — ROBUSTE (toute profondeur de hiérarchie)
+  // ============================================================
   const handleOpenProcessDetail = useCallback((event: CustomEvent) => {
     const { processId } = event.detail || {};
     if (!processId) return;
@@ -5162,32 +5165,34 @@ export const ProcessInventory = ({
     const entity = entities.find(e => e.id === process.entityId);
     if (!entity) return;
 
-    const getRoot = (entityId: string): string | null => {
-      const e = entities.find(ent => ent.id === entityId);
-      if (!e) return null;
-      if (e.parentId === null) return e.id;
-      return getRoot(e.parentId);
-    };
+    // ---- Construire la chaîne hiérarchique complète (racine → entité) ----
+    const chain: any[] = [];
+    let current: any = entity;
+    let safety = 10;
+    while (current && safety > 0) {
+      chain.unshift(current);
+      if (!current.parentId) break;
+      const parent = entities.find(e => e.id === current.parentId);
+      if (!parent) break;
+      current = parent;
+      safety--;
+    }
 
-    const rootId = getRoot(entity.id);
-    if (!rootId) return;
+    // chain[0] = racine (Filiale), chain[last] = entité porteuse
+    const rootEntity = chain[0] || entity;
+    const rootId = rootEntity.id;
 
-    const getDirection = (entityId: string): string | null => {
-      const e = entities.find(ent => ent.id === entityId);
-      if (!e) return null;
-      if (e.parentId === rootId) return e.id;
-      return getDirection(e.parentId || '');
-    };
-
-    const directionId = getDirection(entity.id);
+    // Direction si existe (2e niveau)
+    const directionEntity = chain.length >= 2 ? chain[1] : null;
+    const directionId = directionEntity ? directionEntity.id : null;
 
     const deptProcesses = processes.filter(p => p.entityId === entity.id || p.department === entity.name);
-    
+
     const criticalCount = deptProcesses.filter(p => {
       const score = computeMaxScoreFromImpacts(p.impacts);
       return score >= 4;
     }).length;
-    
+
     let totalResources = 0;
     for (const p of deptProcesses) {
       totalResources += resourceCountByProcess[p.id] || 0;
@@ -5215,6 +5220,14 @@ export const ProcessInventory = ({
     setSelectedService(service);
     setShowBIADetail(true);
     setViewLevel("directions");
+
+    console.log("🧭 Navigation BIA :", {
+      chain: chain.map(c => `${c.name} (${c.type})`),
+      rootId,
+      directionId,
+      entityId: entity.id,
+      entityName: entity.name,
+    });
   }, [processes, entities, resourceCountByProcess]);
 
   // ⭐ Écoute les imports d'entités/processus depuis OrgChart → recharge le BIA
@@ -5244,11 +5257,23 @@ export const ProcessInventory = ({
     };
   }, [handleOpenProcessDetail]);
 
-  // ✅ Ouvrir le processus en attente transmis par BiaModule après un changement d'onglet
+    // ✅ Ouvrir le processus en attente (depuis prop OU sessionStorage/localStorage)
   useEffect(() => {
-    if (!pendingProcessId) return;
-    handleOpenProcessDetail({ detail: { processId: pendingProcessId } } as CustomEvent);
-    onPendingProcessed?.();
+    const storedId =
+      sessionStorage.getItem("pendingBiaProcessId") ||
+      localStorage.getItem("pendingBiaProcessId");
+    const targetId = pendingProcessId || storedId;
+    if (!targetId) return;
+
+    sessionStorage.removeItem("pendingBiaProcessId");
+    localStorage.removeItem("pendingBiaProcessId");
+
+    const timer = setTimeout(() => {
+      handleOpenProcessDetail({ detail: { processId: targetId } } as CustomEvent);
+      onPendingProcessed?.();
+    }, 300);
+
+    return () => clearTimeout(timer);
   }, [pendingProcessId, handleOpenProcessDetail, onPendingProcessed]);
 
   useEffect(() => {

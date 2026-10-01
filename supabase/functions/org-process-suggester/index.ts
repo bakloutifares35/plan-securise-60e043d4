@@ -1,206 +1,219 @@
-// supabase/functions/strat-recommend/index.ts
-
+// supabase/functions/groq-import-taxonomy/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-// ============================================================
-// CORS — défini AVANT tout accès à Deno.env.get()
-// ============================================================
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+// ⭐ Modèle mis à jour (remplace llama-3.3-70b-versatile décommissionné)
+const GROQ_MODEL = "openai/gpt-oss-120b";
+
+const SYSTEM_PROMPT = `Tu es un expert en analyse d'organigrammes et de taxonomies d'entreprise pour un logiciel de continuité d'activité (PCA/BIA).
+
+Ton rôle : analyser un fichier Excel brut (en-têtes + lignes) et reconstruire TOUTE la structure hiérarchique, quelle que soit la façon dont elle est encodée :
+- Hiérarchie en colonne "Parent" (référence au nom)
+- Hiérarchie en plusieurs colonnes de niveaux (ex: "Niveau 1", "Niveau 2", "Niveau 3", ou "Filiale", "Direction", "Service")
+- Hiérarchie par indentation (colonnes vides qui propagent la valeur précédente)
+- Hiérarchie mixte ou ambiguë
+- Colonnes dans n'importe quel ordre, avec n'importe quel nom (FR/EN, accents, majuscules)
+- Lignes entités ET lignes processus mélangées dans le même fichier
+
+RÈGLES MÉTIER :
+1. Hiérarchie cible : FILIALE → DIRECTION → SERVICE / DÉPARTEMENT (3 niveaux max)
+2. Une FILIALE n'a pas de parent
+3. Une DIRECTION a toujours une FILIALE comme parent
+4. Un SERVICE ou DÉPARTEMENT a toujours une DIRECTION comme parent
+5. Si le fichier ne respecte pas exactement cette hiérarchie (ex: 2 niveaux, 4 niveaux), adapte intelligemment :
+   - 2 niveaux → les niveaux hauts deviennent FILIALE, les bas deviennent DIRECTION
+   - 4 niveaux → fusionne les 2 niveaux les plus bas en SERVICE/DÉPARTEMENT
+6. Les processus peuvent être portés par n'importe quel niveau (Filiale, Direction, Service, Département)
+7. Un processus a : nom, entité porteuse (= entité de la ligne ou dernière entité rencontrée), responsable (optionnel), RTO en heures (optionnel), RPO en heures (optionnel), criticité (optionnel : Critique/Majeur/Modéré/Mineur ou variantes)
+
+INTERPRÉTATION DES VALEURS :
+- RTO/RPO : convertir en heures. "4h" → 4, "2 jours" → 48, "1 semaine" → 168, "30 min" → 0.5, "0,5" → 0.5
+- Criticité : normaliser vers "Critique" | "Majeur" | "Modéré" | "Mineur". Variantes : "Élevé"/"High"/"Critical" → "Critique", "Medium"/"Moyen" → "Modéré", "Low"/"Faible" → "Mineur"
+- Responsable : peut être "Responsable", "Owner", "Pilote", "Référent", "Process Owner", etc.
+- Ignore les lignes vides, les totaux, les commentaires
+
+FORMAT DE SORTIE (JSON STRICT, rien d'autre) :
+{
+  "summary": "Description courte de ce que tu as compris (1-2 phrases)",
+  "hierarchyDepth": 3,
+  "entities": [
+    { "name": "string", "type": "FILIALE|DIRECTION|SERVICE|DÉPARTEMENT", "parentName": "string|null", "referent": "string|null" }
+  ],
+  "processes": [
+    { "name": "string", "entityName": "string", "owner": "string|null", "rto": number|null, "rpo": number|null, "criticality": "string|null" }
+  ],
+  "warnings": ["string"]
+}
+
+IMPORTANT :
+- Ne renvoie QUE le JSON, sans backticks ni texte autour
+- Tous les noms d'entités doivent être EXACTEMENT les mêmes dans "entities" et dans "processes[].entityName"
+- Si une entité est référencée comme parent mais n'a pas de ligne propre, crée-la avec un type déduit
+- Ne mets pas de doublons dans "entities" (même name → une seule entrée)`;
+
+interface RawRow {
+  [key: string]: any;
+}
+
 serve(async (req) => {
-  // 1) Preflight CORS — AVANT TOUT (Deno.env, req.json, logique métier)
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // ⭐ NOUVEAU : on reçoit TOUTES les options disponibles
-    const { processName, rto, rpo, criticality, description, resources, options } = await req.json();
+    const { rows, headers, fileName } = await req.json();
 
-    // 2) Accès à la clé API APRÈS le check OPTIONS
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY not configured");
-    }
-
-    // ============================================================
-    // CONSTRUIRE LA LISTE DES OPTIONS DYNAMIQUEMENT
-    // ============================================================
-    let optionsList = "";
-    if (options && options.length > 0) {
-      optionsList = options.map((opt: any, index: number) => {
-        return `${index + 1}. ${opt.name} - ${opt.description || "Aucune description"}`;
-      }).join("\n");
-    } else {
-      // Fallback : options par défaut
-      optionsList = `1. Reprise sur backup IT - Restauration des données depuis les sauvegardes
-2. Site de repli alternatif - Basculement vers un site secondaire en cas de sinistre
-3. Sous-traitance - Externalisation vers un prestataire tiers
-4. Télétravail généralisé - Permettre aux équipes de travailler à distance`;
-    }
-
-    // ============================================================
-    // PROMPT SYSTÈME - DYNAMIQUE
-    // ============================================================
-    const systemPrompt = `Tu es un expert senior en Plan de Continuité d'Activité (BCM) et en gestion de crise.
-
-Tu reçois une liste d'options de continuité. Tu dois ANALYSER CHAQUE OPTION et choisir LA MEILLEURE pour le processus donné.
-
-RÈGLES D'ANALYSE POUR CHAQUE OPTION :
-- Est-ce que cette option permet de respecter le RTO (délai de reprise) ?
-- Est-ce que cette option permet de respecter le RPO (perte de données max) ?
-- Est-ce que cette option est adaptée à la criticité du processus ?
-- Est-ce que cette option est réaliste avec les ressources disponibles ?
-- Est-ce que cette option couvre les scénarios de disruption ?
-
-CRITÈRES DE DÉCISION GÉNÉRAUX :
-- RTO ≤ 4h → privilégier les solutions techniques (load balancers, site de repli, backup IT)
-- RTO entre 4h et 24h → solutions mixtes possibles
-- RTO > 24h → solutions organisationnelles (télétravail, sous-traitance)
-- Processus Critique → solution robuste et éprouvée
-- Cyberattaque → solutions avec isolation (site de repli, sauvegarde hors ligne)
-
-Pour CHAQUE option que tu analyses, demande-toi : "Est-ce que cette option est vraiment pertinente pour ce processus ?"
-
-RÉPONDS UNIQUEMENT en JSON avec ce format :
-{
-  "option": "Nom exact de l'option choisie",
-  "justification": "Paragraphe de 3-5 phrases expliquant pourquoi cette option est la meilleure. Mentionne aussi pourquoi les autres options sont moins adaptées."
-}
-
-La justification doit être concrète, professionnelle et en français.`;
-
-    // ============================================================
-    // CONSTRUCTION DU MESSAGE UTILISATEUR
-    // ============================================================
-    let userPrompt = `PROCESSUS À ANALYSER :\n`;
-    userPrompt += `- Nom : ${processName}\n`;
-    userPrompt += `- RTO : ${rto}h\n`;
-    userPrompt += `- RPO : ${rpo}h\n`;
-    userPrompt += `- Criticité : ${criticality || "Non définie"}\n`;
-    if (description) userPrompt += `- Description : ${description}\n`;
-    if (resources && resources.length > 0) {
-      userPrompt += `- Ressources disponibles : ${resources.join(", ")}\n`;
-    }
-    userPrompt += `\nOPTIONS DE CONTINUITÉ DISPONIBLES :\n${optionsList}`;
-    userPrompt += `\n\nAnalyse chaque option et choisis LA MEILLEURE. Explique pourquoi.`;
-
-    // ============================================================
-    // APPEL À L'IA
-    // ============================================================
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 800,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Limite de requêtes atteinte. Veuillez réessayer dans quelques minutes." }),
-          { status: 429, headers: corsHeaders }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Crédits IA épuisés." }),
-          { status: 402, headers: corsHeaders }
-        );
-      }
+    if (!rows || !Array.isArray(rows) || rows.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Erreur du service IA" }),
-        { status: 500, headers: corsHeaders }
+        JSON.stringify({ error: "Aucune donnée à analyser" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-
-    // ============================================================
-    // PARSER LA RÉPONSE JSON
-    // ============================================================
-    let recommendation;
-    try {
-      let cleanContent = content.trim();
-      if (cleanContent.startsWith("```json")) {
-        cleanContent = cleanContent.replace(/```json\n?/, "").replace(/\n?```$/, "");
-      }
-      if (cleanContent.startsWith("```")) {
-        cleanContent = cleanContent.replace(/```\n?/, "").replace(/\n?```$/, "");
-      }
-      recommendation = JSON.parse(cleanContent);
-    } catch {
-      // Fallback : extraire l'option et la justification du texte
-      const optionMatch = content.match(/(Reprise sur backup IT|Site de repli alternatif|Sous-traitance|Télétravail généralisé|Load balancers|Redondance|Backup|Mettre en place des load balancers)/);
-      const option = optionMatch ? optionMatch[1] : "Site de repli alternatif";
-      
-      let justification = content
-        .replace(option, "")
-        .replace(/["{}]/g, "")
-        .replace(/justification:/i, "")
-        .replace(/option:/i, "")
-        .trim();
-      
-      justification = justification.replace(/^["']|["']$/g, "").trim();
-      
-      recommendation = {
-        option: option,
-        justification: justification || `La solution "${option}" est la plus adaptée pour ce processus car elle permet de répondre aux exigences de RTO ≤ ${rto}h et RPO ≤ ${rpo}h, tout en étant cohérente avec la criticité du processus.`,
-      };
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    if (!GROQ_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "Clé API Groq manquante côté serveur" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // ============================================================
-    // FORMER LA RÉPONSE FINALE AVEC TOUTES LES OPTIONS
-    // ============================================================
-    const allOptions = (options || [
-      { name: "Reprise sur backup IT", description: "Restauration des données depuis les sauvegardes" },
-      { name: "Site de repli alternatif", description: "Basculement vers un site secondaire en cas de sinistre" },
-      { name: "Sous-traitance", description: "Externalisation vers un prestataire tiers" },
-      { name: "Télétravail généralisé", description: "Permettre aux équipes de travailler à distance" },
-    ]).map((opt: any) => ({
-      ...opt,
-      isRecommended: opt.name === recommendation.option,
-    }));
+    // Échantillon : max 200 lignes, max 15 colonnes
+    const sampleRows = rows.slice(0, 200);
+    const truncatedHeaders = (headers || Object.keys(sampleRows[0] || {})).slice(0, 15);
 
-    const result = {
-      recommended: recommendation.option,
-      justification: recommendation.justification,
-      allOptions,
-    };
-
-    return new Response(JSON.stringify(result), {
-      headers: corsHeaders,
+    const compactRows = sampleRows.map((row: RawRow) => {
+      const out: RawRow = {};
+      for (const h of truncatedHeaders) {
+        const v = row[h];
+        if (v !== undefined && v !== null && String(v).trim() !== "") {
+          out[h] = typeof v === "string" ? v.trim().substring(0, 120) : v;
+        }
+      }
+      return out;
     });
 
-  } catch (error) {
-    console.error("Strategy recommender error:", error);
-    
+    const userPrompt = `Fichier : "${fileName || "import.xlsx"}"
+
+En-têtes détectés : ${JSON.stringify(truncatedHeaders)}
+
+Données (${compactRows.length} lignes sur ${rows.length} au total${rows.length > 200 ? " — échantillon" : ""}) :
+${JSON.stringify(compactRows, null, 1)}
+
+Analyse ce fichier et reconstruis TOUTE la structure hiérarchique + les processus.
+Réponds UNIQUEMENT avec le JSON demandé.`;
+
+    const groqResponse = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.1,
+        max_tokens: 8000,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!groqResponse.ok) {
+      const errText = await groqResponse.text();
+      console.error("Groq API error:", groqResponse.status, errText);
+      return new Response(
+        JSON.stringify({ error: `Erreur Groq (${groqResponse.status})`, details: errText.substring(0, 500) }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const groqData = await groqResponse.json();
+    const content = groqData?.choices?.[0]?.message?.content;
+
+    if (!content) {
+      return new Response(
+        JSON.stringify({ error: "Réponse Groq vide" }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    let parsed: any;
+    try {
+      const cleaned = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      console.error("JSON parse error:", e, "Content:", content.substring(0, 500));
+      return new Response(
+        JSON.stringify({ error: "JSON invalide renvoyé par l'IA", raw: content.substring(0, 800) }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validation minimale
+    if (!parsed.entities || !Array.isArray(parsed.entities)) parsed.entities = [];
+    if (!parsed.processes || !Array.isArray(parsed.processes)) parsed.processes = [];
+    if (!parsed.summary) parsed.summary = "Analyse terminée.";
+    if (!parsed.hierarchyDepth) parsed.hierarchyDepth = 3;
+    if (!parsed.warnings) parsed.warnings = [];
+
+    // Nettoyage / normalisation
+    const validTypes = ["FILIALE", "DIRECTION", "SERVICE", "DÉPARTEMENT", "DEPARTEMENT"];
+    parsed.entities = parsed.entities
+      .filter((e: any) => e && e.name && String(e.name).trim() !== "")
+      .map((e: any) => {
+        let t = String(e.type || "").toUpperCase().trim();
+        if (t === "DEPARTEMENT") t = "DÉPARTEMENT";
+        if (!validTypes.includes(t)) t = "SERVICE";
+        return {
+          name: String(e.name).trim(),
+          type: t,
+          parentName: e.parentName ? String(e.parentName).trim() : null,
+          referent: e.referent ? String(e.referent).trim() : null,
+        };
+      });
+
+    const entityNameSet = new Set(parsed.entities.map((e: any) => e.name));
+
+    parsed.processes = parsed.processes
+      .filter((p: any) => p && p.name && String(p.name).trim() !== "")
+      .map((p: any) => ({
+        name: String(p.name).trim(),
+        entityName: p.entityName ? String(p.entityName).trim() : "",
+        owner: p.owner ? String(p.owner).trim() : null,
+        rto: typeof p.rto === "number" && !isNaN(p.rto) ? p.rto : null,
+        rpo: typeof p.rpo === "number" && !isNaN(p.rpo) ? p.rpo : null,
+        criticality: p.criticality ? String(p.criticality).trim() : null,
+      }))
+      .filter((p: any) => entityNameSet.has(p.entityName));
+
     return new Response(
       JSON.stringify({
-        recommended: "Site de repli alternatif",
-        justification: "Le basculement vers un site de repli alternatif permet de répondre aux exigences de RTO et RPO, assure la continuité en cas d'indisponibilité du site, de panne système ou de cyberattaque, et garantit une alimentation redondée conforme aux contraintes. (Confiance : haute)",
-        allOptions: [],
+        success: true,
+        summary: parsed.summary,
+        hierarchyDepth: parsed.hierarchyDepth,
+        entities: parsed.entities,
+        processes: parsed.processes,
+        warnings: parsed.warnings,
+        model: GROQ_MODEL,
+        rowsAnalyzed: compactRows.length,
+        rowsTotal: rows.length,
       }),
-      { status: 500, headers: corsHeaders }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (err: any) {
+    console.error("Erreur globale:", err);
+    return new Response(
+      JSON.stringify({ error: err.message || "Erreur inconnue" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
