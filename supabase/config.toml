@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.groq-warroom-assist]
 verify_jwt = false
+
+[functions.groq-suggest-test-objectives]
+verify_jwt = false
