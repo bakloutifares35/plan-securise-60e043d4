@@ -14,6 +14,7 @@ import BIASynthesis from "@/components/pca/bia/BIASynthesis";
 import BIARecoverySequence from "@/components/pca/bia/BIARecoverySequence";
 import CMDBModule from "@/components/pca/bia/CMDBModule";
 import StrategyModule from "@/components/strategy/StrategyModule";
+import ExercicesModule from "@/components/exercices/ExercicesModule";
 import WarRoomModule from "@/components/warroom/WarRoomModule"; // ✅ AJOUT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
@@ -47,6 +48,8 @@ const Index = () => {
       setSection("strategies");
     } else if (path === "/plan") {
       setSection("plan");
+    } else if (path === "/exercices") {
+      setSection("exercices");
     } else if (path === "/warroom") {   // ✅ AJOUT
       setSection("warroom");
     }
@@ -85,6 +88,7 @@ const Index = () => {
                       <SelectItem value="form">Identification des risques</SelectItem>
                       <SelectItem value="plan">Gestion des plans</SelectItem>
                       <SelectItem value="warroom">War Room</SelectItem> {/* ✅ AJOUT */}
+                      <SelectItem value="exercices">Exercices PCA</SelectItem>
                       <SelectItem value="benchmark">Benchmark</SelectItem>
                       <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem>
                       <SelectItem value="strategies">Stratégies de continuité</SelectItem>
@@ -109,7 +113,8 @@ const Index = () => {
                   {section === "risk" && <RiskModule />}
                   {section === "tenacia" && <TenaciaVoice />}
                   {section === "strategies" && <StrategyModule />}
-                  {section === "warroom" && <WarRoomModule />} {/* ✅ AJOUT */}
+                  {section === "warroom" && <WarRoomModule />}
+                  {section === "exercices" && <ExercicesModule />} {/* ✅ AJOUT */}
                 </div>
               </main>
             </div>
