@@ -402,7 +402,7 @@ const newProcess = (): Process => ({
   description: "",
   status: "Actif",
   impacts: emptyImpacts(),
-  rto: 24,
+  rto: null as unknown as number, // RTO vide par défaut : prérempli avec la suggestion dès qu'elle existe (jamais ≥ MTPD)
   mtpd: 72,
   mbco: 80,
   resources: [],
@@ -418,6 +418,9 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   const { processes, upsertProcess } = useBia();
   const { entities } = useGovernance();
   const [isSaving, setIsSaving] = useState(false);
+  // Le message d'erreur RTO n'apparaît qu'après une modification (RTO ou matrice) ou une tentative de validation
+  const [rtoTouched, setRtoTouched] = useState(false);
+  const [rtoSubmitAttempted, setRtoSubmitAttempted] = useState(false);
 
   const initial = useMemo(() => {
     const found = processes.find((p) => p.id === processId);
@@ -438,6 +441,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   });
 
   const updateImpactWithCascade = (axis: ImpactAxis, periodId: string, newValue: number) => {
+    setRtoTouched(true);
     setData((prev: any) => {
       const newImpacts = { ...prev.impacts };
       const startIndex = TIME_PERIODS_ORDERED.indexOf(periodId);
