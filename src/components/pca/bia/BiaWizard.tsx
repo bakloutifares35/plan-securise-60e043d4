@@ -466,10 +466,34 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
 
   const rtoSuggestion = useMemo(() => getSuggestedRTO(data.impacts), [data.impacts]);
 
+  // Validation du RTO : strictement inférieur au MTPD calculé depuis la matrice d'impacts
+  const rtoError = useMemo(() => {
+    const rto = Number(data.rto);
+    if (!rto || rto <= 0) return "Le RTO doit être supérieur à 0.";
+    if (rtoSuggestion.mtpd !== null && rto >= rtoSuggestion.mtpd) {
+      return `Le RTO doit être strictement inférieur au MTPD (${rtoSuggestion.mtpd} h).`;
+    }
+    return null;
+  }, [data.rto, rtoSuggestion.mtpd]);
+
+  const showRtoError = Boolean(rtoError) && (rtoTouched || rtoSubmitAttempted);
+
+  // Préremplissage du RTO avec la suggestion — uniquement si aucune valeur n'a été saisie
+  useEffect(() => {
+    if (rtoSuggestion.rto !== null && (data.rto === null || data.rto === undefined)) {
+      update("rto", rtoSuggestion.rto);
+    }
+  }, [rtoSuggestion.rto]);
+
   const canNext = () => step === 0 ? (data.name && data.entityId && data.owner) : true;
 
   const submit = async () => {
     if (isSaving) return;
+    if (rtoError) {
+      setRtoSubmitAttempted(true);
+      toast({ title: "RTO invalide", description: rtoError, variant: "destructive" });
+      return;
+    }
     setIsSaving(true);
     const processToSave = {
       ...data,
@@ -743,7 +767,10 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
               <div className="grid gap-4 md:grid-cols-1">
                 <div>
                   <Label>RTO — Recovery Time Objective (heures)</Label>
-                  <Select value={String(data.rto)} onValueChange={(v) => update("rto", Number(v))}>
+                  <Select
+                    value={data.rto === null || data.rto === undefined ? "" : String(data.rto)}
+                    onValueChange={(v) => { setRtoTouched(true); update("rto", Number(v)); }}
+                  >
                     <SelectTrigger className="w-full"><SelectValue placeholder="Sélectionner un RTO" /></SelectTrigger>
                     <SelectContent>
                       {rtoOptions.map((val) => (
@@ -751,6 +778,12 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                       ))}
                     </SelectContent>
                   </Select>
+                  {showRtoError && rtoError && (
+                    <p className="text-xs text-destructive mt-1 flex items-center gap-1" role="alert">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                      {rtoError}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground mt-1">
                     Délai maximal de reprise visé. Conformément à l'ISO 22301, le RTO doit être <strong>strictement inférieur</strong> au MTPD.
                   </p>
