@@ -1332,9 +1332,9 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         status: "Actif", pcaStatus: "Non démarré", maturity: 20,
       };
       setEntities([...entities, newEntity]);
-      toast.success(`✅ ${quickAddForm.type} « ${newEntity.name} » créé${quickAddForm.type === "DIRECTION" ? "e" : ""}`);
+      toast.success(`✅ ${quickAddForm.type} « ${newEntity.name} » créé${(quickAddForm.type as string) === "DIRECTION" ? "e" : ""}`);
       (window as any).__lastCreatedEntityId = newEntity.id;
-      setTimeout(() => { (window as any).__lastCreatedEntityId = null; setEntities(prev => [...prev]); }, 3000);
+      setTimeout(() => { (window as any).__lastCreatedEntityId = null; setEntities([...entities] as Entity[]); }, 3000);
       setQuickAddOpen(false); setQuickAddForm(emptyForm); setQuickAddParentId(""); setQuickAddType("");
     } finally { setIsSubmittingQuickAdd(false); }
   };
@@ -1819,7 +1819,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {(() => {
             const parent = entities.find(e => e.id === quickAddParentId);
-            const typeLabel = quickAddType === "DIRECTION" ? "direction" : quickAddType === "SERVICE" ? "service" : quickAddType === "DÉPARTEMENT" ? "département" : "entité";
+            const typeLabel = (quickAddType as string) === "DIRECTION" ? "direction" : (quickAddType as string) === "SERVICE" ? "service" : (quickAddType as string) === "DÉPARTEMENT" ? "département" : "entité";
             return (
               <div className="space-y-5">
                 <SheetHeader>

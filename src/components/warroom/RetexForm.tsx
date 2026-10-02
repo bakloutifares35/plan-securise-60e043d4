@@ -21,12 +21,14 @@ export const RetexForm = ({
   incidentId,
   retex,
   onSave,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   incidentId: string;
   retex: Retex | null;
   onSave: (payload: Retex) => Promise<boolean>;
+  onSaved?: () => void | Promise<void>;
 }) => {
   const empty: Retex = {
     incident_id: incidentId,
@@ -49,7 +51,10 @@ export const RetexForm = ({
     setSaving(true);
     const ok = await onSave(form);
     setSaving(false);
-    if (ok) onOpenChange(false);
+    if (ok) {
+      onOpenChange(false);
+      await onSaved?.();
+    }
   };
 
   return (
