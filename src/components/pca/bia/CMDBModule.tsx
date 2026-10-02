@@ -484,7 +484,7 @@ const ResourceTable = ({
   onViewProcesses: (resource: any) => void;
   onClick: (resource: any) => void;
 }) => {
-  const getColumns = () => {
+  const getColumns = (): { key: string; label: string; textAlign?: 'center' }[] => {
     const base = [{ key: 'name', label: 'Nom' }];
     const specific: Record<ResourceType, { key: string; label: string; textAlign?: 'center' }[]> = {
       hr: [
