@@ -403,6 +403,7 @@ const newProcess = (): Process => ({
   status: "Actif",
   impacts: emptyImpacts(),
   rto: null as unknown as number, // RTO vide par défaut : prérempli avec la suggestion dès qu'elle existe (jamais ≥ MTPD)
+  rpo: undefined as unknown as number, // non géré par ce wizard — valeur préservée telle quelle
   mtpd: 72,
   mbco: 80,
   resources: [],
