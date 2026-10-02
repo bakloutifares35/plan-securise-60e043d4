@@ -803,7 +803,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
             Suivant <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (
-          <Button onClick={submit} disabled={!canNext() || isSaving} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
+          <Button onClick={submit} disabled={!canNext() || isSaving || showRtoError} className="bg-[#2A5141] hover:bg-[#1a3329] text-white">
             {isSaving ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Enregistrement...</>) : (<><Check className="h-4 w-4 mr-2" />Enregistrer le BIA</>)}
           </Button>
         )}
