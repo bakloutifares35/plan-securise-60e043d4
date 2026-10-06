@@ -1,4 +1,5 @@
 // src/components/pca/Dashboard.tsx
+import { ratioKpi, maturityKpi, usedResourcesKpi, exercisesKpi, processesWithApprovedPlan, processesWithStrategy, isCriticalLevel } from "@/lib/kpiService";
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -354,14 +355,10 @@ const useBCMDashboard = () => {
       return { ...p, score, criticite };
     });
 
-    const processusCritiques = processusAvecCriticite.filter(
-      (p) => p.criticite === "Critique" || (p.criticite as string) === "Sévère"
-    );
+    const processusCritiques = processusAvecCriticite.filter((p) => isCriticalLevel(p.criticite));
     const totalCritiques = processusCritiques.length;
 
-    const processusCritiquesAvecStrategie = processusCritiques.filter(
-      (p) => associations.some((a) => a.processus_id === p.id)
-    ).length;
+    const processusCritiquesAvecStrategie = kpis.withStrat.size;
 
     let strategiesScore = totalCritiques > 0
       ? (processusCritiquesAvecStrategie / totalCritiques) * 100
@@ -369,9 +366,7 @@ const useBCMDashboard = () => {
     if (strategiesScore >= 99.5 && totalCritiques - processusCritiquesAvecStrategie > 0) strategiesScore = 99;
     strategiesScore = Math.round(strategiesScore);
 
-    const processusCritiquesAvecPlanApprouve = processusCritiques.filter(
-      (p) => plans.some((pl) => pl.processus_id === p.id && pl.statut === "Approuvé")
-    ).length;
+    const processusCritiquesAvecPlanApprouve = kpis.withPlan.size;
 
     let plansScore = totalCritiques > 0
       ? (processusCritiquesAvecPlanApprouve / totalCritiques) * 100
@@ -430,7 +425,7 @@ const useBCMDashboard = () => {
       insight,
       weakestModule: weakest.label,
     };
-  }, [processes, risques, associations, plans, resourceCounts]);
+  }, [processes, risques, associations, plans, resourceCounts, kpis]);
 
   // ============================================================
   // FRAÎCHEUR DU PROGRAMME (dernier exercice, prochain test, plans obsolètes)
@@ -517,9 +512,7 @@ const useBCMDashboard = () => {
       return { ...p, score, criticite };
     });
 
-    const processusCritiques = processusAvecCriticite.filter(
-      (p) => p.criticite === "Critique" || (p.criticite as string) === "Sévère"
-    ).length;
+    const processusCritiques = kpis.criticalIds.size;
 
     const today = new Date();
     const echeances = events
@@ -610,6 +603,7 @@ const useBCMDashboard = () => {
         }).length,
       },
       maturite,
+      kpiService: { ...kpis, maturite: maturityKpi({ bia: ratioKpi(maturite.details.bia.complet, maturite.details.bia.total), risques: ratioKpi(maturite.details.risques.evalues, maturite.details.risques.total), strategies: ratioKpi(maturite.processusCritiquesAvecStrategie, maturite.totalCritiques), plans: ratioKpi(maturite.processusCritiquesAvecPlanApprouve, maturite.totalCritiques), ressources: ratioKpi(maturite.processusCritiquesAvecRessourcesCompletes, maturite.totalCritiques) }) },
       insight: maturite.insight,
       echeances,
       matrixData,
@@ -622,7 +616,7 @@ const useBCMDashboard = () => {
         sansStrategie: processusAvecCriticite.filter(
           (p) =>
             (p.criticite === "Critique" || (p.criticite as string) === "Sévère") &&
-            !associations.some((a) => a.processus_id === p.id)
+            !kpis.withStrat.has(p.id)
         ).length,
         sansRessources: processusAvecCriticite.filter((p) => {
           if (!(p.criticite === "Critique" || (p.criticite as string) === "Sévère")) return false;
@@ -632,7 +626,7 @@ const useBCMDashboard = () => {
         sansPlan: processusAvecCriticite.filter(
           (p) =>
             (p.criticite === "Critique" || (p.criticite as string) === "Sévère") &&
-            !plans.some((pl) => pl.processus_id === p.id && pl.statut === "Approuvé")
+            !kpis.withPlan.has(p.id)
         ).length,
         risquesSansTraitement: risques.filter((r) => !r.mesures_existantes || r.mesures_existantes.length === 0).length,
       },
@@ -687,9 +681,10 @@ const useBCMDashboard = () => {
     maturite,
     fraicheur,
     resourceCounts,
+    kpis,
   ]);
 
-  return { loading, error: null, dashboard, refresh: () => {} };
+  return { loading, error: loadError, dashboard, refresh: () => setReloadKey((k) => k + 1) };
 };
 
 // ============================================================

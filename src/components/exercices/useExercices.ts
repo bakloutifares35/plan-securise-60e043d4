@@ -44,7 +44,7 @@ export const procCriticite = (p: { impacts: any; criticality_level: string | nul
   if (score > 0) return scoreToCriticality(score) as string;
   return FALLBACK[p.criticality_level ?? ""] ?? "Mineur";
 };
-export const isCritical = (c: string) => c === "Critique" || c === "Sévère" || c === "Majeur";
+export { isCriticalLevel as isCritical } from "@/lib/kpiService";
 
 export const useExercices = () => {
   const [loading, setLoading] = useState(true);
