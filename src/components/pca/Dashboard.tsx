@@ -221,12 +221,19 @@ const useBCMDashboard = () => {
   const [exercicesTableExists, setExercicesTableExists] = useState<boolean>(false);
   const [resourceCounts, setResourceCounts] = useState<ResourceCounts>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [planLinks, setPlanLinks] = useState<any[]>([]);
+  const [tests, setTests] = useState<any[]>([]);
+  const [resLinks, setResLinks] = useState<{ hr: any[]; equip: any[]; app: any[]; supp: any[] }>({ hr: [], equip: [], app: [], supp: [] });
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     const loadData = async () => {
       setLoading(true);
+      setLoadError(null);
       try {
-        const [ev, st, asso, rhRes, eqRes, appRes, fourRes, plRes, risqRes] =
+        const [ev, st, asso, rhRes, eqRes, appRes, fourRes, plRes, risqRes, ppRes, tRes, hrL, eqL, apL, suL] =
           await Promise.all([
             supabase.from("calendar_events").select("*"),
             supabase.from("strategies_catalogue").select("*"),
@@ -237,7 +244,20 @@ const useBCMDashboard = () => {
             supabase.from("fournisseurs").select("*"),
             supabase.from("plans").select("*"),
             supabase.from("risques").select("*"),
+            supabase.from("plan_processus").select("plan_id, processus_id"),
+            (supabase as any).from("tests_pca").select("*"),
+            supabase.from('processus_ressources_humaines').select('processus_id, ressource_humaine_id'),
+            supabase.from('processus_equipements').select('processus_id, equipement_id'),
+            supabase.from('processus_applications').select('processus_id, application_id'),
+            supabase.from('processus_fournisseurs').select('processus_id, fournisseur_id'),
           ]);
+        if (cancelled) return;
+
+        // Une requête en échec ne doit jamais devenir un « 0 » : on remonte l'erreur.
+        // Tables optionnelles (exercices, liaisons plans) : absence tolérée (PGRST205).
+        const critical = [st, asso, rhRes, eqRes, appRes, fourRes, plRes, risqRes, hrL, eqL, apL, suL];
+        const failed = critical.find((r: any) => r.error);
+        if (failed) throw new Error((failed as any).error.message);
 
         setEvents(ev.data || []);
         setStrategies(st.data || []);
@@ -248,83 +268,64 @@ const useBCMDashboard = () => {
         setFournisseurs(fourRes.data || []);
         setPlans(plRes.data || []);
         setRisques(risqRes.data || []);
+        setPlanLinks(ppRes.error ? [] : ppRes.data || []);
+        setTests(tRes?.error ? [] : tRes?.data || []);
+        setExercices(tRes?.error ? [] : tRes?.data || []);
+        setExercicesTableExists(!tRes?.error);
+        setResLinks({ hr: hrL.data || [], equip: eqL.data || [], app: apL.data || [], supp: suL.data || [] });
 
-        // Tentative de chargement d'une table d'exercices PCA si elle existe.
-        // On ne casse rien si elle n'existe pas encore.
-        try {
-          const exRes = await (supabase as any).from("exercices_pca").select("*");
-          if (!exRes.error) {
-            setExercices(exRes.data || []);
-            setExercicesTableExists(true);
-          } else {
-            setExercicesTableExists(false);
+        const processIds = new Set(processes.map(p => p.id));
+        const counts: ResourceCounts = {};
+        for (const pid of processIds) counts[pid] = { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
+        const add = (rows: any[] | null, k: "hr" | "equip" | "app" | "supplier", rk: string) => {
+          const seen = new Set<string>();
+          for (const item of rows || []) {
+            const key = `${item.processus_id}|${item[rk]}`;
+            if (!counts[item.processus_id] || seen.has(key)) continue;
+            seen.add(key);
+            counts[item.processus_id][k]++;
+            counts[item.processus_id].total++;
           }
-        } catch {
-          setExercicesTableExists(false);
-        }
-
-        const processIds = processes.map(p => p.id);
-        if (processIds.length > 0) {
-          const [
-            { data: hrLinks },
-            { data: equipLinks },
-            { data: appLinks },
-            { data: suppLinks }
-          ] = await Promise.all([
-            supabase.from('processus_ressources_humaines').select('processus_id, ressource_humaine_id').in('processus_id', processIds),
-            supabase.from('processus_equipements').select('processus_id, equipement_id').in('processus_id', processIds),
-            supabase.from('processus_applications').select('processus_id, application_id').in('processus_id', processIds),
-            supabase.from('processus_fournisseurs').select('processus_id, fournisseur_id').in('processus_id', processIds),
-          ]);
-
-          const counts: ResourceCounts = {};
-          for (const pid of processIds) {
-            counts[pid] = { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
-          }
-
-          if (hrLinks) {
-            for (const item of hrLinks) {
-              if (counts[item.processus_id]) {
-                counts[item.processus_id].hr++;
-                counts[item.processus_id].total++;
-              }
-            }
-          }
-          if (equipLinks) {
-            for (const item of equipLinks) {
-              if (counts[item.processus_id]) {
-                counts[item.processus_id].equip++;
-                counts[item.processus_id].total++;
-              }
-            }
-          }
-          if (appLinks) {
-            for (const item of appLinks) {
-              if (counts[item.processus_id]) {
-                counts[item.processus_id].app++;
-                counts[item.processus_id].total++;
-              }
-            }
-          }
-          if (suppLinks) {
-            for (const item of suppLinks) {
-              if (counts[item.processus_id]) {
-                counts[item.processus_id].supplier++;
-                counts[item.processus_id].total++;
-              }
-            }
-          }
-          setResourceCounts(counts);
-        }
-      } catch (error) {
+        };
+        add(hrL.data, "hr", "ressource_humaine_id");
+        add(eqL.data, "equip", "equipement_id");
+        add(apL.data, "app", "application_id");
+        add(suL.data, "supplier", "fournisseur_id");
+        setResourceCounts(counts);
+      } catch (error: any) {
         console.error("Erreur chargement données:", error);
+        if (!cancelled) setLoadError(error?.message || "Erreur de chargement des données");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadData();
-  }, [processes]);
+    return () => { cancelled = true; };
+  }, [processes, reloadKey]);
+
+  // KPI centralisés (src/lib/kpiService.ts)
+  const kpis = useMemo(() => {
+    const validIds = new Set(processes.map((p) => p.id));
+    const criticalIds = new Set(
+      processes.filter((p) => isCriticalLevel(scoreToCriticality(computeMaxScore(p.impacts)))).map((p) => p.id)
+    );
+    const ressourcesUtilisees = usedResourcesKpi([
+      { ids: rh.map((r) => r.id), links: resLinks.hr, key: "ressource_humaine_id" },
+      { ids: equip.map((r) => r.id), links: resLinks.equip, key: "equipement_id" },
+      { ids: apps.map((r) => r.id), links: resLinks.app, key: "application_id" },
+      { ids: fournisseurs.map((r) => r.id), links: resLinks.supp, key: "fournisseur_id" },
+    ], validIds);
+    const withPlan = processesWithApprovedPlan(plans, planLinks, criticalIds);
+    const withStrat = processesWithStrategy(associations, criticalIds);
+    return {
+      criticalIds,
+      withPlan,
+      withStrat,
+      ressourcesUtilisees,
+      exercices: exercisesKpi(tests, criticalIds),
+    };
+  }, [processes, rh, equip, apps, fournisseurs, resLinks, plans, planLinks, associations, tests]);
 
   // ============================================================
   // CALCUL DE LA MATURITÉ BCM (inchangé)
