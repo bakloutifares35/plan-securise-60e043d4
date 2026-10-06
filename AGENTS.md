@@ -1,0 +1,1 @@
+- KPI calculation rules live only in src/lib/kpiService.ts; pages must call it, never recompute locally — keeps figures identical across pages.
