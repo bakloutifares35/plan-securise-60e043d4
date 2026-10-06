@@ -99,17 +99,31 @@ export const useWarRoom = () => {
     return id;
   };
 
-  const updateIncident = async (id: string, payload: Partial<Incident>) => {
-    const { error } = await supabase
-      .from("incidents")
-      .update({ ...payload, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    if (error) {
-      toast({ title: "Erreur enregistrement", description: error.message, variant: "destructive" });
+  /**
+   * Met à jour un incident. Retourne true si l'écriture a réussi.
+   * Protégé contre les erreurs Supabase et les rejets de promesse.
+   * Le `load()` est appelé après succès pour rafraîchir la liste racine.
+   */
+  const updateIncident = async (id: string, payload: Partial<Incident>): Promise<boolean> => {
+    try {
+      const { error } = await supabase
+        .from("incidents")
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) {
+        toast({ title: "Erreur enregistrement", description: error.message, variant: "destructive" });
+        return false;
+      }
+      await load();
+      return true;
+    } catch (e: any) {
+      toast({
+        title: "Erreur enregistrement",
+        description: e?.message || "Erreur inattendue lors de la mise à jour de l'incident.",
+        variant: "destructive",
+      });
       return false;
     }
-    await load();
-    return true;
   };
 
   return {

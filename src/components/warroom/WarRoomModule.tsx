@@ -74,6 +74,10 @@ export const WarRoomModule = () => {
   const detail = useIncidentDetail(currentIncidentId);
   const cell = useCellMembers(currentIncidentId);
 
+  // ✅ On extrait les fonctions de reload pour stabiliser les dépendances
+  const detailReload = detail.reload;
+  const cellReload = cell.reload;
+
   const currentIncident = useMemo(
     () => incidents.find((i) => i.id === currentIncidentId) || null,
     [incidents, currentIncidentId]
@@ -98,14 +102,19 @@ export const WarRoomModule = () => {
     return incidentProcessus.filter((ip) => ip.incident_id === currentIncidentId).length;
   }, [incidentProcessus, currentIncidentId]);
 
-  // ✅ useCallback DOIT être ici, AVANT tout return conditionnel
+  // ✅ useCallback stabilisé : dépendances = fonctions de reload (déjà stables)
+  // + currentIncidentId. Évite la recréation à chaque render.
   const refresh = useCallback(async () => {
-    await reload();
-    if (currentIncidentId) {
-      await detail.reload();
-      await cell.reload();
+    try {
+      await reload();
+      if (currentIncidentId) {
+        await detailReload();
+        await cellReload();
+      }
+    } catch (e: any) {
+      console.warn("Erreur refresh War Room:", e?.message || e);
     }
-  }, [reload, detail, cell, currentIncidentId]);
+  }, [reload, detailReload, cellReload, currentIncidentId]);
 
   // ✅ useEffect DOIT être ici aussi, AVANT tout return conditionnel
   useEffect(() => {

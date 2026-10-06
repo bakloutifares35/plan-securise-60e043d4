@@ -7,6 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -16,6 +20,7 @@ import {
   MessageSquare, Target, Layers, Lock, AlertTriangle, Megaphone, Trash2,
   Users, Edit3, Building2, User, Calendar, Info, Check, Sparkles,
   ChevronDown, ChevronUp, FileDown, CheckSquare, Square, Timer, ListChecks,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -26,6 +31,21 @@ import {
   type Severite, type EntryType, type CommType, type CellRole,
 } from "./warroomHelpers";
 import { useAiSuggestions, type AiProcessContext } from "./AiCrisisRecommendations";
+
+// ============================================================
+// TIMEOUT APPLICATIF — évite les attentes infinies sur Supabase
+// ============================================================
+const CLOSE_TIMEOUT_MS = 15000;
+
+const withTimeout = <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+};
 
 // ============================================================
 // TYPES
@@ -1056,6 +1076,9 @@ export const WarRoomView = ({
 
   // ===== CLÔTURE =====
   const [closing, setClosing] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
+
   const retexProgress = useMemo(() => {
     if (!retex) return 0;
     const fields = [retex.resume, retex.causes_racines, retex.points_amelioration, retex.actions_correctives];
@@ -1063,7 +1086,18 @@ export const WarRoomView = ({
     return Math.round((filled / fields.length) * 100);
   }, [retex]);
 
-  const closeIncident = async () => {
+  // Actions encore ouvertes : ni "Fait". On avertit mais on n'bloque pas.
+  const pendingActionsForClose = useMemo(
+    () => actions.filter((a) => a.statut !== "Fait"),
+    [actions]
+  );
+
+  /**
+   * Ouvre la dialog de confirmation (remplace le confirm() natif bloquant).
+   * Le RETEX reste obligatoire. Si des actions sont en cours, l'avertissement
+   * est affiché DANS la dialog, pas dans un confirm() natif.
+   */
+  const requestClose = () => {
     if (!hasRetex) {
       toast({
         title: "RETEX incomplet",
@@ -1072,14 +1106,59 @@ export const WarRoomView = ({
       });
       return;
     }
-    if (!confirm("Confirmer la clôture de cet incident ?")) return;
+    setCloseError(null);
+    setCloseDialogOpen(true);
+  };
+
+  /**
+   * Exécute la clôture. Protégé par try/catch + timeout applicatif.
+   * N'utilise PLUS confirm() natif (cause du timeout navigateur observé).
+   */
+  const confirmClose = async () => {
     setClosing(true);
-    await updateIncident(incident.id, {
-      statut: "Clôturé",
-      date_heure_fin: new Date().toISOString(),
-    });
-    setClosing(false);
-    await reload();
+    setCloseError(null);
+    try {
+      const ok = await withTimeout(
+        updateIncident(incident.id, {
+          statut: "Clôturé",
+          date_heure_fin: new Date().toISOString(),
+        }),
+        CLOSE_TIMEOUT_MS,
+        "La clôture a échoué (délai dépassé). Vérifiez votre connexion et réessayez."
+      );
+
+      if (!ok) {
+        setCloseError("La clôture a échoué. Réessayez ou vérifiez votre connexion.");
+        return;
+      }
+
+      // Succès : rafraîchir la vue et fermer la dialog
+      try {
+        await withTimeout(
+          reload(),
+          CLOSE_TIMEOUT_MS,
+          "La clôture a réussi mais le rafraîchissement a échoué."
+        );
+      } catch (refreshErr: any) {
+        // La clôture a réussi en base : on informe sans bloquer.
+        toast({
+          title: "Crise clôturée",
+          description: "Le rafraîchissement a échoué. Rechargez la page si nécessaire.",
+        });
+      }
+
+      setCloseDialogOpen(false);
+      toast({
+        title: "Crise clôturée",
+        description: `« ${incident.titre} » est désormais clôturée.`,
+      });
+    } catch (e: any) {
+      setCloseError(
+        e?.message || "La clôture a échoué. Réessayez ou vérifiez votre connexion."
+      );
+    } finally {
+      setClosing(false);
+    }
   };
 
   const hasEntries = entries.length > 0;
@@ -2182,8 +2261,8 @@ export const WarRoomView = ({
                 </Button>
               )}
               <Button
-                onClick={closeIncident}
-                disabled={!hasRetex || isClosed || closing}
+                onClick={requestClose}
+                disabled={!hasRetex || isClosed}
                 title={!hasRetex ? "RETEX obligatoire avant clôture" : undefined}
                 className="font-medium h-8 transition-all duration-200 hover:shadow-md"
                 style={{
@@ -2355,6 +2434,97 @@ export const WarRoomView = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ============================================================
+          DIALOG DE CLÔTURE (remplace le confirm() natif)
+          ============================================================ */}
+      <AlertDialog open={closeDialogOpen} onOpenChange={(open) => {
+        if (!closing) {
+          setCloseDialogOpen(open);
+          if (!open) setCloseError(null);
+        }
+      }}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-serif">
+              Clôturer la crise ?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <span className="block">
+                Vous êtes sur le point de clôturer <strong>{incident.titre}</strong>.
+                Cette action est définitive et horodatera la fin de la crise.
+              </span>
+
+              {pendingActionsForClose.length > 0 && (
+                <span
+                  className="block rounded-lg px-3 py-2 text-[12.5px]"
+                  style={{
+                    backgroundColor: "#FFF3E0",
+                    color: "#B76E1D",
+                    border: "1px solid #EF9F2755",
+                  }}
+                >
+                  <span className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>
+                      <strong>
+                        {pendingActionsForClose.length} action
+                        {pendingActionsForClose.length > 1 ? "s" : ""} encore en cours.
+                      </strong>{" "}
+                      {pendingActionsForClose.length > 1 ? "Elles resteront" : "Elle restera"} ouverte
+                      {pendingActionsForClose.length > 1 ? "s" : ""} après la clôture. Vous pourrez
+                      {" "}les suivre depuis le registre des actions.
+                    </span>
+                  </span>
+                </span>
+              )}
+
+              {closeError && (
+                <span
+                  className="block rounded-lg px-3 py-2 text-[12.5px]"
+                  style={{
+                    backgroundColor: "#FBE9E7",
+                    color: "#C62828",
+                    border: "1px solid #C6282855",
+                  }}
+                >
+                  <span className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>{closeError}</span>
+                  </span>
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={closing}>
+              Annuler
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={closing}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmClose();
+              }}
+              style={{
+                backgroundColor: COLORS.forest,
+                color: "white",
+                opacity: closing ? 0.7 : 1,
+                cursor: closing ? "wait" : "pointer",
+              }}
+            >
+              {closing ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Clôture en cours…
+                </>
+              ) : (
+                "Clôturer la crise"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
