@@ -847,7 +847,7 @@ export const ComexTab = ({ data }: Props) => {
                 </CardTitle>
               </div>
               <Badge variant="outline" className="text-[9px] border-[#E5E2DD] text-[#172030]/40 font-sans rounded-full px-2.5 py-0.5">
-                {isLoadingMeasures ? "Chargement..." : `${couvertureMesures}% couvert`}
+                {isLoadingMeasures ? "Chargement..." : couvertureKpi.status === "empty" ? "N/A" : `${couvertureKpi.numerator} / ${couvertureKpi.denominator} — ${couvertureMesures} % couvert`}
               </Badge>
             </div>
           </CardHeader>
@@ -1030,7 +1030,7 @@ export const ComexTab = ({ data }: Props) => {
                 <>
                   <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "#B2572A" }} />
                   <span>
-                    Portefeuille à surveiller. {critiques + eleves} risques critiques/élevés identifiés. Action recommandée. Taux de couverture des mesures à {couvertureMesures}%.
+                    Portefeuille à surveiller. {critiques + eleves} risques critiques/élevés identifiés. Action recommandée. Taux de couverture des mesures : {formatKpi(couvertureKpi)}.
                     {sansResponsable > 0 && ` ${sansResponsable} risque(s) n'ont pas de pilote assigné.`}
                   </span>
                 </>
