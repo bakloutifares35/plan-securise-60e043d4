@@ -129,3 +129,28 @@ export const maturityKpi = (p: Record<keyof typeof MATURITY_WEIGHTS, Kpi>): Kpi 
   );
   return { value: v, numerator: v, denominator: 100, percentage: v, status: "ready" };
 };
+
+/** Couverture stratégies : processus existants reliés à au moins une stratégie. */
+export const strategyCoverageKpi = (associations: any[], processIds: string[]): Kpi => {
+  const valid = new Set(processIds.filter(Boolean));
+  return ratioKpi(processesWithStrategy(associations, valid).size, valid.size);
+};
+
+/** Couverture plans : processus existants couverts par un plan "Approuvé". */
+export const planCoverageKpi = (plans: any[], planProcessus: any[], processIds: string[]): Kpi => {
+  const valid = new Set(processIds.filter(Boolean));
+  return ratioKpi(processesWithApprovedPlan(plans, planProcessus, valid).size, valid.size);
+};
+
+/** Couverture risques : risques ayant au moins une mesure de traitement valide. */
+export const riskCoverageKpi = (riskIds: string[], measures: any[]): Kpi => {
+  const valid = new Set(riskIds.filter(Boolean).map(String));
+  const treated = new Set(
+    (measures || []).map((m) => (m?.risque_id != null ? String(m.risque_id) : "")).filter((id) => valid.has(id))
+  );
+  return ratioKpi(treated.size, valid.size);
+};
+
+/** Ressources utilisées à partir d'un compteur d'usage (null = inconnu, non compté comme utilisé). */
+export const usedCountKpi = (items: { used_by_count?: number | null }[]): Kpi =>
+  ratioKpi((items || []).filter((r) => (r?.used_by_count ?? 0) > 0).length, (items || []).length);

@@ -1,5 +1,6 @@
 // src/components/pca/bia/CMDBModule.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
+import { usedCountKpi, ratioKpi, formatKpi } from "@/lib/kpiService";
 import { 
   Users, Monitor, Server, Handshake, Search, Plus, 
   Pencil, Trash2, Link, ExternalLink, Filter,
@@ -2120,7 +2121,8 @@ const CMDBModule = () => {
 
   const totalResources = Object.values(resources).reduce((acc, arr) => acc + arr.length, 0);
   const totalUnused = Object.values(resources).reduce((acc, arr) => arr.filter(r => r.used_by_count === 0).length + acc, 0);
-  const totalUsed = totalResources - totalUnused;
+  const usedKpi = usedCountKpi(Object.values(resources).flat() as any[]);
+  const totalUsed = usedKpi.numerator;
   const totalLinks = Object.values(resources).reduce((acc, arr) => arr.reduce((sum, r) => sum + (r.used_by_count || 0), 0) + acc, 0);
   const unusedThreshold = totalResources > 0 ? totalUnused / totalResources : 0;
 
@@ -2707,7 +2709,7 @@ const CMDBModule = () => {
             color="#2A5141"
             onClick={() => handleKpiClick('used')}
             isActive={usageFilter === 'used'}
-            subtitle={`${totalResources > 0 ? Math.round((totalUsed / totalResources) * 100) : 0}%`}
+            subtitle={formatKpi(usedKpi)}
           />
           <KpiCard
             label="Non utilisées"
@@ -2720,7 +2722,7 @@ const CMDBModule = () => {
               value: totalUnused, 
               message: `${Math.round(unusedThreshold * 100)}% des ressources` 
             } : undefined}
-            subtitle={`${totalResources > 0 ? Math.round((totalUnused / totalResources) * 100) : 0}%`}
+            subtitle={formatKpi(ratioKpi(totalUnused, totalResources))}
           />
           <KpiCard
             label="Processus liés"

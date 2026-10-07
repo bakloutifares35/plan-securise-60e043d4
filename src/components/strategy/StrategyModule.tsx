@@ -1,5 +1,6 @@
 // src/components/strategy/StrategyModule.tsx
 import { functionsClient } from "@/integrations/supabase/functionsClient";
+import { strategyCoverageKpi } from "@/lib/kpiService";
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1797,11 +1798,12 @@ export const StrategyModule = () => {
   }, [strategyData.processus, strategyData.associations]);
 
   const stats = useMemo(() => {
+    const coverageKpi = strategyCoverageKpi(strategyData.associations, strategyData.processus.map((p: any) => p.id));
     const linkedIds = new Set(strategyData.associations.map(a => a.processus_id));
     const covered = strategyData.processus.filter(p => linkedIds.has(p.id));
     const totalProcessus = strategyData.processus.length;
-    const sansStrategie = totalProcessus - covered.length;
-    const tauxCouverture = totalProcessus > 0 ? Math.round((covered.length / totalProcessus) * 100) : 0;
+    const sansStrategie = totalProcessus - coverageKpi.numerator;
+    const tauxCouverture = coverageKpi.percentage;
 
     const linkedActionIds = new Set<string>();
     const risksByStrategy: Record<string, Set<string>> = {};

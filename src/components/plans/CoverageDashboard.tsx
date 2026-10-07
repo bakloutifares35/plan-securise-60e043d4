@@ -1,5 +1,6 @@
 // src/components/plans/CoverageDashboard.tsx
 import { useMemo } from "react";
+import { planCoverageKpi } from "@/lib/kpiService";
 import { Card, CardContent } from "@/components/ui/card";
 import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ export const CoverageDashboard = ({ data, onOpen }: { data: PlansData; onOpen: (
   }, [data]);
 
   const kpis = useMemo(() => {
+    const cov = planCoverageKpi(data.plans, data.links.processus, data.processus.map((p: any) => p.id));
     const total = rows.length;
     const couverts = rows.filter((r) => r.plans.length > 0).length;
     const approuves = rows.filter((r) => r.approuve).length;
@@ -47,7 +49,8 @@ export const CoverageDashboard = ({ data, onOpen }: { data: PlansData; onOpen: (
     return {
       total,
       couverts,
-      taux: total ? Math.round((couverts / total) * 100) : 0,
+      cov,
+      taux: cov.percentage,
       approuves,
       critiquesNonCouverts,
       obsoletes,
@@ -80,7 +83,7 @@ export const CoverageDashboard = ({ data, onOpen }: { data: PlansData; onOpen: (
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Couverture" value={`${kpis.taux}%`} sub={`${kpis.couverts}/${kpis.total} processus`} icon={ShieldCheck} tone="success" />
+        <Kpi label="Couverture" value={kpis.cov.status === "empty" ? "N/A" : `${kpis.taux}%`} sub={`${kpis.cov.numerator}/${kpis.cov.denominator} processus (plan approuvé)`} icon={ShieldCheck} tone="success" />
         <Kpi label="Plans approuvés" value={kpis.approuves} sub="processus couverts par un plan approuvé" icon={CheckCircle2} />
         <Kpi label="Critiques non couverts" value={kpis.critiquesNonCouverts} icon={ShieldAlert} tone="danger" />
         <Kpi label="Plans obsolètes" value={kpis.obsoletes} sub="révision dépassée" icon={AlertTriangle} tone="warning" />

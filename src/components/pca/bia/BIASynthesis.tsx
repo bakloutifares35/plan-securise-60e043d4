@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { ratioKpi, isCriticalLevel } from "@/lib/kpiService";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   AlertCircle, Database, Clock, Server, TrendingUp, AlertTriangle, 
@@ -520,10 +521,10 @@ const BIASynthesis: React.FC = () => {
   const stats = useMemo(() => {
     const totalProcessus = enrichedProcesses.length;
     const completeCount = enrichedProcesses.filter(isProcessComplete).length;
-    const completude = totalProcessus > 0 ? Math.round((completeCount / totalProcessus) * 100) : 0;
+    const completude = ratioKpi(completeCount, totalProcessus).percentage;
     
-    const processusCritiques = enrichedProcesses.filter(p => computeMaxScore(p.impacts) >= 4).length;
-    const pourcentageCritique = totalProcessus > 0 ? Math.round((processusCritiques / totalProcessus) * 100) : 0;
+    const processusCritiques = enrichedProcesses.filter(p => isCriticalLevel(scoreToCriticality(computeMaxScore(p.impacts)) as string)).length;
+    const pourcentageCritique = ratioKpi(processusCritiques, totalProcessus).percentage;
     
     const rtoValues = enrichedProcesses.map(p => p.rto || 0);
     const rtoLePlusCourt = rtoValues.length > 0 ? Math.min(...rtoValues) : 0;

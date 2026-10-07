@@ -39,3 +39,20 @@ describe("kpiService", () => {
     expect(maturityKpi({ bia: r, risques: r, strategies: r, plans: errorKpi(), ressources: r }).status).toBe("error");
   });
 });
+
+import { strategyCoverageKpi, planCoverageKpi, riskCoverageKpi, usedCountKpi } from "./kpiService";
+describe("page KPIs", () => {
+  it("strategy: orphans and duplicates ignored", () => {
+    const k = strategyCoverageKpi([{ processus_id: "a" }, { processus_id: "a" }, { processus_id: "zz" }], ["a", "b"]);
+    expect([k.numerator, k.denominator, k.percentage]).toEqual([1, 2, 50]);
+  });
+  it("plans: non approved ignored, empty denominator", () => {
+    const k = planCoverageKpi([{ id: "p", statut: "Brouillon" }], [{ plan_id: "p", processus_id: "a" }], ["a"]);
+    expect(k.numerator).toBe(0);
+    expect(planCoverageKpi([], [], []).status).toBe("empty");
+  });
+  it("risks and resources", () => {
+    expect(riskCoverageKpi(["1", "2"], [{ risque_id: 1 }, { risque_id: null }, { risque_id: 9 }]).percentage).toBe(50);
+    expect(usedCountKpi([{ used_by_count: null }, { used_by_count: 2 }]).numerator).toBe(1);
+  });
+});
