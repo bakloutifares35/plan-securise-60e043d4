@@ -1,4 +1,5 @@
 // src/components/pca/bia/BiaDashboard.tsx
+import { ratioKpi, loadingKpi, errorKpi, formatKpi, type Kpi } from "@/lib/kpiService";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -210,11 +211,8 @@ const calculerCouvertureBia = (
     }
   }
 
-  let pourcentage = total > 0 ? (complets / total) * 100 : 0;
-  if (pourcentage >= 99.5 && incomplets.length > 0) {
-    pourcentage = 99;
-  }
-  pourcentage = Math.round(pourcentage);
+  // Règle partagée (kpiService) : arrondi, plafond 99 % si manquants, dénominateur 0 → empty
+  const pourcentage = ratioKpi(complets, total).percentage;
 
   return {
     total,
@@ -367,6 +365,7 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
   const [historicalScores, setHistoricalScores] = useState<any[]>([]);
   const [isLoadingHistorical, setIsLoadingHistorical] = useState(true);
   const [biaCoverage, setBiaCoverage] = useState<BiaCompletionResult | null>(null);
+  const [coverageError, setCoverageError] = useState(false);
   const [isCoverageOpen, setIsCoverageOpen] = useState(false);
 
   // ============================================================
@@ -562,9 +561,11 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
         
         const coverage = calculerCouvertureBia(filteredProcesses, counts);
         setBiaCoverage(coverage);
+        setCoverageError(false);
         
       } catch (error) {
         console.error("Erreur chargement des ressources:", error);
+        setCoverageError(true);
         toast({
           title: "Erreur",
           description: "Impossible de charger les ressources",
@@ -661,6 +662,12 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
       : 0;
 
     const coverage = biaCoverage?.pourcentage || 0;
+    const coverageKpi: Kpi = isLoadingResources
+      ? loadingKpi()
+      : coverageError
+        ? errorKpi()
+        : ratioKpi(biaCoverage?.complets ?? 0, biaCoverage?.total ?? 0);
+    const coverageLabel = coverageKpi.status === "ready" ? `${coverageKpi.percentage}%` : formatKpi(coverageKpi);
 
     return { 
       totals, 
@@ -668,6 +675,8 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
       total, 
       avgScore, 
       coverage, 
+      coverageKpi,
+      coverageLabel,
       stale, 
       rtoIssues,
       noResources,
@@ -678,7 +687,7 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
       processesWithApps,
       processesWithSuppliers,
     };
-  }, [filteredProcesses, resourceCounts, biaCoverage]);
+  }, [filteredProcesses, resourceCounts, biaCoverage, isLoadingResources, coverageError]);
 
   // ============================================================
   // TOP PROCESSUS CRITIQUES
@@ -1158,7 +1167,7 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-[10px] text-[#172030]/40">Couverture BIA</span>
-                    <span className="text-[10px] font-medium text-[#2A5141]">{stats.coverage}%</span>
+                    <span className="text-[10px] font-medium text-[#2A5141]">{stats.coverageLabel}</span>
                   </div>
                 </div>
                 <div className="h-10 w-10 rounded-xl bg-[#E8F5E9] flex items-center justify-center flex-shrink-0 ml-3">
@@ -1224,8 +1233,9 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
                 <div className="flex-1 min-w-0">
                   <p className="text-[9px] font-semibold text-[#172030]/40 uppercase tracking-wider">Couverture BIA</p>
                   <p className="text-2xl font-bold text-[#172030] mt-0.5" style={{ fontFamily: "Playfair Display, serif" }}>
-                    {stats.coverage}%
+                    {stats.coverageLabel}
                   </p>
+                  {stats.coverageKpi.status === "error" && <p className="text-[10px] text-destructive">Données indisponibles</p>}
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-[10px] text-[#172030]/40">Objectif</span>
                     <span className="text-[10px] font-medium text-[#2A5141]">
