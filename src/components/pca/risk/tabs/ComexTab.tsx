@@ -1,5 +1,6 @@
 // src/components/pca/risk/tabs/ComexTab.tsx
 import { useState, useMemo, useRef, useEffect } from "react";
+import { riskCoverageKpi, formatKpi } from "@/lib/kpiService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -362,7 +363,8 @@ export const ComexTab = ({ data }: Props) => {
     return filteredRisks.filter(r => riskIdsWithMeasures.has(String(r.id))).length;
   }, [filteredRisks, riskIdsWithMeasures]);
 
-  const couvertureMesures = total > 0 ? Math.round((withMesures / total) * 100) : 0;
+  const couvertureKpi = riskCoverageKpi(filteredRisks.map((r) => String(r.id)), measures);
+  const couvertureMesures = couvertureKpi.percentage;
 
   const sansResponsable = filteredRisks.filter(r => !r.owner || r.owner.trim() === "").length;
 
@@ -573,7 +575,7 @@ export const ComexTab = ({ data }: Props) => {
         <KpiCard
           label="Risques critiques"
           value={critiques + eleves}
-          subValue={`${couvertureMesures}% de couverture`}
+          subValue={`${formatKpi(couvertureKpi)} de couverture`}
           icon={AlertTriangle}
           color={(critiques + eleves) > 0 ? "red" : "green"}
           badge={{
