@@ -23,7 +23,9 @@ import {
   Database,
   Layers,
   ShieldAlert,
+  LogOut,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { useState, useEffect } from "react";
@@ -357,6 +359,7 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
       <div style={{ borderTop: "1px solid rgba(248,246,242,0.08)" }}>
         <RoleSwitcher />
       </div>
+      <SignOutButton />
       <div
         className="px-4 py-3 text-center"
         style={{
@@ -371,3 +374,17 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     </aside>
   );
 };
+function SignOutButton() {
+  const { signOut, user } = useAuth();
+  const navigate = useNavigate();
+  return (
+    <div className="px-4 py-3" style={{ borderTop: "1px solid rgba(248,246,242,0.08)" }}>
+      {user?.email && <p className="truncate text-[11px] mb-2" style={{ color: "rgba(248,246,242,0.6)" }}>{user.email}</p>}
+      <button type="button" onClick={async () => { await signOut(); navigate("/login", { replace: true }); }}
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        style={{ color: "rgba(248,246,242,0.8)" }}>
+        <LogOut className="h-3.5 w-3.5" aria-hidden /> Se déconnecter
+      </button>
+    </div>
+  );
+}
