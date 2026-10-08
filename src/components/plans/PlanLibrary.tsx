@@ -1,5 +1,6 @@
 // src/components/plans/PlanLibrary.tsx
 import { useMemo, useState } from "react";
+import { useRole } from "@/contexts/RoleContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,6 +127,7 @@ const PlanCard = ({
   onDuplicate: (p: Plan) => void;
   onDelete: (id: string) => void;
 }) => {
+  const { can } = useRole();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const statut = effectiveStatut(plan);
@@ -196,14 +198,14 @@ const PlanCard = ({
                   >
                     <Eye className="h-3.5 w-3.5" /> Ouvrir
                   </button>
-                  <button
+                  {can("write") && <button
                     type="button"
                     className="w-full flex items-center gap-2 px-3 py-2 text-[11.5px] text-[#172030]/70 hover:bg-[#F8F6F2] transition-colors cursor-pointer"
                     onClick={() => { setMenuOpen(false); onDuplicate(plan); }}
                   >
                     <Copy className="h-3.5 w-3.5" /> Dupliquer
-                  </button>
-                  <div className="h-px bg-[#E8E4DC]" />
+                  </button>}
+                  {can("admin") && <><div className="h-px bg-[#E8E4DC]" />
                   <button
                     type="button"
                     className="w-full flex items-center gap-2 px-3 py-2 text-[11.5px] text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
@@ -213,7 +215,7 @@ const PlanCard = ({
                     }}
                   >
                     <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                  </button>
+                  </button></>}
                 </div>
               )}
             </div>
@@ -257,6 +259,7 @@ const PlanCard = ({
 // ---------------- Bibliothèque de plans ----------------
 
 export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: string) => void }) => {
+  const { can } = useRole();
   const { plans, createPlan, deletePlan, duplicatePlan } = data;
   const [q, setQ] = useState("");
   const [fType, setFType] = useState("all");
@@ -328,9 +331,9 @@ export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: st
             {PLAN_STATUTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button onClick={() => setOpenCreate(true)} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
+        {can("write") && <Button onClick={() => setOpenCreate(true)} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
           <Plus className="h-4 w-4 mr-2" /> Nouveau plan
-        </Button>
+        </Button>}
       </div>
 
       {/* Grille de cards */}
@@ -346,12 +349,12 @@ export const PlanLibrary = ({ data, onOpen }: { data: PlansData; onOpen: (id: st
             <p className="text-sm text-[#172030]/50 mt-1.5 max-w-md mx-auto">
               Créez votre premier plan : les 9 sections types seront générées automatiquement.
             </p>
-            <Button
+            {can("write") && <Button
               onClick={() => setOpenCreate(true)}
               className="mt-5 bg-[#2A5141] hover:bg-[#20402F] text-white"
             >
               <Plus className="h-4 w-4 mr-2" /> Nouveau plan
-            </Button>
+            </Button>}
           </CardContent>
         </Card>
       ) : (

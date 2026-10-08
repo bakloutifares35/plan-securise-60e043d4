@@ -8,6 +8,7 @@ import { AuthLoading } from "@/components/auth/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -137,7 +138,7 @@ export default function Login() {
       </form>
 
       <p className="mt-6 text-center text-sm text-[#3B4454]">
-        Pas encore de compte ?<br />Contactez l’administrateur de votre organisation.
+        Pas encore de compte ?<br /><Link to="/signup" className="text-[#2A5141] underline-offset-2 hover:underline">Créer un compte</Link>
       </p>
     </AuthLayout>
   );

@@ -27,9 +27,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import { RoleSwitcher } from "./RoleSwitcher";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useRole } from "@/contexts/RoleContext";
 
 export type Section =
   | "dashboard" 
@@ -111,6 +111,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
 export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: Section) => void }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { role, activeOrganizationId } = useRole();
   const [expandedItems, setExpandedItems] = useState<string[]>(['bia']);
 
   const getActiveFromPath = (path: string): Section => {
@@ -258,6 +259,17 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
+        {activeOrganizationId && (
+          <p className="break-all rounded-md bg-white/5 px-3 py-2 text-[10px] text-white/60">
+            Organisation active : {activeOrganizationId}
+          </p>
+        )}
+        {role === "admin_pca" && (
+          <button type="button" onClick={() => navigate('/admin/users')}
+            className="w-full rounded-md border border-white/15 px-3 py-2 text-left text-xs text-white hover:bg-white/10">
+            Administration des utilisateurs
+          </button>
+        )}
         {groups.map((g) => (
           <div key={g.label}>
             <p
@@ -356,10 +368,7 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         ))}
       </nav>
 
-      <div style={{ borderTop: "1px solid rgba(248,246,242,0.08)" }}>
-        <RoleSwitcher />
-      </div>
-      <SignOutButton />
+<SignOutButton />
       <div
         className="px-4 py-3 text-center"
         style={{

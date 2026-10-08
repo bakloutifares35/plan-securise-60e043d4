@@ -24,6 +24,7 @@ import {
   effectiveStatut, fmtDate,
 } from "./types";
 import { computeMaxScore, scoreToCriticality, type Criticality } from "@/data/bia";
+import { useRole } from "@/contexts/RoleContext";
 
 const SECTION_STATUTS = ["À rédiger", "En cours", "Rédigé"];
 
@@ -118,6 +119,7 @@ export const PlanEditor = ({
   data: PlansData;
   onBack: () => void;
 }) => {
+  const { can } = useRole();
   const plan = data.plans.find((p) => p.id === planId);
   const [sections, setSections] = useState<PlanSection[]>([]);
   const [procedures, setProcedures] = useState<PlanProcedure[]>([]);
@@ -429,7 +431,7 @@ export const PlanEditor = ({
           <Button variant="outline" onClick={exportMarkdown} className="border-[#E8E4DC]">
             <FileDown className="h-4 w-4 mr-1" /> Exporter
           </Button>
-          <Button onClick={saveMeta} disabled={saving} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
+          <Button onClick={saveMeta} disabled={saving || !can("write")} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
             {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />} Enregistrer
           </Button>
         </div>
@@ -922,7 +924,7 @@ export const PlanEditor = ({
                 <p className="text-sm font-semibold text-[#172030] flex items-center gap-2">
                   <History className="h-4 w-4 text-[#2A5141]" /> Historique des versions
                 </p>
-                <Button size="sm" onClick={createVersion} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
+                <Button size="sm" onClick={createVersion} disabled={!can("write")} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
                   Archiver la version {plan.numero_version ?? 1}
                 </Button>
               </div>
@@ -997,7 +999,7 @@ export const PlanEditor = ({
                 <Input type="date" className="mt-1 border-[#E8E4DC]" value={meta.date_revision_suivante || ""} onChange={(e) => setMeta({ ...meta, date_revision_suivante: e.target.value })} />
               </div>
               <div className="md:col-span-2">
-                <Button onClick={saveMeta} disabled={saving} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
+                <Button onClick={saveMeta} disabled={saving || !can("write")} className="bg-[#2A5141] hover:bg-[#20402F] text-white">
                   <Save className="h-4 w-4 mr-1" /> Enregistrer les informations
                 </Button>
               </div>
@@ -1021,6 +1023,7 @@ const WorkflowPanel = ({
   workflow: WorkflowEntry[];
   onAdvance: (etape: string, statut: "Validé" | "Refusé", validateur: string, commentaire: string) => Promise<void>;
 }) => {
+  const { can } = useRole();
   const [validateur, setValidateur] = useState("");
   const [commentaire, setCommentaire] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1115,10 +1118,10 @@ const WorkflowPanel = ({
                 <Textarea className="mt-1 border-[#E8E4DC]" value={commentaire} onChange={(e) => setCommentaire(e.target.value)} placeholder="Observations…" />
               </div>
               <div className="flex gap-2">
-                <Button disabled={busy} onClick={() => act("Validé")} className="flex-1 bg-[#2A5141] hover:bg-[#20402F] text-white">
+                <Button disabled={busy || !can("write")} onClick={() => act("Validé")} className="flex-1 bg-[#2A5141] hover:bg-[#20402F] text-white">
                   Valider
                 </Button>
-                <Button disabled={busy} variant="outline" onClick={() => act("Refusé")} className="border-rose-200 text-rose-700 hover:bg-rose-50">
+                <Button disabled={busy || !can("write")} variant="outline" onClick={() => act("Refusé")} className="border-rose-200 text-rose-700 hover:bg-rose-50">
                   Refuser
                 </Button>
               </div>

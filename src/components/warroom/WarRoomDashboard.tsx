@@ -1,6 +1,7 @@
 // src/components/warroom/WarRoomDashboard.tsx
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useRole } from "@/contexts/RoleContext";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -442,6 +443,7 @@ export const WarRoomDashboard = ({
   onOpenIncident: (id: string) => void;
   onDeclare: () => void;
 }) => {
+  const { can } = useRole();
   const [tab, setTab] = useState<"active" | "closed">("active");
   const [severityFilter, setSeverityFilter] = useState<"all" | Severite>("all");
   const [search, setSearch] = useState("");
@@ -576,14 +578,14 @@ export const WarRoomDashboard = ({
         </div>
 
         {/* Bouton principal en vert forêt (couleur signature) */}
-        <Button
+        {can("write") && <Button
           onClick={onDeclare}
           className="h-11 px-5 font-semibold text-white shadow-sm hover:opacity-95 transition-opacity"
           style={{ backgroundColor: COLORS.forest }}
         >
           <Plus className="h-4 w-4 mr-2" />
           Déclarer un incident
-        </Button>
+        </Button>}
       </div>
 
       {/* ===== RADAR + KPI ===== */}

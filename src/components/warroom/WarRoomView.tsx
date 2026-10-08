@@ -31,6 +31,7 @@ import {
   type Severite, type EntryType, type CommType, type CellRole,
 } from "./warroomHelpers";
 import { useAiSuggestions, type AiProcessContext } from "./AiCrisisRecommendations";
+import { useRole } from "@/contexts/RoleContext";
 
 // ============================================================
 // TIMEOUT APPLICATIF — évite les attentes infinies sur Supabase
@@ -701,6 +702,7 @@ const PrintReport = ({
   communications: IncidentCommunication[];
   retex: Retex | null;
 }) => {
+  const { can } = useRole();
   const sev = SEV_PASTEL[incident.niveau_severite];
 
   return (
@@ -899,6 +901,7 @@ export const WarRoomView = ({
   updateIncident: (id: string, p: Partial<Incident>) => Promise<boolean>;
   reload: () => Promise<void>;
 }) => {
+  const { can } = useRole();
   const sev = SEV_PASTEL[incident.niveau_severite];
   const isClosed = incident.statut === "Clôturé";
   const hasRetex = !!retex?.id && !!retex.resume?.trim();
@@ -1628,7 +1631,7 @@ export const WarRoomView = ({
                   <div className="flex justify-end">
                     <Button
                       onClick={submitMc}
-                      disabled={!mcContenu.trim() || mcSubmitting}
+                      disabled={!can("write") || !mcContenu.trim() || mcSubmitting}
                       className="h-9 transition-all duration-200 hover:shadow-md cursor-pointer"
                       style={{ backgroundColor: COLORS.forest, color: "white" }}
                     >
@@ -1789,7 +1792,7 @@ export const WarRoomView = ({
                       <div className="mt-2">
                         <ActionStatusSegments
                           current={a.statut}
-                          disabled={isClosed}
+                          disabled={isClosed || !can("write")}
                           onChange={(s) => setActionStatutDirect(a, s)}
                         />
                       </div>
@@ -1847,7 +1850,7 @@ export const WarRoomView = ({
                     </div>
                     <Button
                       size="sm"
-                      disabled={isClosed}
+                      disabled={isClosed || !can("write")}
                       onClick={() => handleAddAiAction(s)}
                       className={cn(
                         "h-7 px-2.5 text-[11px] font-semibold flex-shrink-0 transition-all duration-200",
@@ -1972,7 +1975,7 @@ export const WarRoomView = ({
                     </div>
                     <Button
                       size="sm"
-                      disabled={isClosed}
+                      disabled={isClosed || !can("write")}
                       onClick={() => handleAddAiPlan(s)}
                       className={cn(
                         "h-7 px-2.5 text-[11px] font-semibold flex-shrink-0 transition-all duration-200",
@@ -2082,7 +2085,7 @@ export const WarRoomView = ({
                     <p className="text-[12px] font-medium leading-snug truncate" style={{ color: COLORS.navy }}>
                       {c.objet}
                     </p>
-                    {!isClosed && (c.statut === "Brouillon" || c.statut === "Validé") && (
+                    {!isClosed && can("write") && (c.statut === "Brouillon" || c.statut === "Validé") && (
                       <button
                         onClick={() => setCommunicationStatut(c, c.statut === "Brouillon" ? "Validé" : "Envoyé")}
                         className="text-[10px] mt-1 font-medium hover:underline transition-colors duration-200 cursor-pointer"
@@ -2249,7 +2252,7 @@ export const WarRoomView = ({
               </div>
             </div>
             <div className="flex gap-2 flex-shrink-0">
-              {!isClosed && (
+              {!isClosed && can("write") && (
                 <Button
                   variant="outline"
                   onClick={onOpenRetex}
@@ -2262,7 +2265,7 @@ export const WarRoomView = ({
               )}
               <Button
                 onClick={requestClose}
-                disabled={!hasRetex || isClosed}
+                disabled={!can("write") || !hasRetex || isClosed}
                 title={!hasRetex ? "RETEX obligatoire avant clôture" : undefined}
                 className="font-medium h-8 transition-all duration-200 hover:shadow-md"
                 style={{
@@ -2317,7 +2320,7 @@ export const WarRoomView = ({
             <Button variant="outline" onClick={() => setActionDialog(false)}>Annuler</Button>
             <Button
               onClick={submitAction}
-              disabled={!newAction.description.trim() || actionSubmitting}
+              disabled={!can("write") || !newAction.description.trim() || actionSubmitting}
               style={{ backgroundColor: COLORS.forest, color: "white" }}
             >
               Créer
@@ -2363,7 +2366,7 @@ export const WarRoomView = ({
             <Button variant="outline" onClick={() => setPlanDialog(false)}>Annuler</Button>
             <Button
               onClick={submitPlan}
-              disabled={!newPlan.plan_id && !newPlan.libelle.trim()}
+              disabled={!can("write") || (!newPlan.plan_id && !newPlan.libelle.trim())}
               style={{ backgroundColor: COLORS.forest, color: "white" }}
             >
               Activer
@@ -2426,7 +2429,7 @@ export const WarRoomView = ({
             <Button variant="outline" onClick={() => setCommDialog(false)}>Annuler</Button>
             <Button
               onClick={submitComm}
-              disabled={!newComm.objet.trim() || !newComm.message.trim()}
+              disabled={!can("write") || !newComm.objet.trim() || !newComm.message.trim()}
               style={{ backgroundColor: COLORS.forest, color: "white" }}
             >
               Créer le brouillon

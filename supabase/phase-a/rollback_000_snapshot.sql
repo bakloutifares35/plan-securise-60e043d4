@@ -1,0 +1,4 @@
+-- Le snapshot 000 est un archivage de métadonnées nécessaire aux rollbacks 002/003.
+-- Il est volontairement conservé : ne pas supprimer l'historique de sauvegarde.
+-- Aucun changement à annuler. Après validation définitive, l'archivage peut rester
+-- dans le projet de TEST hors schéma exposé; aucun script de suppression n'est fourni.

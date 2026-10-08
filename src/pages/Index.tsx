@@ -15,12 +15,12 @@ import BIARecoverySequence from "@/components/pca/bia/BIARecoverySequence";
 import CMDBModule from "@/components/pca/bia/CMDBModule";
 import StrategyModule from "@/components/strategy/StrategyModule";
 import ExercicesModule from "@/components/exercices/ExercicesModule";
-import WarRoomModule from "@/components/warroom/WarRoomModule"; // ✅ AJOUT
+import WarRoomModule from "@/components/warroom/WarRoomModule"; // âœ… AJOUT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
-import { RoleProvider } from "@/contexts/RoleContext";
 import { BiaProvider } from "@/contexts/BiaContext";
 import { RiskProvider } from "@/contexts/RiskContext";
+import { StrategyProvider } from "@/contexts/StrategyContext";
 
 const Index = () => {
   const location = useLocation();
@@ -50,7 +50,7 @@ const Index = () => {
       setSection("plan");
     } else if (path === "/exercices") {
       setSection("exercices");
-    } else if (path === "/warroom") {   // ✅ AJOUT
+    } else if (path === "/warroom") {   // âœ… AJOUT
       setSection("warroom");
     }
   }, [location]);
@@ -68,10 +68,10 @@ const Index = () => {
   };
 
   return (
-    <RoleProvider>
-      <GovernanceProvider>
+    <GovernanceProvider>
         <BiaProvider>
           <RiskProvider>
+            <StrategyProvider>
             <div className="min-h-screen flex bg-[image:var(--gradient-subtle)]">
               <Sidebar active={section} onChange={setSection} />
               <main className="flex-1 min-w-0">
@@ -83,15 +83,15 @@ const Index = () => {
                       <SelectItem value="ai">BCM AI Consultant</SelectItem>
                       <SelectItem value="governance">Gouvernance PCA</SelectItem>
                       <SelectItem value="bia">Business Impact Analysis</SelectItem>
-                      <SelectItem value="cmdb">Référentiel des ressources</SelectItem>
+                      <SelectItem value="cmdb">RÃ©fÃ©rentiel des ressources</SelectItem>
                       <SelectItem value="risk">Analyse des Risques</SelectItem>
                       <SelectItem value="form">Identification des risques</SelectItem>
                       <SelectItem value="plan">Gestion des plans</SelectItem>
-                      <SelectItem value="warroom">War Room</SelectItem> {/* ✅ AJOUT */}
+                      <SelectItem value="warroom">War Room</SelectItem> {/* âœ… AJOUT */}
                       <SelectItem value="exercices">Exercices PCA</SelectItem>
                       <SelectItem value="benchmark">Benchmark</SelectItem>
-                      <SelectItem value="tenacia">🎤 Tenacia Voice AI</SelectItem>
-                      <SelectItem value="strategies">Stratégies de continuité</SelectItem>
+                      <SelectItem value="tenacia">ðŸŽ¤ Tenacia Voice AI</SelectItem>
+                      <SelectItem value="strategies">StratÃ©gies de continuitÃ©</SelectItem>
                     </SelectContent>
                   </Select>
                 </header>
@@ -114,14 +114,14 @@ const Index = () => {
                   {section === "tenacia" && <TenaciaVoice />}
                   {section === "strategies" && <StrategyModule />}
                   {section === "warroom" && <WarRoomModule />}
-                  {section === "exercices" && <ExercicesModule />} {/* ✅ AJOUT */}
+                  {section === "exercices" && <ExercicesModule />} {/* âœ… AJOUT */}
                 </div>
               </main>
             </div>
+            </StrategyProvider>
           </RiskProvider>
         </BiaProvider>
       </GovernanceProvider>
-    </RoleProvider>
   );
 };
 

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/resillia/client";
+import { useRole } from "@/contexts/RoleContext";
 import { useStrategyData } from "./useStrategyData";
 import { CatalogueTab } from "./tabs/CatalogueTab";
 import { computeMaxScore, scoreToCriticality } from "@/data/bia";
@@ -878,6 +879,7 @@ const StrategyExplorer = ({
   statutFilter: string;
   setStatutFilter: (value: string) => void;
 }) => {
+  const { can } = useRole();
   const getProcessCriticality = (p: any) => {
     if (!p?.impacts) return "Non défini";
     return scoreToCriticality(computeMaxScore(p.impacts));
@@ -1059,11 +1061,11 @@ const StrategyExplorer = ({
                               title="Comparer">
                               <ArrowLeftRight className="h-3.5 w-3.5" />
                             </button>
-                            <button onClick={() => onEdit(a.id)}
+                            <button disabled={!can("write")} onClick={() => onEdit(a.id)}
                               className="p-1.5 text-[#172030]/20 hover:text-[#172030] rounded transition-colors hover:bg-[#F5F3EF]">
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
-                            <button onClick={() => onDelete(a.id, s?.nom || "cette stratégie")}
+                            <button disabled={!can("admin")} onClick={() => onDelete(a.id, s?.nom || "cette stratégie")}
                               className="p-1.5 text-[#172030]/20 hover:text-rose-600 rounded transition-colors hover:bg-rose-50">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1123,10 +1125,10 @@ const StrategyExplorer = ({
                       <button onClick={() => onCompare(a.processus_id, p?.name || "—")} className="p-0.5 text-[#172030]/20 hover:text-[#2A5141]">
                         <ArrowLeftRight className="h-3 w-3" />
                       </button>
-                      <button onClick={() => onEdit(a.id)} className="p-0.5 text-[#172030]/20 hover:text-[#172030]">
+                      <button disabled={!can("write")} onClick={() => onEdit(a.id)} className="p-0.5 text-[#172030]/20 hover:text-[#172030]">
                         <Pencil className="h-3 w-3" />
                       </button>
-                      <button onClick={() => onDelete(a.id, s?.nom || "cette stratégie")} className="p-0.5 text-[#172030]/20 hover:text-rose-600">
+                      <button disabled={!can("admin")} onClick={() => onDelete(a.id, s?.nom || "cette stratégie")} className="p-0.5 text-[#172030]/20 hover:text-rose-600">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
@@ -1145,6 +1147,7 @@ const StrategyExplorer = ({
 // GAPS TAB (inchangé)
 // ============================================================
 const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (processId: string) => void }) => {
+  const { can } = useRole();
   const { processus, associations } = data;
   const gaps = useMemo(() => {
     const linkedIds = new Set(associations.map((a: any) => a.processus_id));
@@ -1206,7 +1209,7 @@ const GapsTab = ({ data, onDefineStrategy }: { data: any, onDefineStrategy: (pro
                   <td className="p-3 font-mono text-sm text-[#172030]/60">{p.rto_hours || "—"}h</td>
                   <td className="p-3 text-right">
                     <Button size="sm" className="bg-[#172030] hover:bg-[#2A2A2A] text-white rounded-lg h-8 text-sm px-4"
-                      onClick={() => onDefineStrategy(p.id)}>
+                      disabled={!can("write")} onClick={() => onDefineStrategy(p.id)}>
                       <Plus className="h-3.5 w-3.5 mr-1.5" /> Définir
                     </Button>
                   </td>
@@ -1759,6 +1762,7 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
 // MODULE PRINCIPAL
 // ============================================================
 export const StrategyModule = () => {
+  const { can } = useRole();
   const [currentView, setCurrentView] = useState<AppView>("overview");
   const [wizardProcessId, setWizardProcessId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1923,7 +1927,7 @@ export const StrategyModule = () => {
             </h1>
             <p className="text-sm text-[#172030]/50">Pilotez la couverture des processus critiques et définissez les réponses adaptées.</p>
           </div>
-          {currentView !== "create" && (
+          {currentView !== "create" && can("write") && (
             <Button onClick={() => openWizard()} className="bg-[#172030] hover:bg-[#2A2A2A] text-white shadow-sm rounded-lg h-9 px-4 text-sm">
               <Plus className="h-3.5 w-3.5 mr-1.5" /> Nouvelle stratégie
             </Button>

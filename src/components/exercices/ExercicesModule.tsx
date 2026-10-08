@@ -14,6 +14,7 @@ import {
   lastTestedMap, monthsSince, fmtDate,
   TestPca, TestType, TestStatut,
 } from "./useExercices";
+import { useRole } from "@/contexts/RoleContext";
 import { TestWizard } from "./TestWizard";
 import { TestRunner } from "./TestRunner";
 
@@ -150,6 +151,7 @@ const TlptTimeline = ({ due, last }: { due: Date | null; last: Date | null }) =>
 export default function ExercicesModule() {
   // ⚠️ TOUS LES HOOKS EN PREMIER (avant tout early return)
   const data = useExercices();
+  const { can } = useRole();
   const [tab, setTab] = useState<Tab>("overview");
   const [wizard, setWizard] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -316,12 +318,12 @@ export default function ExercicesModule() {
               Planifiez, exécutez et capitalisez vos tests de continuité. Chaque objectif non atteint déclenche une action corrective traçable.
             </p>
           </div>
-          <Button
+          {can("write") && <Button
             className="group bg-[#2A5141] hover:bg-[#21402F] text-white shadow-[0_4px_16px_rgba(42,81,65,0.4)] h-11 px-5"
             onClick={() => setWizard(true)} disabled={!data.schemaReady}>
             <Plus className="h-4 w-4 mr-1.5 transition-transform duration-300 group-hover:rotate-90" />
             Planifier un exercice
-          </Button>
+          </Button>}
         </div>
 
         {/* barre de micro-métriques */}
@@ -432,7 +434,7 @@ export default function ExercicesModule() {
                       <div className="px-5 pb-6 pt-2 text-center">
                         <Sparkles className="h-6 w-6 text-[#2A5141]/40 mx-auto" />
                         <p className="text-sm text-[#3B4454]/60 mt-2">Aucun exercice planifié.</p>
-                        <Button variant="link" className="text-[#2A5141]" onClick={() => setWizard(true)}>Planifier le premier →</Button>
+                        {can("write") && <Button variant="link" className="text-[#2A5141]" onClick={() => setWizard(true)}>Planifier le premier →</Button>}
                       </div>
                     )}
                   </div>
@@ -461,10 +463,10 @@ export default function ExercicesModule() {
                                 </span>
                               </div>
                             </div>
-                            <button onClick={() => setWizard(true)}
+                            {can("write") && <button onClick={() => setWizard(true)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-medium text-[#2A5141] whitespace-nowrap hover:underline">
                               Planifier →
-                            </button>
+                            </button>}
                           </div>
                         </div>
                       );

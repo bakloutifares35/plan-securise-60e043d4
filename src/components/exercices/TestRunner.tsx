@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/db";
 import { ExData, TestPca, useTestDetail, TYPE_LABELS, STATUT_LABELS, CRIT_COLORS, fmtDate } from "./useExercices";
+import { useRole } from "@/contexts/RoleContext";
 
 const card = "bg-white rounded-xl shadow-[0_1px_3px_rgba(23,32,48,0.08)] p-5";
 const h = "font-['Playfair_Display'] text-lg text-[#172030] mb-3";
 
 export const TestRunner = ({ test, data, onBack }: { test: TestPca; data: ExData; onBack: () => void }) => {
   const { detail, reload } = useTestDetail(test.id);
+  const { can } = useRole();
   const [now, setNow] = useState(Date.now());
   const [rto, setRto] = useState<string>("");
   const [synthese, setSynthese] = useState("");
@@ -113,7 +115,7 @@ export const TestRunner = ({ test, data, onBack }: { test: TestPca; data: ExData
             <p className="font-mono text-3xl tabular-nums flex items-center gap-2"><Timer className="h-5 w-5 text-white/50" />{hms}</p>
           </div>
           {test.statut === "PLANIFIE" && (
-            <Button className="bg-[#2A5141] hover:bg-[#21402F] no-print" onClick={start}><Play className="h-4 w-4 mr-1" />Démarrer (T0)</Button>
+            <Button className="bg-[#2A5141] hover:bg-[#21402F] no-print" disabled={!can("write")} onClick={start}><Play className="h-4 w-4 mr-1" />Démarrer (T0)</Button>
           )}
           {closed && <span className="px-3 py-1 rounded-full bg-white/10 text-sm">{STATUT_LABELS[test.statut]}</span>}
         </div>
@@ -137,7 +139,7 @@ export const TestRunner = ({ test, data, onBack }: { test: TestPca; data: ExData
                       {inj.revele && <p className="text-sm text-[#3B4454]">{inj.description}</p>}
                     </div>
                     {!inj.revele && running && (
-                      <Button size="sm" variant="ghost" className="no-print" onClick={() => reveal(inj.id)}><Eye className="h-4 w-4 mr-1" />Révéler</Button>
+                      <Button size="sm" variant="ghost" className="no-print" disabled={!can("write")} onClick={() => reveal(inj.id)}><Eye className="h-4 w-4 mr-1" />Révéler</Button>
                     )}
                   </div>
                 </li>
@@ -155,13 +157,13 @@ export const TestRunner = ({ test, data, onBack }: { test: TestPca; data: ExData
                 <p className="text-sm text-[#172030]"><span className="font-semibold text-[#2A5141] mr-1">O{k + 1}</span>{o.libelle}</p>
                 <div className="flex gap-2 mt-1 no-print">
                   {[true, false].map((v) => (
-                    <button key={String(v)} disabled={closed || test.statut === "PLANIFIE"} onClick={() => setObj(o.id, { atteint: v })}
+                    <button key={String(v)} disabled={!can("write") || closed || test.statut === "PLANIFIE"} onClick={() => setObj(o.id, { atteint: v })}
                       className={`text-xs px-3 py-1 rounded-full transition disabled:opacity-40 ${o.atteint === v ? (v ? "bg-[#E8F5E9] text-[#2E7D32] font-semibold" : "bg-[#FFEBEE] text-[#C62828] font-semibold") : "bg-[#F8F6F2] text-[#3B4454]"}`}>
                       {v ? "Atteint" : "Non atteint"}
                     </button>
                   ))}
                 </div>
-                <Input className="mt-1 h-8 text-sm" placeholder="Observation" defaultValue={o.observation ?? ""} disabled={closed}
+                <Input className="mt-1 h-8 text-sm" placeholder="Observation" defaultValue={o.observation ?? ""} disabled={!can("write") || closed}
                   onBlur={(e) => e.target.value !== (o.observation ?? "") && setObj(o.id, { observation: e.target.value })} />
               </div>
             ))}
@@ -183,11 +185,11 @@ export const TestRunner = ({ test, data, onBack }: { test: TestPca; data: ExData
           ))}
         </div>
         <div className="grid sm:grid-cols-3 gap-3 mt-4">
-          <Input type="number" step="0.5" placeholder="RTO réel (heures)" value={rto} onChange={(e) => setRto(e.target.value)} disabled={closed} />
+          <Input type="number" step="0.5" placeholder="RTO réel (heures)" value={rto} onChange={(e) => setRto(e.target.value)} disabled={!can("write") || closed} />
           <Textarea className="sm:col-span-2" placeholder="Synthèse" value={synthese} onChange={(e) => setSynthese(e.target.value)} disabled={closed} />
           <Textarea className="sm:col-span-3" placeholder="Leçons apprises" value={lecons} onChange={(e) => setLecons(e.target.value)} disabled={closed} />
         </div>
-        {!closed && <Button variant="outline" className="mt-3 no-print" onClick={saveResult}>Enregistrer les résultats</Button>}
+        {!closed && can("write") && <Button variant="outline" className="mt-3 no-print" onClick={saveResult}>Enregistrer les résultats</Button>}
       </section>
 
       <section className={card}>
@@ -198,7 +200,7 @@ export const TestRunner = ({ test, data, onBack }: { test: TestPca; data: ExData
               style={{ borderColor: a.priorite === "HAUTE" ? "#C62828" : a.priorite === "MOYENNE" ? "#EF6C00" : "#2E7D32" }}>
               <span className="flex-1 min-w-[200px] text-[#172030]">{a.description}</span>
               <span className="text-[#3B4454]/70">{a.responsable ?? "—"} · {fmtDate(a.echeance)}</span>
-              <Select value={a.statut} onValueChange={(v) => setActionStatut(a.id, v)}>
+              <Select value={a.statut} onValueChange={(v) => setActionStatut(a.id, v)} disabled={!can("write")}>
                 <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="A_FAIRE">À faire</SelectItem><SelectItem value="EN_COURS">En cours</SelectItem><SelectItem value="FAIT">Fait</SelectItem></SelectContent>
               </Select>
@@ -220,14 +222,14 @@ export const TestRunner = ({ test, data, onBack }: { test: TestPca; data: ExData
               {detail.objectifs.map((o, k) => <SelectItem key={o.id} value={o.id}>O{k + 1}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={addAction}><Plus className="h-4 w-4" /></Button>
+          <Button variant="outline" onClick={addAction} disabled={!can("write")}><Plus className="h-4 w-4" /></Button>
         </div>
       </section>
 
       <div className="flex flex-wrap justify-end gap-3 no-print">
         <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4 mr-1" />Synthèse imprimable</Button>
         {running && (
-          <Button className="bg-[#2A5141] hover:bg-[#21402F]" disabled={!!closeBlock} onClick={close} title={closeBlock ?? ""}>
+          <Button className="bg-[#2A5141] hover:bg-[#21402F]" disabled={!!closeBlock || !can("write")} onClick={close} title={closeBlock ?? ""}>
             {closeBlock ? <><Lock className="h-4 w-4 mr-1" />{closeBlock}</> : "Clôturer le test"}
           </Button>
         )}

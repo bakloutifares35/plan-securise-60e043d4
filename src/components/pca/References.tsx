@@ -108,8 +108,8 @@ export const References = () => {
                 <p className="text-sm text-muted-foreground">{ROLE_DESCRIPTIONS[r]}</p>
                 <ul className="mt-3 text-xs space-y-1">
                   <li>✓ Lecture</li>
-                  <li className={r === "admin" || r === "referent" ? "" : "text-muted-foreground line-through"}>{r === "admin" || r === "referent" ? "✓" : "✗"} Écriture</li>
-                  <li className={r === "admin" ? "" : "text-muted-foreground line-through"}>{r === "admin" ? "✓" : "✗"} Administration</li>
+                  <li className={r === "admin_pca" || r === "referent_entite" ? "" : "text-muted-foreground line-through"}>{r === "admin_pca" || r === "referent_entite" ? "✓" : "✗"} Écriture</li>
+                  <li className={r === "admin_pca" ? "" : "text-muted-foreground line-through"}>{r === "admin_pca" ? "✓" : "✗"} Administration</li>
                 </ul>
               </div>
             ))}
