@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Check, ClipboardCheck, Shield, Target, TriangleA
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ResilienceShield } from "@/components/auth/ResilienceShield";
+import { ResilliaLogo } from "@/components/brand/ResilliaLogo";
 import { completeOnboarding, skipOnboardingForSession } from "@/components/auth/onboardingState";
 import { useAuth } from "@/contexts/AuthContext";
 import { ROLE_LABELS, type Role, useRole } from "@/contexts/RoleContext";
@@ -58,7 +59,7 @@ export default function Onboarding() {
     <main className="min-h-screen bg-[radial-gradient(ellipse_at_top_left,_rgba(143,191,168,0.16),_transparent_42%),linear-gradient(180deg,#F8F6F2,#F2F0EA)] px-4 py-6 sm:px-8 md:py-10">
       <div className="mx-auto max-w-5xl">
         <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-[#172030]"><Shield className="h-6 w-6 text-[#2A5141]" /><span className="font-display text-xl">Resillia</span></div>
+          <ResilliaLogo appearance="light" className="h-9 w-[9.5rem]" />
           <Button variant="ghost" onClick={skip} className="text-sm">Passer pour l’instant</Button>
         </header>
 

@@ -1,6 +1,6 @@
 // src/components/plans/CoverageDashboard.tsx
 import { useMemo } from "react";
-import { planCoverageKpi } from "@/lib/kpiService";
+import { isCriticalLevel, planCoverageKpi } from "@/lib/kpiService";
 import { Card, CardContent } from "@/components/ui/card";
 import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,16 +31,17 @@ export const CoverageDashboard = ({ data, onOpen }: { data: PlansData; onOpen: (
         const planIds = byProcess.get(p.id) ?? [];
         const plans = planIds.map((id) => data.plans.find((x) => x.id === id)).filter(Boolean) as any[];
         const level = (p.criticality_level as string) || (scoreToCriticality(computeMaxScore(p.impacts)) as string);
-        const approuve = plans.some((pl) => effectiveStatut(pl) === "Approuvé");
+        const approuve = plans.some((pl) => ["Approuvé", "Actif"].includes(effectiveStatut(pl)));
         return { proc: p, plans, level, approuve };
       })
       .sort((a, b) => (CRIT_ORDER[a.level] ?? 9) - (CRIT_ORDER[b.level] ?? 9));
   }, [data]);
 
   const kpis = useMemo(() => {
-    const cov = planCoverageKpi(data.plans, data.links.processus, data.processus.map((p: any) => p.id));
+    const criticalIds = rows.filter((row) => isCriticalLevel(row.level)).map((row) => row.proc.id);
+    const cov = planCoverageKpi(data.plans, data.links.processus, criticalIds);
     const total = rows.length;
-    const couverts = rows.filter((r) => r.plans.length > 0).length;
+    const couverts = rows.filter((r) => isCriticalLevel(r.level) && r.plans.some((plan) => ["Approuvé", "Actif"].includes(effectiveStatut(plan)))).length;
     const approuves = rows.filter((r) => r.approuve).length;
     const critiquesNonCouverts = rows.filter(
       (r) => (r.level === "Critique" || r.level === "Sévère") && r.plans.length === 0
@@ -83,7 +84,7 @@ export const CoverageDashboard = ({ data, onOpen }: { data: PlansData; onOpen: (
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Couverture" value={kpis.cov.status === "empty" ? "N/A" : `${kpis.taux}%`} sub={`${kpis.cov.numerator}/${kpis.cov.denominator} processus (plan approuvé)`} icon={ShieldCheck} tone="success" />
+        <Kpi label="Couverture des processus critiques" value={kpis.cov.status === "empty" ? "N/A" : `${kpis.taux}%`} sub={kpis.cov.status === "empty" ? "Aucun processus critique" : `${kpis.cov.numerator}/${kpis.cov.denominator} processus (plan actif ou approuvé)`} icon={ShieldCheck} tone="success" />
         <Kpi label="Plans approuvés" value={kpis.approuves} sub="processus couverts par un plan approuvé" icon={CheckCircle2} />
         <Kpi label="Critiques non couverts" value={kpis.critiquesNonCouverts} icon={ShieldAlert} tone="danger" />
         <Kpi label="Plans obsolètes" value={kpis.obsoletes} sub="révision dépassée" icon={AlertTriangle} tone="warning" />

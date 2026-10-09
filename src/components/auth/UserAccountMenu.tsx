@@ -18,7 +18,7 @@ function initials(email?: string) {
   return name.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "R";
 }
 
-export function UserAccountMenu({ compact = false }: { compact?: boolean }) {
+export function UserAccountMenu({ compact = false, sidebar = false }: { compact?: boolean; sidebar?: boolean }) {
   const { user, signOut } = useAuth();
   const { role, activeOrganizationName, memberships } = useRole();
   const navigate = useNavigate();
@@ -33,15 +33,17 @@ export function UserAccountMenu({ compact = false }: { compact?: boolean }) {
   return <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" aria-label={"Menu du compte " + email} className={compact
+        <Button variant="ghost" aria-label={"Menu du compte " + email} className={sidebar
+          ? "h-14 w-full min-w-0 justify-start gap-2 rounded-lg px-2 text-left text-[#F8F6F2] hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-[#8FBFA8]"
+          : compact
           ? "h-10 w-[3.25rem] gap-1 rounded-lg px-1 text-[#172030] hover:bg-[#172030]/[.06]"
           : "h-11 max-w-[18rem] min-w-0 gap-3 rounded-xl px-2.5 py-1.5 text-left text-[#172030] hover:bg-white/80"}>
-          <span className={`grid shrink-0 place-items-center rounded-full border border-[#2A5141]/20 bg-[#2A5141]/10 font-semibold text-[#2A5141] ${compact ? "h-8 w-8 text-[10px]" : "h-9 w-9 text-xs"}`}>{initials(user?.email)}</span>
-          {!compact && <span className="hidden min-w-0 flex-col items-start sm:flex">
-            <span className="max-w-48 truncate text-xs font-semibold">{email}</span>
-            <span className="mt-0.5 text-[10px] text-[#3B4454]/70">{role ? ROLE_LABELS[role] : "Compte"}</span>
+          <span className={`grid shrink-0 place-items-center rounded-full border font-semibold ${sidebar ? "border-white/20 bg-white/10 text-[#A7E8C7]" : "border-[#2A5141]/20 bg-[#2A5141]/10 text-[#2A5141]"} ${compact ? "h-8 w-8 text-[10px]" : "h-9 w-9 text-xs"}`}>{initials(user?.email)}</span>
+          {!compact && <span className={`min-w-0 flex-col items-start ${sidebar ? "flex flex-1" : "hidden sm:flex"}`}>
+            <span className={`truncate text-xs font-semibold ${sidebar ? "max-w-[9.5rem]" : "max-w-48"}`}>{email}</span>
+            <span className={`mt-0.5 truncate text-[10px] ${sidebar ? "max-w-[9.5rem] text-white/60" : "text-[#3B4454]/70"}`}>{role ? ROLE_LABELS[role] : "Compte"}</span>
           </span>}
-          <ChevronDown className={`shrink-0 text-[#3B4454]/65 ${compact ? "h-3 w-3" : "h-3.5 w-3.5"}`} aria-hidden />
+          <ChevronDown className={`shrink-0 ${sidebar ? "text-white/65" : "text-[#3B4454]/65"} ${compact ? "h-3 w-3" : "h-3.5 w-3.5"}`} aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="bottom" sideOffset={8} collisionPadding={12} className="z-[60] w-64 max-w-[calc(100vw-1.5rem)] rounded-xl border-[#172030]/10 p-1.5 shadow-xl">

@@ -13,6 +13,7 @@ import {
   CheckCircle2, ListChecks, Search, Building2, Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { warRoomActionsKpi } from "@/lib/kpiService";
 import {
   COLORS, SEV_PASTEL, severityRank, elapsedSince, formatDateTime,
   getInitials, getAvatarColor,
@@ -434,12 +435,14 @@ export const WarRoomDashboard = ({
   incidents,
   incidentProcessus,
   actions,
+  actionsError = false,
   onOpenIncident,
   onDeclare,
 }: {
   incidents: Incident[];
   incidentProcessus: { incident_id: string; processus_id: string }[];
   actions?: IncidentAction[];
+  actionsError?: boolean;
   onOpenIncident: (id: string) => void;
   onDeclare: () => void;
 }) => {
@@ -510,6 +513,7 @@ export const WarRoomDashboard = ({
     const actionsInProgress = (actions || []).filter(
       (a) => a.statut === "En cours" || a.statut === "À faire"
     ).length;
+    const actionClosure = warRoomActionsKpi(actions || []);
 
     const closed30d = allClosed.filter(
       (i) => new Date(i.date_heure_debut).getTime() >= thirtyDaysAgo
@@ -530,6 +534,7 @@ export const WarRoomDashboard = ({
       p2Active,
       avgDurationLabel: avgDuration > 0 ? formatDuration(avgDuration) : "—",
       actionsInProgress,
+      actionClosure,
       closed30d,
     };
   }, [allActive, allClosed, actions]);
@@ -656,6 +661,7 @@ export const WarRoomDashboard = ({
                   active={kpiFilter === "closed"}
                   onClick={() => toggleKpiFilter("closed")}
                 />
+                <KpiPill label="Actions clôturées" value={actionsError ? "Indisponible" : kpi.actionClosure.status === "ready" ? `${kpi.actionClosure.percentage}%` : "N/A"} icon={CheckCircle2} iconColor={COLORS.forest} valueColor={COLORS.navy} hint={actionsError ? "Erreur de chargement" : kpi.actionClosure.status === "empty" ? "Aucune action enregistrée" : `${kpi.actionClosure.numerator} / ${kpi.actionClosure.denominator} actions (statut Fait)`} />
               </div>
 
               {/* Légende P1-P4 */}

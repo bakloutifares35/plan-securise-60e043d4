@@ -27,15 +27,6 @@ export const ENTITY_TYPES: EntityType[] = ["Groupe", "Holding", "Filiale", "Dire
 export const ENTITY_STATUSES: EntityStatus[] = ["Actif", "Inactif", "En cours de création"];
 export const SECTORS = ["Banque & Finance", "Assurance", "Industrie", "Santé", "Retail", "Technologie", "Autre"] as const;
 
-export const defaultMaturity = (s: Entity["pcaStatus"]): number => {
-  switch (s) {
-    case "Validé": return 85;
-    case "En cours": return 60;
-    case "À réviser": return 45;
-    default: return 20;
-  }
-};
-
 export const initialEntities: Entity[] = [
   { id: "e1", name: "Groupe Atlas Holding", type: "Groupe", country: "France", sector: "Holding", parentId: null, referent: "Marie Dubois", referentBackup: "Jean Martin", referentContact: "marie@email.com / 0612345678", suppleantContact: "jean@email.com", status: "Actif", pcaStatus: "Validé", maturity: 88 },
   { id: "e2", name: "Atlas Finance SA", type: "Filiale", country: "France", sector: "Banque & Finance", parentId: "e1", referent: "Pierre Leroy", referentBackup: "Sophie Durand", referentContact: "pierre@email.com", suppleantContact: "sophie@email.com", status: "Actif", pcaStatus: "Validé", maturity: 82 },

@@ -1,5 +1,5 @@
 // src/components/pca/bia/BiaDashboard.tsx
-import { ratioKpi, loadingKpi, errorKpi, formatKpi, type Kpi } from "@/lib/kpiService";
+import { biaCoverageKpi, biaProcessCompletion, ratioKpi, loadingKpi, errorKpi, formatKpi, type BiaResourceCounts, type Kpi } from "@/lib/kpiService";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -100,15 +100,7 @@ const CHART_COLORS = {
 // FONCTIONS DE CALCUL BIA
 // ============================================================
 
-interface ResourceCounts {
-  [processusId: string]: {
-    hr: number;
-    equip: number;
-    app: number;
-    supplier: number;
-    total: number;
-  };
-}
+type ResourceCounts = BiaResourceCounts;
 
 interface BiaCompletionResult {
   total: number;
@@ -125,66 +117,7 @@ interface BiaCompletionResult {
 const isProcessusBiaComplet = (
   processus: any,
   resourceCounts: ResourceCounts
-): { complet: boolean; champsManquants: string[] } => {
-  const manquants: string[] = [];
-  const score = computeMaxScore(processus.impacts);
-  const criticite = scoreToCriticality(score);
-
-  if (!processus.impacts) {
-    manquants.push("Impacts non définis");
-  } else {
-    const periods = ['P0_4H', 'P4_8H', 'P1D', 'P2D', 'P1W'];
-    const axes = ['financial', 'regulatory', 'operational', 'reputation'];
-    let hasAllImpacts = true;
-    
-    for (const period of periods) {
-      const periodData = processus.impacts[period];
-      if (!periodData || typeof periodData !== 'object') {
-        hasAllImpacts = false;
-        break;
-      }
-      let hasValue = false;
-      for (const axis of axes) {
-        if (periodData[axis] && Number(periodData[axis]) > 0) {
-          hasValue = true;
-          break;
-        }
-      }
-      if (!hasValue) {
-        hasAllImpacts = false;
-        break;
-      }
-    }
-    
-    if (!hasAllImpacts) {
-      manquants.push("Impacts incomplets");
-    }
-  }
-
-  if (!processus.rto || processus.rto <= 0) {
-    manquants.push("RTO non défini");
-  }
-  
-  if (processus.rto && processus.mtpd && processus.rto > processus.mtpd) {
-    manquants.push(`RTO (${processus.rto}h) > MTPD (${processus.mtpd}h)`);
-  }
-
-  if (!criticite) {
-    manquants.push("Criticité non calculée");
-  }
-
-  const res = resourceCounts[processus.id] || { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
-  const isCritiqueOuMajeur = criticite === "Critique" || criticite === "Majeur";
-
-  if (isCritiqueOuMajeur) {
-    if (res.hr === 0) manquants.push("Aucune ressource humaine liée");
-    if (res.app === 0) manquants.push("Aucune application IT liée");
-    if (res.equip === 0) manquants.push("Aucun équipement lié");
-    if (res.supplier === 0) manquants.push("Aucun prestataire lié");
-  }
-
-  return { complet: manquants.length === 0, champsManquants: manquants };
-};
+): { complet: boolean; champsManquants: string[] } => biaProcessCompletion(processus, resourceCounts);
 
 const calculerCouvertureBia = (
   processes: any[],
@@ -212,7 +145,7 @@ const calculerCouvertureBia = (
   }
 
   // Règle partagée (kpiService) : arrondi, plafond 99 % si manquants, dénominateur 0 → empty
-  const pourcentage = ratioKpi(complets, total).percentage;
+  const pourcentage = biaCoverageKpi(complets, total).percentage;
 
   return {
     total,
@@ -291,16 +224,15 @@ const getBiaHistoricalScores = async (processes: any[]): Promise<any[]> => {
       cumulativeCount += monthData.nb_processus;
       
       const avgScore = cumulativeCount > 0 ? cumulativeScoreSum / cumulativeCount : 0;
-      const coverage = processes.length > 0 
-        ? Math.round((cumulativeProcessus / processes.length) * 100) 
-        : 0;
+      const coverageKpi = biaCoverageKpi(cumulativeProcessus, processes.length);
+      const coverage = coverageKpi.status === "ready" ? coverageKpi.percentage : null;
 
       snapshots.push({
         date: `${key}-01`,
         score_moyen: Math.round(avgScore * 10) / 10,
         nb_processus: cumulativeProcessus,
         nb_critiques: cumulativeCritiques,
-        taux_couverture: Math.min(coverage, 100),
+        taux_couverture: coverage,
         _month: key,
       });
     }
@@ -661,12 +593,12 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
       ? (filteredProcesses.reduce((acc, p) => acc + computeMaxScore(p.impacts), 0) / total)
       : 0;
 
-    const coverage = biaCoverage?.pourcentage || 0;
     const coverageKpi: Kpi = isLoadingResources
       ? loadingKpi()
       : coverageError
         ? errorKpi()
-        : ratioKpi(biaCoverage?.complets ?? 0, biaCoverage?.total ?? 0);
+        : biaCoverageKpi(biaCoverage?.complets ?? 0, biaCoverage?.total ?? 0);
+    const coverage = coverageKpi.status === "ready" ? coverageKpi.percentage : null;
     const coverageLabel = coverageKpi.status === "ready" ? `${coverageKpi.percentage}%` : formatKpi(coverageKpi);
 
     return { 
@@ -1239,7 +1171,7 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-[10px] text-[#172030]/40">Objectif</span>
                     <span className="text-[10px] font-medium text-[#2A5141]">
-                      {stats.coverage >= 80 ? '✅ Atteint' : '⏳ En cours'}
+                      {stats.coverage === null ? 'Non calculable' : stats.coverage >= 80 ? '✅ Atteint' : '⏳ En cours'}
                     </span>
                   </div>
                   {biaCoverage && biaCoverage.processusIncomplets.length > 0 && (
@@ -1406,7 +1338,7 @@ export const BiaDashboard = ({ onNavigateToProcess }: BiaDashboardProps) => {
                           <span className="text-[10px] text-[#172030]/70">{d.name}</span>
                         </div>
                         <span className="text-[10px] font-medium text-[#172030]">
-                          {d.value} ({stats.total > 0 ? ((d.value / stats.total) * 100).toFixed(0) : 0}%)
+                          {d.value} ({ratioKpi(d.value, stats.total).status === "ready" ? `${ratioKpi(d.value, stats.total).percentage}%` : "N/A"})
                         </span>
                       </div>
                     ))

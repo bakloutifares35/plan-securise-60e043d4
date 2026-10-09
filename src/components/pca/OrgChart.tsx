@@ -21,7 +21,7 @@ import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
 import { useBia } from "@/contexts/BiaContext";
 import { computeMaxScore, scoreToCriticality, criticalityColor } from "@/data/bia";
-import { type Entity, type EntityType, defaultMaturity } from "@/data/governance";
+import { type Entity, type EntityType } from "@/data/governance";
 import { supabase } from "@/integrations/supabase/db";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -96,12 +96,6 @@ const normalizeProcessStatus = (raw: string | null): string => {
   if (n === "INACTIF" || n === "INACTIVE" || n === "DESACTIVE") return "INACTIF";
   if (n === "EN_REVISION" || n === "EN REVISION" || n === "REVISION" || n === "A REVISER") return "EN_REVISION";
   return "ACTIF";
-};
-
-const maturityColor = (m: number) => {
-  if (m < 50) return "bg-destructive";
-  if (m < 75) return "bg-warning";
-  return "bg-success";
 };
 
 const COLUMN_PATTERNS = {
@@ -467,7 +461,6 @@ const ImportExcelDialog = ({
           parent_id: parentId,
           pca_referent: e.referent || '—',
           pca_status: 'Non démarré',
-          maturity_score: 20,
           sector: 'Général',
           status: 'ACTIVE',
         }).select().single();
@@ -869,7 +862,6 @@ const Node = ({ node, depth, onDelete, onSelect, onQuickAdd }: {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const hasChildren = (node.children?.length ?? 0) > 0;
   const { can } = useRole();
-  const m = node.maturity ?? defaultMaturity(node.pcaStatus);
   const isDir = isDirection(node.type);
   const isFil = isFiliale(node.type);
 
@@ -1273,7 +1265,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         id: e.id, name: e.name, type: e.type, country: e.country_code, parentId: e.parent_id,
         referent: e.pca_referent || '—',
         status: 'Actif', pcaStatus: e.pca_status || 'Non démarré',
-        maturity: e.maturity_score || 20,
+        maturity: typeof e.maturity_score === "number" ? e.maturity_score : undefined,
       })));
     }
   };
@@ -1315,7 +1307,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         parent_id: quickAddParentId || null,
         pca_referent: quickAddForm.referent || "—",
         pca_status: "Non démarré",
-        maturity_score: 20,
         sector: "Général",
         status: "ACTIVE",
       }).select().single();
@@ -1329,7 +1320,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
         referentContact: quickAddForm.referentContact || undefined,
         referentBackup: quickAddForm.suppleant || "—",
         suppleantContact: quickAddForm.suppleantContact || undefined,
-        status: "Actif", pcaStatus: "Non démarré", maturity: 20,
       };
       setEntities([...entities, newEntity]);
       toast.success(`✅ ${quickAddForm.type} « ${newEntity.name} » créé${(quickAddForm.type as string) === "DIRECTION" ? "e" : ""}`);
@@ -1355,7 +1345,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       parent_id: form.parentId || null,
       pca_referent: form.referent || "—",
       pca_status: "Non démarré",
-      maturity_score: 20,
       sector: "Général",
       status: "ACTIVE",
     };
@@ -1367,7 +1356,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       country: form.country || "FR", sector: "Général", parentId: form.parentId || null,
       referent: form.referent || "—", referentContact: form.referentContact || undefined,
       referentBackup: form.suppleant || "—", suppleantContact: form.suppleantContact || undefined,
-      status: "Actif", pcaStatus: "Non démarré", maturity: 20,
     };
     setEntities([...entities, newEntity]);
     setForm(emptyForm);
@@ -1664,7 +1652,6 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
             parent_id: null,
             pca_referent: 'À définir',
             pca_status: 'Non démarré',
-            maturity_score: 20,
             sector: 'Général',
             status: 'ACTIVE',
           });
@@ -1674,7 +1661,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
           setEntities(allEntities.map((e: any) => ({
             id: e.id, name: e.name, type: e.type, country: e.country_code, parentId: e.parent_id,
             referent: e.pca_referent || '—', status: 'Actif', pcaStatus: e.pca_status || 'Non démarré',
-            maturity: e.maturity_score || 20,
+            maturity: typeof e.maturity_score === "number" ? e.maturity_score : undefined,
           })));
         }
         toast.success(`${parsed.entities.length} entités importées`);
@@ -1853,7 +1840,7 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
       <Sheet open={!!panelEntity} onOpenChange={(o) => { if (!o) { setPanelId(null); setEditing(false); } }}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {panelEntity && (() => {
-            const m = panelEntity.maturity ?? defaultMaturity(panelEntity.pcaStatus);
+            const m = panelEntity.maturity;
             const isLow = isLowLevel(panelEntity.type);
             const isDir = isDirection(panelEntity.type);
             const isFil = isFiliale(panelEntity.type);
@@ -1892,8 +1879,9 @@ export const OrgChart = ({ onNavigate }: { onNavigate?: (section: string, entity
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between"><h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4><span className="text-sm font-bold">{m}%</span></div>
-                      <div className="h-3 w-full rounded-full bg-secondary overflow-hidden"><div className={cn("h-full transition-all", maturityColor(m))} style={{ width: `${m}%` }} /></div>
+                      <div className="flex items-center justify-between"><h4 className="text-xs font-semibold text-muted-foreground uppercase">Maturité PCA</h4><span className="text-sm font-bold">{typeof m === "number" && Number.isFinite(m) ? `${m}%` : "Non calculable"}</span></div>
+                      {typeof m === "number" && Number.isFinite(m) && <div className="h-3 w-full rounded-full bg-secondary overflow-hidden"><div className="h-full transition-all bg-primary" style={{ width: `${Math.max(0, Math.min(m, 100))}%` }} /></div>}
+                      {typeof m !== "number" && <p className="text-xs text-muted-foreground">Aucune donnée de maturité n’est enregistrée pour cette entité.</p>}
                     </div>
                     {isFil && panelChildren.length > 0 && (<div className="space-y-3"><h4 className="text-sm font-semibold">Directions ({panelChildren.length})</h4>{renderChildren(panelChildren, panelEntity.type)}</div>)}
                     {isLow && (

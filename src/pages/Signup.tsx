@@ -57,7 +57,7 @@ export default function Signup() {
   };
 
   return (
-    <AuthLayout>
+    <AuthLayout showResiliencePanel>
       <h2 className="font-display text-3xl text-[#172030]">Créer un compte</h2>
       <p className="mt-2 text-sm text-[#3B4454]">Inscrivez-vous à Resillia.</p>
 

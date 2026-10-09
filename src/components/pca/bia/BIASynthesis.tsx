@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ratioKpi, isCriticalLevel } from "@/lib/kpiService";
+import { biaProcessCompletion, ratioKpi, isCriticalLevel } from "@/lib/kpiService";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   AlertCircle, Database, Clock, Server, TrendingUp, AlertTriangle, 
@@ -133,8 +133,9 @@ const DistributionBar = ({
   color: string;
   maxCount: number;
 }) => {
-  const percentage = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
-  const percentOfTotal = total > 0 ? Math.round((count / total) * 100) : 0;
+  const percentage = ratioKpi(count, maxCount).percentage;
+  const percentOfTotalKpi = ratioKpi(count, total);
+  const percentOfTotal = percentOfTotalKpi.status === "ready" ? percentOfTotalKpi.percentage : null;
 
   return (
     <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 hover:border-gray-300 transition-colors">
@@ -149,7 +150,7 @@ const DistributionBar = ({
         />
       </div>
       <div className="flex justify-between mt-1">
-        <span className="text-xs text-gray-400">{percentOfTotal}% du total</span>
+        <span className="text-xs text-gray-400">{percentOfTotal === null ? "N/A" : `${percentOfTotal}% du total`}</span>
         <span className="text-xs font-medium" style={{ color }}>{count} processus</span>
       </div>
     </div>
@@ -507,12 +508,10 @@ const BIASynthesis: React.FC = () => {
   }, []);
 
   const isProcessComplete = useCallback((p: ProcessWithResources): boolean => {
-    const hasImpacts = p.impacts && Object.keys(p.impacts).length > 0;
-    const hasResources = p.linkedHR.length > 0 || 
-                         p.linkedEquipment.length > 0 || 
-                         p.linkedApps.length > 0 || 
-                         p.linkedSuppliers.length > 0;
-    return hasImpacts && hasResources;
+    return biaProcessCompletion(p, { [p.id]: {
+      hr: p.linkedHR.length, equip: p.linkedEquipment.length,
+      app: p.linkedApps.length, supplier: p.linkedSuppliers.length,
+    } }).complet;
   }, []);
 
   // ============================================================
@@ -521,10 +520,12 @@ const BIASynthesis: React.FC = () => {
   const stats = useMemo(() => {
     const totalProcessus = enrichedProcesses.length;
     const completeCount = enrichedProcesses.filter(isProcessComplete).length;
-    const completude = ratioKpi(completeCount, totalProcessus).percentage;
+    const completudeKpi = ratioKpi(completeCount, totalProcessus);
+    const completude = completudeKpi.percentage;
     
     const processusCritiques = enrichedProcesses.filter(p => isCriticalLevel(scoreToCriticality(computeMaxScore(p.impacts)) as string)).length;
-    const pourcentageCritique = ratioKpi(processusCritiques, totalProcessus).percentage;
+    const criticiteKpi = ratioKpi(processusCritiques, totalProcessus);
+    const pourcentageCritique = criticiteKpi.percentage;
     
     const rtoValues = enrichedProcesses.map(p => p.rto || 0);
     const rtoLePlusCourt = rtoValues.length > 0 ? Math.min(...rtoValues) : 0;
@@ -559,8 +560,11 @@ const BIASynthesis: React.FC = () => {
       totalProcessus,
       completeCount,
       completude,
+      completudeKpi,
+      completudeLabel: completudeKpi.status === "ready" ? `${completudeKpi.percentage}%` : "N/A",
       processusCritiques,
       pourcentageCritique,
+      criticiteLabel: criticiteKpi.status === "ready" ? `${criticiteKpi.percentage}%` : "N/A",
       rtoLePlusCourt,
       processAvecRtoLePlusCourt,
       rtoDistribution,
@@ -804,7 +808,7 @@ const BIASynthesis: React.FC = () => {
       const cardWidth = (pageWidth - margin * 2) / 4 - 3;
       const statCards = [
         { label: 'Processus analysés', value: stats.totalProcessus, sub: `sur ${stats.servicesCount} services` },
-        { label: 'Processus critiques', value: stats.processusCritiques, sub: `${stats.pourcentageCritique}% du total` },
+        { label: 'Processus critiques', value: stats.processusCritiques, sub: `${stats.criticiteLabel} du total` },
         { label: 'RTO le plus court', value: `${stats.rtoLePlusCourt}h`, sub: `${stats.processAvecRtoLePlusCourt} processus` },
         { label: 'Applications IT', value: stats.totalApps, sub: `dont ${stats.appsSansSLA} sans SLA` }
       ];
@@ -854,7 +858,7 @@ const BIASynthesis: React.FC = () => {
       doc.setTextColor(23, 32, 48);
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${stats.completude}%`, barX + barWidth + 5, y + 7);
+      doc.text(stats.completudeLabel, barX + barWidth + 5, y + 7);
 
       if (stats.fichesIncompletes > 0) {
         doc.setTextColor(234, 179, 8);
@@ -1150,7 +1154,8 @@ const BIASynthesis: React.FC = () => {
             addNewPage();
           }
 
-          const completionRate = data.count > 0 ? Math.round((data.complet / data.count) * 100) : 0;
+          const completionKpi = ratioKpi(data.complet, data.count);
+          const completionRate = completionKpi.status === "ready" ? completionKpi.percentage : null;
           
           doc.setFillColor(248, 246, 242);
           doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
@@ -1162,7 +1167,7 @@ const BIASynthesis: React.FC = () => {
           doc.setFont('helvetica', 'bold');
           doc.text(direction, margin + 5, y + 6);
           
-          const infoText = `${data.count} Processus · ${data.critiques} Critiques · ${data.apps.size} Applis IT · ${data.suppliers.size} Prestataires · ${completionRate}% Complétude`;
+          const infoText = `${data.count} Processus · ${data.critiques} Critiques · ${data.apps.size} Applis IT · ${data.suppliers.size} Prestataires · ${completionRate === null ? "N/A" : `${completionRate}%`} Complétude`;
           doc.setTextColor(23, 32, 48);
           doc.setFontSize(5);
           doc.setFont('helvetica', 'normal');
@@ -1197,7 +1202,8 @@ const BIASynthesis: React.FC = () => {
               for (const sup of p.linkedSuppliers) deptSuppliers.add(sup.name);
             }
             
-            const deptCompletionRate = deptProcesses > 0 ? Math.round((deptComplet / deptProcesses) * 100) : 0;
+            const deptKpi = ratioKpi(deptComplet, deptProcesses);
+            const deptCompletionRate = deptKpi.status === "ready" ? deptKpi.percentage : null;
             
             return [
               deptName,
@@ -1206,7 +1212,7 @@ const BIASynthesis: React.FC = () => {
               deptRtoMin === Infinity ? '-' : `${deptRtoMin}h`,
               String(deptApps.size),
               String(deptSuppliers.size),
-              `${deptCompletionRate}%`
+              deptCompletionRate === null ? "N/A" : `${deptCompletionRate}%`
             ];
           });
 
@@ -1368,7 +1374,7 @@ const BIASynthesis: React.FC = () => {
         <StatCard
           label="Processus critiques"
           value={stats.processusCritiques}
-          sub={`${stats.pourcentageCritique}% du total`}
+          sub={`${stats.criticiteLabel} du total`}
           icon={<AlertCircle className="h-4 w-4" />}
           color="bg-red-100 text-red-600"
         />
@@ -1408,7 +1414,7 @@ const BIASynthesis: React.FC = () => {
                   )}
                 />
               </div>
-              <span className="text-sm font-bold text-gray-900">{stats.completude}%</span>
+              <span className="text-sm font-bold text-gray-900">{stats.completudeLabel}</span>
             </div>
             {stats.fichesIncompletes > 0 && (
               <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
@@ -1537,7 +1543,8 @@ const BIASynthesis: React.FC = () => {
           ) : (
             <div className="space-y-3">
               {Object.entries(directionsDetail).map(([direction, data]) => {
-                const completionRate = data.count > 0 ? Math.round((data.complet / data.count) * 100) : 0;
+                const completionKpi = ratioKpi(data.complet, data.count);
+                const completionRate = completionKpi.status === "ready" ? completionKpi.percentage : null;
                 const isExpanded = expandedDirections.has(direction);
                 
                 const deptMap: Record<string, ProcessWithResources[]> = {};
@@ -1580,7 +1587,7 @@ const BIASynthesis: React.FC = () => {
                             completionRate >= 50 ? 'bg-amber-500 text-white' :
                             'bg-red-500 text-white'
                           )}>
-                            {completionRate}% Complétude
+                            {completionRate === null ? "N/A" : `${completionRate}%`} Complétude
                           </Badge>
                         </div>
                       </div>
@@ -1635,7 +1642,8 @@ const BIASynthesis: React.FC = () => {
                                   for (const sup of p.linkedSuppliers) deptSuppliers.add(sup.name);
                                 }
                                 
-                                const deptCompletionRate = deptProcesses > 0 ? Math.round((deptComplet / deptProcesses) * 100) : 0;
+                                const deptKpi = ratioKpi(deptComplet, deptProcesses);
+                                const deptCompletionRate = deptKpi.status === "ready" ? deptKpi.percentage : null;
                                 
                                 return (
                                   <tr key={deptName} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
@@ -1653,7 +1661,7 @@ const BIASynthesis: React.FC = () => {
                                         deptCompletionRate >= 50 ? 'bg-amber-500 text-white' :
                                         'bg-red-500 text-white'
                                       )}>
-                                        {deptCompletionRate}%
+                                        {deptCompletionRate === null ? "N/A" : `${deptCompletionRate}%`}
                                       </Badge>
                                     </td>
                                   </tr>

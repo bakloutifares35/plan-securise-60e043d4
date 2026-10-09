@@ -1,6 +1,7 @@
-﻿import type { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { ShieldCheck, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
+import { ResilliaLogo } from "@/components/brand/ResilliaLogo";
 import { ContinuityField } from "@/components/auth/ContinuityField";
 
 function useReducedMotion() {
@@ -21,10 +22,7 @@ export function AuthLayout({ children, showResiliencePanel = false }: { children
   return (
     <div className="auth-shell min-h-screen flex flex-col md:flex-row bg-[#F8F6F2]">
       <aside className={`auth-brand relative isolate order-2 flex flex-col justify-between overflow-hidden px-6 py-6 text-[#F8F6F2] md:order-1 md:w-[45%] md:px-12 md:py-10${showResiliencePanel ? " auth-brand-login" : ""}`}>
-        <div className="relative z-10 flex items-center gap-2">
-          <ShieldCheck className="h-7 w-7 text-[#8FBFA8]" aria-hidden />
-          <span className="font-display text-2xl text-[#F5F1E8]">Resillia</span>
-        </div>
+        <ResilliaLogo appearance="dark" className="relative z-10 h-9 w-[9.5rem]" />
         {showResiliencePanel && (
           <div className="continuity-stage">
             <ContinuityField staticMode={reducedMotion} />

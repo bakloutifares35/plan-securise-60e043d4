@@ -70,6 +70,7 @@ export const WarRoomModule = () => {
   const [declarationOpen, setDeclarationOpen] = useState(false);
   const [retexOpen, setRetexOpen] = useState(false);
   const [allActions, setAllActions] = useState<any[]>([]);
+  const [actionsError, setActionsError] = useState(false);
 
   const detail = useIncidentDetail(currentIncidentId);
   const cell = useCellMembers(currentIncidentId);
@@ -119,16 +120,18 @@ export const WarRoomModule = () => {
   // ✅ useEffect DOIT être ici aussi, AVANT tout return conditionnel
   useEffect(() => {
     const loadAllActions = async () => {
-      const activeIds = incidents.filter((i) => i.statut !== "Clôturé").map((i) => i.id);
-      if (activeIds.length === 0) {
+      const incidentIds = incidents.map((i) => i.id);
+      if (incidentIds.length === 0) {
         setAllActions([]);
+        setActionsError(false);
         return;
       }
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("incident_actions")
         .select("id, incident_id, description, statut")
-        .in("incident_id", activeIds);
+        .in("incident_id", incidentIds);
       setAllActions(data || []);
+      setActionsError(!!error);
     };
     if (incidents.length > 0) loadAllActions();
   }, [incidents]);
@@ -210,6 +213,7 @@ export const WarRoomModule = () => {
           incidents={incidents}
           incidentProcessus={incidentProcessus}
           actions={allActions}
+          actionsError={actionsError}
           onOpenIncident={(id) => {
             setCurrentIncidentId(id);
             setView("warroom");

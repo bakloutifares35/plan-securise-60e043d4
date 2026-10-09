@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ratioKpi } from '@/lib/kpiService';
 
 // Types
 interface ProcessWithResources {
@@ -438,6 +439,7 @@ const BIARecoverySequence: React.FC = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {waveStats.map((stat) => {
           const isActive = selectedWaveFilter === stat.wave;
+          const coverage = ratioKpi(stat.count, totalProcesses);
           return (
             <div
               key={stat.wave}
@@ -467,14 +469,14 @@ const BIARecoverySequence: React.FC = () => {
                   Vague {stat.wave + 1}
                 </span>
                 <span className="text-[10px] text-gray-400">
-                  {totalProcesses > 0 ? Math.round((stat.count / totalProcesses) * 100) : 0}%
+                  {coverage.status === "ready" ? `${coverage.percentage}%` : "N/A"}
                 </span>
               </div>
               <div className="mt-2 h-1 w-full bg-gray-200 rounded-full overflow-hidden">
                 <div 
                   className="h-full rounded-full transition-all"
                   style={{ 
-                    width: `${totalProcesses > 0 ? (stat.count / totalProcesses) * 100 : 0}%`,
+                    width: `${coverage.status === "ready" ? coverage.percentage : 0}%`,
                     backgroundColor: stat.color
                   }}
                 />

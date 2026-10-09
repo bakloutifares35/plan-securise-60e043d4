@@ -17,6 +17,7 @@ import {
 import { useRole } from "@/contexts/RoleContext";
 import { TestWizard } from "./TestWizard";
 import { TestRunner } from "./TestRunner";
+import { exercisesKpi, exerciseStatusCounts, ratioKpi } from "@/lib/kpiService";
 
 type Tab = "overview" | "list" | "calendar" | "conformite";
 
@@ -164,9 +165,10 @@ export default function ExercicesModule() {
   const critical = useMemo(() => data.processus.filter((p) => isCritical(p.criticite)), [data.processus]);
 
   const kpi = useMemo(() => {
-    const covered = critical.filter((p) => last.has(p.id) && monthsSince(last.get(p.id)!) <= 12).length;
-    const done = data.tests.filter((t) => t.statut === "TERMINE" || t.statut === "OBJECTIFS_NON_ATTEINTS");
-    const success = done.filter((t) => t.statut === "TERMINE").length;
+    const coverage = exercisesKpi(data.tests, new Set(critical.map((p) => p.id)));
+    const statuses = exerciseStatusCounts(data.tests);
+    const completedTests = data.tests.filter((test) => ["TERMINE", "OBJECTIFS_NON_ATTEINTS"].includes(test.statut));
+    const success = ratioKpi(data.tests.filter((test) => test.statut === "TERMINE").length, completedTests.length);
     const lateProcessus = data.processus.filter((p) => !last.has(p.id) || monthsSince(last.get(p.id)!) > 12);
     const byCrit: Record<string, number> = {};
     lateProcessus.forEach((p) => { byCrit[p.criticite] = (byCrit[p.criticite] ?? 0) + 1; });
@@ -175,8 +177,7 @@ export default function ExercicesModule() {
     const plannedTlpt = tlpts.filter((t) => t.statut === "PLANIFIE" && t.date_planifiee).map((t) => new Date(t.date_planifiee!)).sort((a, b) => +a - +b)[0] ?? null;
     const tlptDue = plannedTlpt ?? (lastTlpt ? new Date(lastTlpt.getFullYear() + 3, lastTlpt.getMonth(), lastTlpt.getDate()) : null);
     return {
-      coverage: critical.length ? Math.round((covered / critical.length) * 100) : 0, covered,
-      success: done.length ? Math.round((success / done.length) * 100) : null, doneCount: done.length,
+      coverage, success, doneCount: statuses.completed, statuses,
       late: lateProcessus.length, byCrit,
       tlptDue, lastTlpt, tlptKnown: !!(lastTlpt || plannedTlpt),
     };
@@ -329,10 +330,10 @@ export default function ExercicesModule() {
         {/* barre de micro-métriques */}
         <div className="relative mt-6 pt-4 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { l: "Processus critiques", v: critical.length },
-            { l: "Exercices au registre", v: data.tests.length },
-            { l: "Couverture 12 mois", v: `${kpi.coverage}%` },
-            { l: "Assujetti DORA", v: data.dora ? "Oui" : "Non" },
+            { l: "Planifiés", v: kpi.statuses.planned },
+            { l: "En cours", v: kpi.statuses.inProgress },
+            { l: "Terminés", v: kpi.statuses.completed },
+            { l: "Annulés", v: kpi.statuses.cancelled },
           ].map((m) => (
             <div key={m.l}>
               <p className="text-[10px] uppercase tracking-wider text-white/40">{m.l}</p>
@@ -371,21 +372,21 @@ export default function ExercicesModule() {
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-[11px] uppercase tracking-wider text-[#3B4454]/60">Couverture critique</p>
-                      <p className="font-['Playfair_Display'] text-3xl text-[#172030] mt-1 tabular-nums">{kpi.coverage}<span className="text-lg text-[#3B4454]/40">%</span></p>
+                      <p className="font-['Playfair_Display'] text-3xl text-[#172030] mt-1 tabular-nums">{kpi.coverage.status === "ready" ? `${kpi.coverage.percentage}%` : "N/A"}</p>
                     </div>
                     <div className="relative">
-                      <RadialArc pct={kpi.coverage} />
+                      <RadialArc pct={kpi.coverage.status === "ready" ? kpi.coverage.percentage : 0} />
                       <Target className="h-4 w-4 text-[#2A5141] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-90" />
                     </div>
                   </div>
-                  <p className="text-xs text-[#3B4454]/70 mt-2 tabular-nums">{kpi.covered} / {critical.length} testés &lt; 12 mois</p>
+                  <p className="text-xs text-[#3B4454]/70 mt-2 tabular-nums">{kpi.coverage.status === "ready" ? `${kpi.coverage.numerator} / ${kpi.coverage.denominator} processus critiques testés < 12 mois` : "Aucun processus critique applicable"}</p>
                 </div>
 
                 <div className={cn(card, "p-5")}>
                   <p className="text-[11px] uppercase tracking-wider text-[#3B4454]/60">Taux de réussite</p>
                   <div className="flex items-baseline justify-between">
                     <p className="font-['Playfair_Display'] text-3xl text-[#172030] mt-1 tabular-nums">
-                      {kpi.success === null ? "—" : `${kpi.success}`}<span className="text-lg text-[#3B4454]/40">{kpi.success === null ? "" : "%"}</span>
+                      {kpi.success.status === "ready" ? `${kpi.success.percentage}%` : "N/A"}
                     </p>
                     <ShieldCheck className="h-4 w-4 text-[#2A5141]" />
                   </div>

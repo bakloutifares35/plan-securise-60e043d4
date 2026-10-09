@@ -1,6 +1,6 @@
 // src/components/pca/risk/tabs/ComexTab.tsx
 import { useState, useMemo, useRef, useEffect } from "react";
-import { riskCoverageKpi, formatKpi } from "@/lib/kpiService";
+import { riskTreatmentCoverageKpi, formatKpi } from "@/lib/kpiService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -359,11 +359,8 @@ export const ComexTab = ({ data }: Props) => {
     return ids;
   }, [measures]);
 
-  const withMesures = useMemo(() => {
-    return filteredRisks.filter(r => riskIdsWithMeasures.has(String(r.id))).length;
-  }, [filteredRisks, riskIdsWithMeasures]);
-
-  const couvertureKpi = riskCoverageKpi(filteredRisks.map((r) => String(r.id)), measures);
+  const couvertureKpi = riskTreatmentCoverageKpi(filteredRisks, measures);
+  const withMesures = couvertureKpi.numerator;
   const couvertureMesures = couvertureKpi.percentage;
 
   const sansResponsable = filteredRisks.filter(r => !r.owner || r.owner.trim() === "").length;
@@ -541,9 +538,9 @@ export const ComexTab = ({ data }: Props) => {
           ========================================================== */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
-          label="Couverture plans"
-          value={`${couvertureMesures}%`}
-          subValue={`${withMesures} sur ${total} risques couverts`}
+          label="Couverture des risques traités"
+          value={couvertureKpi.status === "ready" ? `${couvertureMesures}%` : "N/A"}
+          subValue={couvertureKpi.status === "empty" ? "Aucun risque enregistré" : `${withMesures} sur ${total} risques couverts`}
           icon={ClipboardCheck}
           color={couvertureMesures >= 80 ? "green" : couvertureMesures >= 50 ? "amber" : "red"}
           badge={{
@@ -872,7 +869,7 @@ export const ComexTab = ({ data }: Props) => {
                   "text-xl font-bold font-sans transition-all duration-300 group-hover:scale-110",
                   couvertureMesures > 0 ? "text-[#172030]" : "text-[#172030]"
                 )}>
-                  {isLoadingMeasures ? "..." : `${couvertureMesures}%`}
+                  {isLoadingMeasures ? "..." : couvertureKpi.status === "ready" ? `${couvertureMesures}%` : "N/A"}
                 </span>
                 <span className="text-[8px] text-[#172030]/40 font-sans">couvert</span>
               </div>
@@ -1071,7 +1068,7 @@ export const ComexTab = ({ data }: Props) => {
             </div>
             <div className="flex items-center gap-2 text-xs text-[#172030]/40">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="font-medium text-emerald-600">{couvertureMesures}%</span> couvert
+              <span className="font-medium text-emerald-600">{couvertureKpi.status === "ready" ? `${couvertureMesures}%` : "N/A"}</span> couvert
             </div>
           </div>
           <div className="flex items-center gap-2">

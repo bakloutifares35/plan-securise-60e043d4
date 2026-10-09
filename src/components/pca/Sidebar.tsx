@@ -2,21 +2,19 @@ import {
   LayoutDashboard, 
   ListChecks, 
   BarChart3, 
-  ShieldCheck, 
   Building2, 
-  AlertOctagon, 
-  GitBranch,
   Users,
   ClipboardList,
   PlayCircle,
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  Database,
   Layers,
   ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ResilliaLogo } from "@/components/brand/ResilliaLogo";
+import { UserAccountMenu } from "@/components/auth/UserAccountMenu";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useRole } from "@/contexts/RoleContext";
@@ -42,41 +40,31 @@ export type Section =
   | "warroom"
   | "admin-users";
 
-const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard; subItems?: { id: Section; label: string }[] }[] }[] = [
-  {
-    label: "PRINCIPAL",
-    items: [
-      { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-      { id: "bia", label: "BIA", icon: ClipboardList },
-      { id: "risk", label: "Risques", icon: AlertTriangle },
-      { id: "plan", label: "Plans PCA", icon: ListChecks },
-      { id: "exercices", label: "Exercices", icon: PlayCircle },
-      { id: "warroom", label: "War Room", icon: ShieldAlert },
-    ],
-  },
-  {
-    label: "PILOTAGE",
-    items: [
-      { id: "governance", label: "Gouvernance PCA", icon: Building2 },
-      { id: "cmdb", label: "Référentiel des ressources", icon: Database },
-      { id: "form", label: "Identification des risques", icon: AlertOctagon },
-      { id: "strategies", label: "Stratégies de continuité", icon: Layers },
-      { id: "benchmark", label: "Benchmark", icon: BarChart3 },
-    ],
-  },
+const items: { id: Section; label: string; icon: typeof LayoutDashboard; subItems?: { id: Section; label: string }[] }[] = [
+  { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+  { id: "governance", label: "Gouvernance PCA", icon: Building2 },
+  { id: "bia", label: "BIA", icon: ClipboardList, subItems: [
+    { id: "bia-recovery", label: "Séquence de reprise" },
+    { id: "bia-synthese", label: "Synthèse BIA" },
+  ] },
+  { id: "risk", label: "Risques", icon: AlertTriangle },
+  { id: "strategies", label: "Stratégies", icon: Layers },
+  { id: "plan", label: "Plans PCA", icon: ListChecks },
+  { id: "exercices", label: "Exercices", icon: PlayCircle },
+  { id: "warroom", label: "War Room", icon: ShieldAlert },
+  { id: "benchmark", label: "Benchmark", icon: BarChart3 },
 ];
 
 export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: Section) => void }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { role, activeOrganizationName } = useRole();
-  const [expandedItems, setExpandedItems] = useState<string[]>(['bia']);
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   const getActiveFromPath = (path: string): Section => {
     if (path === "/" || path === "/dashboard") return "dashboard";
     if (path === "/bia") return "bia";
-    if (path === "/bia/synthese") return "bia-synthese";
-    if (path === "/bia/recovery") return "bia-recovery";
+    if (path === "/bia/synthese" || path === "/bia/recovery") return "bia";
     if (path === "/cmdb") return "cmdb";
     if (path === "/tenacia-voice") return "tenacia";
     if (path === "/governance") return "governance";
@@ -100,6 +88,7 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     if (newActive !== active) {
       onChange(newActive);
     }
+    if (path.startsWith("/bia")) setExpandedItems((prev) => prev.includes("bia") ? prev : [...prev, "bia"]);
   }, [location.pathname]);
 
   const toggleExpand = (id: string) => {
@@ -111,15 +100,13 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
   };
 
   const handleItemClick = (item: any) => {
-    if (item.subItems) {
-      toggleExpand(item.id);
-    } else {
       switch(item.id) {
         case 'dashboard':
           navigate('/');
           break;
         case 'bia':
           navigate('/bia');
+          setExpandedItems((prev) => prev.includes("bia") ? prev : [...prev, "bia"]);
           break;
         case 'bia-synthese':
           navigate('/bia/synthese');
@@ -139,10 +126,12 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         case 'warroom':
           navigate('/warroom');
           break;
+        case 'admin-users':
+          navigate('/admin/users');
+          break;
         default:
           navigate(`/${item.id}`);
       }
-    }
   };
 
   const handleSubItemClick = (parentId: string, subItem: any) => {
@@ -159,12 +148,7 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     const path = location.pathname;
     
     if (item.subItems) {
-      return item.subItems.some((sub: any) => {
-        if (sub.id === 'bia-synthese' && path === '/bia/synthese') return true;
-        if (sub.id === 'bia-recovery' && path === '/bia/recovery') return true;
-        if (sub.id === 'bia' && path === '/bia') return true;
-        return false;
-      });
+      return path.startsWith("/bia");
     }
     
     switch(item.id) {
@@ -184,6 +168,8 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         return path === '/strategies';
       case 'warroom':
         return path === '/warroom';
+      case 'admin-users':
+        return path === '/admin/users';
       default:
         return path === `/${item.id}`;
     }
@@ -194,51 +180,19 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
       className="sticky top-0 hidden h-screen w-64 min-w-64 shrink-0 flex-col md:flex"
       style={{ backgroundColor: "#172030", color: "#F8F6F2" }}
     >
-      <div
-        className="flex items-center gap-3 px-6 py-6"
-        style={{ borderBottom: "1px solid rgba(248,246,242,0.08)" }}
-      >
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-md"
-          style={{ backgroundColor: "#2A5141" }}
-        >
-          <ShieldCheck className="h-5 w-5" style={{ color: "#F8F6F2" }} />
-        </div>
-        <div>
-          <p
-            className="text-xl leading-none"
-            style={{ fontFamily: "'Playfair Display', serif", fontWeight: 500, color: "#F8F6F2" }}
-          >
-            Resillia
-          </p>
-          <p className="text-[10px] mt-1" style={{ color: "rgba(248,246,242,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-            Continuité d'activité
-          </p>
-        </div>
+      <div className="flex flex-col gap-2 border-b border-white/[.08] px-6 py-6">
+        <ResilliaLogo appearance="dark" className="h-9 w-[9.5rem]" />
+        <p className="pl-1 text-[10px] uppercase tracking-[0.08em] text-white/55">Continuité d'activité</p>
       </div>
 
-      <nav aria-label="Navigation principale" className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-4">
+      <nav aria-label="Navigation principale" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4">
         {activeOrganizationName && (
           <p className="break-all rounded-md bg-white/5 px-3 py-2 text-[10px] text-white/60">
             Organisation active : {activeOrganizationName}
           </p>
         )}
-        {groups.map((g) => (
-          <div key={g.label}>
-            <p
-              className="px-3 mb-2"
-              style={{
-                fontSize: "9px",
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "rgba(248,246,242,0.35)",
-                fontWeight: 600,
-              }}
-            >
-              {g.label}
-            </p>
-            <div className="space-y-0.5">
-              {g.items.map((it) => {
+        <div className="space-y-0.5">
+              {[...items, ...(role === "admin_pca" ? [{ id: "admin-users" as Section, label: "Utilisateurs et rôles", icon: Users }] : [])].map((it) => {
                 const Icon = it.icon;
                 const hasSubItems = it.subItems && it.subItems.length > 0;
                 const isExpanded = expandedItems.includes(it.id);
@@ -246,10 +200,12 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
 
                 return (
                   <div key={it.id}>
+                    <div className="flex items-center">
                     <button
                       onClick={() => handleItemClick(it)}
+                      aria-current={itemActive ? "page" : undefined}
                       className={cn(
-                        "w-full flex items-center gap-3 pl-3 pr-3 py-2 rounded-r-md transition-colors text-left"
+                        "min-w-0 flex-1 flex items-center gap-3 pl-3 pr-3 py-2 rounded-r-md transition-colors text-left"
                       )}
                       style={{
                         fontFamily: "'Inter', sans-serif",
@@ -268,26 +224,12 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
                     >
                       <Icon className="h-4 w-4 shrink-0" />
                       <span className="flex-1">{it.label}</span>
-                      {hasSubItems && (
-                        <span className="ml-auto">
-                          {isExpanded ? 
-                            <ChevronDown className="h-3 w-3" /> : 
-                            <ChevronRight className="h-3 w-3" />
-                          }
-                        </span>
-                      )}
-                      {it.id === "tenacia" && !itemActive && (
-                        <span
-                          className="text-[9px] px-1.5 py-0.5 rounded"
-                          style={{ backgroundColor: "rgba(42,81,65,0.4)", color: "#E4F2E8", letterSpacing: "0.06em" }}
-                        >
-                          NEW
-                        </span>
-                      )}
                     </button>
+                    {hasSubItems && <button type="button" onClick={() => toggleExpand(it.id)} aria-label={`${isExpanded ? "Fermer" : "Ouvrir"} le sous-menu BIA`} aria-expanded={isExpanded} aria-controls="sidebar-bia-submenu" className="mr-1 rounded p-2 text-white/65 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8FBFA8]">{isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</button>}
+                    </div>
 
                     {hasSubItems && isExpanded && (
-                      <div className="ml-6 mt-0.5 space-y-0.5">
+                      <div id="sidebar-bia-submenu" className="ml-6 mt-0.5 space-y-0.5">
                         {it.subItems?.map((sub) => {
                           const subActive = isItemActive({ id: sub.id });
                           
@@ -316,24 +258,14 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
                   </div>
                 );
               })}
-            </div>
-          </div>
-        ))}
-      </nav>
-
-      {role === "admin_pca" && (
-        <div className="mx-3 border-t px-1 py-3" style={{ borderColor: "rgba(248,246,242,0.12)" }}>
-          <p className="px-3 pb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#D8C28C]">ADMINISTRATION</p>
-          <button type="button" title="Utilisateurs et rôles" aria-label="Utilisateurs et rôles" aria-current={location.pathname === "/admin/users" ? "page" : undefined}
-            onClick={() => navigate("/admin/users")}
-            className={cn("flex min-h-10 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8FBFA8]", location.pathname === "/admin/users" ? "bg-[#2A5141] text-white" : "text-white/90")}>
-            <Users className="h-4 w-4 shrink-0 text-[#8FBFA8]" /><span>Utilisateurs et rôles</span>
-          </button>
         </div>
-      )}
+      </nav>
+      <div className="mx-3 border-t px-1 py-3" style={{ borderColor: "rgba(248,246,242,0.12)" }}>
+        <p className="px-3 pb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/45">COMPTE</p>
+        <UserAccountMenu sidebar />
+      </div>
 
-      <div
-        className="px-4 py-3 text-center"
+      <div className="px-4 py-3 text-center"
         style={{
           fontSize: "10px",
           color: "rgba(248,246,242,0.4)",

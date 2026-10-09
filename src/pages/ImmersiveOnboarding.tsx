@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { completeOnboarding, skipOnboardingForSession } from "@/components/auth/onboardingState";
 import { UserAccountMenu } from "@/components/auth/UserAccountMenu";
+import { ResilliaLogo } from "@/components/brand/ResilliaLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { ROLE_LABELS, type Role, useRole } from "@/contexts/RoleContext";
 import "./onboarding-journey.css";
@@ -126,7 +127,7 @@ export default function ImmersiveOnboarding() {
     <main className="journey-page min-h-screen px-4 py-5 sm:px-7 md:py-8">
       <div className="mx-auto max-w-6xl">
         <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-[#172030]"><Shield className="h-6 w-6 text-[#2A5141]" /><span className="font-display text-xl">Resillia</span><span className="hidden border-l border-[#172030]/15 pl-3 text-xs text-[#3B4454]/65 sm:inline">Le cycle de résilience</span></div>
+          <div className="flex items-center gap-3"><ResilliaLogo appearance="light" className="h-9 w-[9.5rem]" /><span className="hidden border-l border-[#172030]/15 pl-3 text-xs text-[#3B4454]/65 sm:inline">Le cycle de résilience</span></div>
           <div className="flex items-center gap-1"><Button variant="ghost" onClick={skip} className="min-h-10 px-2 text-xs sm:px-3 sm:text-sm">Passer pour l’instant</Button><UserAccountMenu compact /></div>
         </header>
 

@@ -11,6 +11,10 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
+function jsonError(status: number, code: string, message: string): Response {
+  return new Response(JSON.stringify({ error: code, message }), { status, headers: corsHeaders });
+}
+
 // ============================================================
 // CONFIGURATION
 // ============================================================
@@ -562,52 +566,43 @@ serve(async (req) => {
     const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
     if (!GROQ_API_KEY) {
       console.error("[groq-strategy-assist] GROQ_API_KEY non configurée");
-      return new Response(
-        JSON.stringify({ error: "Service IA temporairement indisponible." }),
-        { status: 500, headers: corsHeaders }
-      );
+      return jsonError(503, "AI_PROVIDER_UNAVAILABLE", "L’assistance stratégique est temporairement indisponible.");
     }
 
     if (req.method !== "POST") {
-      return new Response(
-        JSON.stringify({ error: "Méthode non supportée. Utilisez POST." }),
-        { status: 405, headers: corsHeaders }
-      );
+      return jsonError(405, "METHOD_NOT_ALLOWED", "Méthode non supportée.");
     }
 
     let body;
     try {
       body = await req.json();
     } catch (e) {
-      return new Response(
-        JSON.stringify({ error: "Format JSON invalide" }),
-        { status: 400, headers: corsHeaders }
-      );
+      return jsonError(400, "INVALID_JSON", "Le contenu envoyé est invalide.");
     }
 
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return jsonError(400, "INVALID_BODY", "Le contenu envoyé est incomplet.");
+    }
     const { action, context } = body;
 
     if (!action) {
-      return new Response(
-        JSON.stringify({ error: "Action requise (recommend, justify, suggest_risk_measures)" }),
-        { status: 400, headers: corsHeaders }
-      );
+      return jsonError(400, "ACTION_REQUIRED", "Une action d’assistance est requise.");
     }
 
     if (!context || typeof context !== "object") {
-      return new Response(
-        JSON.stringify({ error: "Contexte invalide ou manquant" }),
-        { status: 400, headers: corsHeaders }
-      );
+      return jsonError(400, "INVALID_CONTEXT", "Le contexte d’assistance est incomplet.");
+    }
+
+    if ((action === "recommend" && (typeof context.processName !== "string" || !context.processName.trim() || !Array.isArray(context.options) || context.options.length === 0)) ||
+        (action === "justify" && (typeof context.processName !== "string" || !context.processName.trim() || typeof context.selectedOptionName !== "string" || !context.selectedOptionName.trim())) ||
+        !["recommend", "justify", "suggest_risk_measures"].includes(action)) {
+      return jsonError(400, "INVALID_CONTEXT", "Les informations nécessaires à cette demande sont manquantes.");
     }
 
     try {
       validateInputSize(context);
     } catch (e) {
-      return new Response(
-        JSON.stringify({ error: "Le contexte est trop volumineux" }),
-        { status: 413, headers: corsHeaders }
-      );
+      return jsonError(413, "PAYLOAD_TOO_LARGE", "Les données envoyées sont trop volumineuses.");
     }
 
     console.log(`[groq-strategy-assist] action=${action}`);
@@ -620,55 +615,40 @@ serve(async (req) => {
       case "suggest_risk_measures":
         return await handleSuggestRiskMeasures(context);
       default:
-        return new Response(
-          JSON.stringify({ error: "Action invalide. Utilisez 'recommend', 'justify' ou 'suggest_risk_measures'" }),
-          { status: 400, headers: corsHeaders }
-        );
+        return jsonError(400, "INVALID_ACTION", "L’action d’assistance demandée n’est pas reconnue.");
     }
   } catch (error) {
     console.error("[groq-strategy-assist] Erreur générale:", error);
 
     if (error instanceof GroqTimeoutError) {
-      return new Response(
-        JSON.stringify({ error: "Le service IA a mis trop de temps à répondre. Veuillez réessayer." }),
-        { status: 504, headers: corsHeaders }
-      );
+      return jsonError(504, "AI_PROVIDER_TIMEOUT", "L’assistance stratégique est temporairement indisponible.");
     }
 
     if (error instanceof GroqApiError) {
-      let status = 500;
-      let message = "Erreur du service IA";
+      let status = 503;
+      let code = "AI_PROVIDER_UNAVAILABLE";
+      let message = "L’assistance stratégique est temporairement indisponible.";
 
       if (error.status === 401 || error.status === 403) {
         status = 500;
-        message = "Service IA temporairement indisponible.";
+        message = "L’assistance stratégique est temporairement indisponible.";
         console.error("[groq-strategy-assist] Erreur d'authentification Groq");
       } else if (error.status === 429) {
         status = 503;
-        message = "Le service IA est actuellement saturé. Veuillez réessayer dans quelques instants.";
+        message = "L’assistance stratégique est temporairement indisponible. Réessayez dans quelques instants.";
       } else if (error.status === 400) {
         status = 400;
-        message = "Requête invalide. Veuillez vérifier les données envoyées.";
+        code = "AI_PROVIDER_INVALID_REQUEST";
+        message = "Les informations fournies ne permettent pas de traiter la demande.";
       }
 
-      return new Response(
-        JSON.stringify({ error: message }),
-        { status, headers: corsHeaders }
-      );
+      return jsonError(status, code, message);
     }
 
     if (error instanceof InputTooLargeError) {
-      return new Response(
-        JSON.stringify({ error: "Les données envoyées sont trop volumineuses" }),
-        { status: 413, headers: corsHeaders }
-      );
+      return jsonError(413, "PAYLOAD_TOO_LARGE", "Les données envoyées sont trop volumineuses.");
     }
 
-    return new Response(
-      JSON.stringify({
-        error: "Service IA temporairement indisponible. Veuillez réessayer.",
-      }),
-      { status: 500, headers: corsHeaders }
-    );
+    return jsonError(500, "AI_PROVIDER_UNAVAILABLE", "L’assistance stratégique est temporairement indisponible.");
   }
 });

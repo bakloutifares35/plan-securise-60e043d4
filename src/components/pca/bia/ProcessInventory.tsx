@@ -34,6 +34,7 @@ import { useBia } from "@/contexts/BiaContext";
 import { useGovernance } from "@/contexts/GovernanceContext";
 import { useRole } from "@/contexts/RoleContext";
 import { computeMaxScore, scoreToCriticality, criticalityColor, TimePeriod, type Criticality } from "@/data/bia";
+import { biaCoverageKpi, biaProcessCompletion } from "@/lib/kpiService";
 type ImpactAxis = "Financier" | "Conformité / Légal" | "Opérationnel" | "Réputationnel";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -107,14 +108,18 @@ const generateProcessCode = (department: string, index: number): string => {
 };
 
 const calculateCompletionRate = (processes: any[]): number => {
-  if (processes.length === 0) return 0;
   let completed = 0;
   for (const p of processes) {
-    const hasImpacts = p.impacts && Object.keys(p.impacts).length > 0;
-    const hasResources = p.resources && p.resources.length > 0;
-    if (hasImpacts && hasResources) completed++;
+    const resources = Array.isArray(p.resources) ? p.resources : [];
+    const counts = {
+      hr: resources.filter((resource: any) => resource.type === "HR").length,
+      equip: resources.filter((resource: any) => resource.type === "Equipement").length,
+      app: resources.filter((resource: any) => resource.type === "IT").length,
+      supplier: resources.filter((resource: any) => resource.type === "Fournisseur").length,
+    };
+    if (biaProcessCompletion(p, { [p.id]: counts }).complet) completed++;
   }
-  return Math.round((completed / processes.length) * 100);
+  return biaCoverageKpi(completed, processes.length).percentage;
 };
 
 const getBIAStatus = (processes: any[], lastReviewed?: string): BIAStatus => {

@@ -1,5 +1,5 @@
 // src/components/pca/Dashboard.tsx
-import { ratioKpi, maturityKpi, usedResourcesKpi, exercisesKpi, processesWithApprovedPlan, processesWithStrategy, isCriticalLevel } from "@/lib/kpiService";
+import { biaCoverageKpi, biaProcessCompletion, calculatePcaMaturity, errorKpi, exerciseStatusCounts, planCoverageKpi, ratioKpi, riskTreatmentCoverageKpi, strategyCoverageKpi, usedResourcesKpi, exercisesKpi, processesWithApprovedPlan, processesWithStrategy, isCriticalLevel, weakestReadyKpiDomain, type BiaResourceCounts, type KpiDomain } from "@/lib/kpiService";
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -106,81 +106,13 @@ const getMatrixStyle = (score: number) => {
 // FONCTIONS DE CALCUL BIA (intégrées, inchangées)
 // ============================================================
 
-interface ResourceCounts {
-  [processusId: string]: {
-    hr: number;
-    equip: number;
-    app: number;
-    supplier: number;
-    total: number;
-  };
-}
+type ResourceCounts = BiaResourceCounts;
 
 function isProcessusBiaComplet(
   processus: any,
   resourceCounts: ResourceCounts
 ): { complet: boolean; champsManquants: string[] } {
-  const manquants: string[] = [];
-  const score = computeMaxScore(processus.impacts);
-  const criticite = scoreToCriticality(score);
-
-  if (!processus.impacts) {
-    manquants.push("Impacts non définis");
-  } else {
-    const periods = ['P0_4H', 'P4_8H', 'P1D', 'P2D', 'P1W'];
-    const axes = ['financial', 'regulatory', 'operational', 'reputation'];
-    let hasAllImpacts = true;
-
-    for (const period of periods) {
-      const periodData = processus.impacts[period];
-      if (!periodData || typeof periodData !== 'object') {
-        hasAllImpacts = false;
-        break;
-      }
-      let hasValue = false;
-      for (const axis of axes) {
-        if (periodData[axis] && Number(periodData[axis]) > 0) {
-          hasValue = true;
-          break;
-        }
-      }
-      if (!hasValue) {
-        hasAllImpacts = false;
-        break;
-      }
-    }
-
-    if (!hasAllImpacts) {
-      manquants.push("Impacts incomplets");
-    }
-  }
-
-  if (!processus.rto || processus.rto <= 0) {
-    manquants.push("RTO non défini");
-  }
-  if (!processus.rpo || processus.rpo <= 0) {
-    manquants.push("RPO non défini");
-  }
-
-  if (processus.rto && processus.mtpd && processus.rto > processus.mtpd) {
-    manquants.push(`RTO (${processus.rto}h) > MTPD (${processus.mtpd}h)`);
-  }
-
-  if (!criticite) {
-    manquants.push("Criticité non calculée");
-  }
-
-  const res = resourceCounts[processus.id] || { hr: 0, equip: 0, app: 0, supplier: 0, total: 0 };
-  const isCritiqueOuMajeur = criticite === "Critique" || criticite === "Majeur";
-
-  if (isCritiqueOuMajeur) {
-    if (res.hr === 0) manquants.push("Aucune ressource humaine liée");
-    if (res.app === 0) manquants.push("Aucune application IT liée");
-    if (res.equip === 0) manquants.push("Aucun équipement lié");
-    if (res.supplier === 0) manquants.push("Aucun prestataire lié");
-  }
-
-  return { complet: manquants.length === 0, champsManquants: manquants };
+  return biaProcessCompletion(processus, resourceCounts);
 }
 
 function calculerCouvertureBia(
@@ -195,9 +127,7 @@ function calculerCouvertureBia(
     if (result.complet) complets++;
   }
 
-  let pourcentage = total > 0 ? (complets / total) * 100 : 0;
-  if (pourcentage >= 99.5 && total - complets > 0) pourcentage = 99;
-  pourcentage = Math.round(pourcentage);
+  const pourcentage = biaCoverageKpi(complets, total).percentage;
 
   return { total, complet: complets, pourcentage };
 }
@@ -205,7 +135,7 @@ function calculerCouvertureBia(
 // ============================================================
 // HOOK CENTRALISÉ - AVEC CALCULS JUSTES (inchangé)
 // ============================================================
-const useBCMDashboard = () => {
+export const useBCMDashboard = () => {
   const { processes } = useBia();
   const { entities } = useGovernance();
 
@@ -218,6 +148,7 @@ const useBCMDashboard = () => {
   const [fournisseurs, setFournisseurs] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
   const [risques, setRisques] = useState<any[]>([]);
+  const [riskMeasures, setRiskMeasures] = useState<any[] | null>([]);
   const [exercices, setExercices] = useState<any[]>([]);
   const [exercicesTableExists, setExercicesTableExists] = useState<boolean>(false);
   const [resourceCounts, setResourceCounts] = useState<ResourceCounts>({});
@@ -234,7 +165,7 @@ const useBCMDashboard = () => {
       setLoading(true);
       setLoadError(null);
       try {
-        const [ev, st, asso, rhRes, eqRes, appRes, fourRes, plRes, risqRes, ppRes, tRes, hrL, eqL, apL, suL] =
+        const [ev, st, asso, rhRes, eqRes, appRes, fourRes, plRes, risqRes, ppRes, tRes, hrL, eqL, apL, suL, riskMeasureRes] =
           await Promise.all([
             supabase.from("calendar_events").select("*"),
             supabase.from("strategies_catalogue").select("*"),
@@ -251,6 +182,7 @@ const useBCMDashboard = () => {
             supabase.from('processus_equipements').select('processus_id, equipement_id'),
             supabase.from('processus_applications').select('processus_id, application_id'),
             supabase.from('processus_fournisseurs').select('processus_id, fournisseur_id'),
+            supabase.from("plans_traitement").select("risque_id"),
           ]);
         if (cancelled) return;
 
@@ -269,6 +201,7 @@ const useBCMDashboard = () => {
         setFournisseurs(fourRes.data || []);
         setPlans(plRes.data || []);
         setRisques(risqRes.data || []);
+        setRiskMeasures(riskMeasureRes.error ? null : riskMeasureRes.data || []);
         setPlanLinks(ppRes.error ? [] : ppRes.data || []);
         setTests(tRes?.error ? [] : tRes?.data || []);
         setExercices(tRes?.error ? [] : tRes?.data || []);
@@ -325,8 +258,10 @@ const useBCMDashboard = () => {
       withStrat,
       ressourcesUtilisees,
       exercices: exercisesKpi(tests, criticalIds),
+      exercicesParStatut: exerciseStatusCounts(tests),
+      couvertureRisques: riskMeasures === null ? errorKpi("Traitements des risques indisponibles") : riskTreatmentCoverageKpi(risques, riskMeasures),
     };
-  }, [processes, rh, equip, apps, fournisseurs, resLinks, plans, planLinks, associations, tests]);
+  }, [processes, rh, equip, apps, fournisseurs, resLinks, plans, planLinks, associations, tests, riskMeasures, risques]);
 
   // ============================================================
   // CALCUL DE LA MATURITÉ BCM (inchangé)
@@ -334,98 +269,73 @@ const useBCMDashboard = () => {
   const maturite = useMemo(() => {
     const totalProcessus = processes.length;
     const totalRisques = risques.length;
-
     const biaResult = calculerCouvertureBia(processes, resourceCounts);
-    const biaScore = biaResult.pourcentage;
-
-    const risquesComplets = risques.filter((r) => {
-      const hasProbabilite = r.probabilite && r.probabilite > 0;
-      const hasImpact = r.impact_global && r.impact_global > 0;
-      const hasMesure = r.mesures_existantes && r.mesures_existantes.length > 0;
-      return hasProbabilite && hasImpact && hasMesure;
-    }).length;
-
-    let risquesScore = totalRisques > 0 ? (risquesComplets / totalRisques) * 100 : 0;
-    if (risquesScore >= 99.5 && totalRisques - risquesComplets > 0) risquesScore = 99;
-    risquesScore = Math.round(risquesScore);
-
     const processusAvecCriticite = processes.map((p) => {
       const score = computeMaxScore(p.impacts);
       const criticite = scoreToCriticality(score);
       return { ...p, score, criticite };
     });
-
     const processusCritiques = processusAvecCriticite.filter((p) => isCriticalLevel(p.criticite));
     const totalCritiques = processusCritiques.length;
-
     const processusCritiquesAvecStrategie = kpis.withStrat.size;
-
-    let strategiesScore = totalCritiques > 0
-      ? (processusCritiquesAvecStrategie / totalCritiques) * 100
-      : 0;
-    if (strategiesScore >= 99.5 && totalCritiques - processusCritiquesAvecStrategie > 0) strategiesScore = 99;
-    strategiesScore = Math.round(strategiesScore);
-
     const processusCritiquesAvecPlanApprouve = kpis.withPlan.size;
-
-    let plansScore = totalCritiques > 0
-      ? (processusCritiquesAvecPlanApprouve / totalCritiques) * 100
-      : 0;
-    if (plansScore >= 99.5 && totalCritiques - processusCritiquesAvecPlanApprouve > 0) plansScore = 99;
-    plansScore = Math.round(plansScore);
-
     const processusCritiquesAvecRessourcesCompletes = processusCritiques.filter((p) => {
       const res = resourceCounts[p.id] || { hr: 0, equip: 0, app: 0, supplier: 0 };
       return res.hr > 0 && res.equip > 0 && res.app > 0 && res.supplier > 0;
     }).length;
-
-    let ressourcesScore = totalCritiques > 0
-      ? (processusCritiquesAvecRessourcesCompletes / totalCritiques) * 100
-      : 0;
-    if (ressourcesScore >= 99.5 && totalCritiques - processusCritiquesAvecRessourcesCompletes > 0) ressourcesScore = 99;
-    ressourcesScore = Math.round(ressourcesScore);
-
-    const globalScore = Math.round(
-      (biaScore * 0.20) +
-      (risquesScore * 0.20) +
-      (strategiesScore * 0.20) +
-      (plansScore * 0.25) +
-      (ressourcesScore * 0.15)
-    );
-
-    const modules = [
-      { label: "BIA", value: biaScore, manquant: biaResult.total - biaResult.complet },
-      { label: "Risques", value: risquesScore, manquant: totalRisques - risquesComplets },
-      { label: "Stratégies", value: strategiesScore, manquant: totalCritiques - processusCritiquesAvecStrategie },
-      { label: "Plans", value: plansScore, manquant: totalCritiques - processusCritiquesAvecPlanApprouve },
-      { label: "Ressources", value: ressourcesScore, manquant: totalCritiques - processusCritiquesAvecRessourcesCompletes },
+    const bia = biaCoverageKpi(biaResult.complet, biaResult.total);
+    const risk = kpis.couvertureRisques;
+    const criticalIds = processusCritiques.map((process) => process.id);
+    const strategies = strategyCoverageKpi(associations, criticalIds);
+    const plan = planCoverageKpi(plans, planLinks, criticalIds);
+    const resources = ratioKpi(processusCritiquesAvecRessourcesCompletes, totalCritiques);
+    const maturity = calculatePcaMaturity({ bia, risques: risk, strategies, plans: plan, ressources: resources });
+    const biaScore = bia.percentage;
+    const risquesScore = risk.percentage;
+    const strategiesScore = strategies.percentage;
+    const plansScore = plan.percentage;
+    const ressourcesScore = resources.percentage;
+    const risquesComplets = risk.numerator;
+    const modules: KpiDomain[] = [
+      { label: "BIA", value: biaScore, manquant: biaResult.total - biaResult.complet, status: bia.status },
+      { label: "Risques", value: risquesScore, manquant: totalRisques - risquesComplets, status: risk.status },
+      { label: "Stratégies", value: strategiesScore, manquant: totalCritiques - processusCritiquesAvecStrategie, status: strategies.status },
+      { label: "Plans", value: plansScore, manquant: totalCritiques - processusCritiquesAvecPlanApprouve, status: plan.status },
+      { label: "Ressources", value: ressourcesScore, manquant: totalCritiques - processusCritiquesAvecRessourcesCompletes, status: resources.status },
     ];
-
-    const weakest = modules.reduce((min, m) => m.value < min.value ? m : min, modules[0]);
-    const insight = `Votre couverture ${weakest.label} est le point faible actuel : ${weakest.value}% des données évaluées. ${weakest.manquant > 0 ? `(${weakest.manquant} élément${weakest.manquant > 1 ? 's' : ''} à compléter)` : ''}`;
+    const weakest = weakestReadyKpiDomain(modules);
+    const insight = maturity.warning || (weakest
+      ? `Votre couverture ${weakest.label} est le point faible actuel : ${weakest.value}% (${weakest.manquant} élément${weakest.manquant > 1 ? "s" : ""} à compléter).`
+      : "Données insuffisantes pour calculer la maturité.");
 
     return {
-      global: globalScore,
+      global: maturity.value,
+      status: maturity.status,
+      warning: maturity.warning,
       bia: biaScore,
       risques: risquesScore,
       strategies: strategiesScore,
       plans: plansScore,
       ressources: ressourcesScore,
+      kpi: maturity,
+      kpis: { bia, risques: risk, strategies, plans: plan, ressources: resources },
+      statuses: { bia: bia.status, risques: risk.status, strategies: strategies.status, plans: plan.status, ressources: resources.status },
       totalCritiques,
       processusCritiquesAvecStrategie,
       processusCritiquesAvecPlanApprouve,
       processusCritiquesAvecRessourcesCompletes,
       details: {
         bia: { total: biaResult.total, complet: biaResult.complet, manquant: biaResult.total - biaResult.complet },
-        risques: { total: totalRisques, evalues: risquesComplets, manquant: totalRisques - risquesComplets },
+        risques: { total: totalRisques, evalues: risquesComplets, manquant: totalRisques - risquesComplets, status: risk.status },
         strategies: { totalCritiques, couverts: processusCritiquesAvecStrategie, manquant: totalCritiques - processusCritiquesAvecStrategie },
         plans: { totalCritiques, approuves: processusCritiquesAvecPlanApprouve, manquant: totalCritiques - processusCritiquesAvecPlanApprouve },
         ressources: { totalCritiques, complets: processusCritiquesAvecRessourcesCompletes, manquant: totalCritiques - processusCritiquesAvecRessourcesCompletes },
       },
       insight,
-      weakestModule: weakest.label,
+      weakestModule: weakest?.label ?? "Données indisponibles",
+
     };
-  }, [processes, risques, associations, plans, resourceCounts, kpis]);
+  }, [processes, risques, associations, plans, planLinks, resourceCounts, kpis]);
 
   // ============================================================
   // FRAÎCHEUR DU PROGRAMME (dernier exercice, prochain test, plans obsolètes)
@@ -584,8 +494,9 @@ const useBCMDashboard = () => {
       totalCritiques: maturite.totalCritiques,
       avecStrategie: maturite.processusCritiquesAvecStrategie,
       avecPlan: maturite.processusCritiquesAvecPlanApprouve,
-      testes: fraicheur.hasExerciceData ? maturite.processusCritiquesAvecPlanApprouve : 0,
-      hasExerciceTracking: fraicheur.hasExerciceData,
+      testes: kpis.exercices.numerator,
+      hasExerciceTracking: exercicesTableExists,
+      exerciseStatuses: kpis.exercicesParStatut,
     };
 
     return {
@@ -603,7 +514,7 @@ const useBCMDashboard = () => {
         }).length,
       },
       maturite,
-      kpiService: { ...kpis, maturite: maturityKpi({ bia: ratioKpi(maturite.details.bia.complet, maturite.details.bia.total), risques: ratioKpi(maturite.details.risques.evalues, maturite.details.risques.total), strategies: ratioKpi(maturite.processusCritiquesAvecStrategie, maturite.totalCritiques), plans: ratioKpi(maturite.processusCritiquesAvecPlanApprouve, maturite.totalCritiques), ressources: ratioKpi(maturite.processusCritiquesAvecRessourcesCompletes, maturite.totalCritiques) }) },
+      kpiService: { ...kpis, maturite: maturite.kpi, ...maturite.kpis },
       insight: maturite.insight,
       echeances,
       matrixData,
@@ -738,12 +649,10 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-4xl font-bold text-white font-serif">
-              {data.global}
-            </span>
-            <span className="text-[10px] text-white/50 uppercase tracking-wider mt-1">
-              / 100
-            </span>
+            {data.status !== "ready" ? <span className="px-2 text-center text-xs font-semibold text-white/75">Données insuffisantes</span> : <>
+              <span className="text-4xl font-bold text-white font-serif">{data.global}</span>
+              <span className="text-[10px] text-white/50 uppercase tracking-wider mt-1">/ 100</span>
+            </>}
           </div>
         </div>
         <div className="flex flex-col justify-center">
@@ -754,9 +663,9 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
             className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full mt-1.5 w-fit"
             style={{ backgroundColor: `${badgeColor}22`, color: badgeColor }}
           >
-            Niveau {getScoreLabel(data.global)}
+            {data.status !== "ready" ? "Données insuffisantes" : `Niveau ${getScoreLabel(data.global)}`}
           </span>
-          <p className="text-xs text-white/60 mt-2 max-w-[240px]">{insight}</p>
+          <p className="text-xs text-white/60 mt-2 max-w-[240px]">{data.warning || insight}</p>
           <div className="flex items-center gap-1.5 mt-2">
             <TrendingUp className="h-3 w-3 text-[#639922]" />
             <span className="text-xs font-medium text-[#639922]">Calculé en temps réel</span>
@@ -766,14 +675,14 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
 
       <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-8">
         {[
-          { label: "BIA", value: data.bia, color: "#639922", manquant: data.details?.bia?.manquant, total: data.details?.bia?.total },
-          { label: "Risques", value: data.risques, color: "#4A7A6A", manquant: data.details?.risques?.manquant, total: data.details?.risques?.total },
-          { label: "Stratégies", value: data.strategies, color: "#6A9A8A", manquant: data.details?.strategies?.manquant, total: data.details?.strategies?.totalCritiques },
-          { label: "Plans", value: data.plans, color: "#8A9A9A", manquant: data.details?.plans?.manquant, total: data.details?.plans?.totalCritiques },
-          { label: "Ressources", value: data.ressources, color: "#A5B8B0", manquant: data.details?.ressources?.manquant, total: data.details?.ressources?.totalCritiques },
+          { label: "BIA", value: data.bia, status: data.statuses.bia, color: "#639922", manquant: data.details?.bia?.manquant, total: data.details?.bia?.total },
+          { label: "Risques", value: data.risques, status: data.statuses.risques, color: "#4A7A6A", manquant: data.details?.risques?.manquant, total: data.details?.risques?.total },
+          { label: "Stratégies", value: data.strategies, status: data.statuses.strategies, color: "#6A9A8A", manquant: data.details?.strategies?.manquant, total: data.details?.strategies?.totalCritiques },
+          { label: "Plans", value: data.plans, status: data.statuses.plans, color: "#8A9A9A", manquant: data.details?.plans?.manquant, total: data.details?.plans?.totalCritiques },
+          { label: "Ressources", value: data.ressources, status: data.statuses.ressources, color: "#A5B8B0", manquant: data.details?.ressources?.manquant, total: data.details?.ressources?.totalCritiques },
         ].map((item) => {
-          const isComplete = item.value >= 100;
-          const detailText = item.manquant > 0
+          const isComplete = item.status === "ready" && item.value >= 100;
+          const detailText = item.status === "empty" ? "Aucune donnée enregistrée" : item.status !== "ready" ? "Données indisponibles" : item.manquant > 0
             ? `${item.manquant} élément${item.manquant > 1 ? 's' : ''} manquant${item.manquant > 1 ? 's' : ''} sur ${item.total || 0}`
             : "Complet";
           return (
@@ -783,10 +692,10 @@ const BandeauMaturite = ({ data, insight }: { data: any; insight: string }) => {
                   {item.label}
                   {isComplete && <CheckCircle2 className="h-3 w-3 text-[#639922]" />}
                 </span>
-                <span className="text-sm font-bold text-white">{item.value}%</span>
+                <span className="text-sm font-bold text-white">{item.status === "ready" ? `${item.value}%` : "N/A"}</span>
               </div>
               <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${item.value}%`, backgroundColor: item.color }} />
+                <div className="h-full rounded-full transition-all duration-1000" style={{ width: item.status === "ready" ? `${item.value}%` : "0%", backgroundColor: item.color }} />
               </div>
               <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-8 left-0 bg-[#172030] border border-white/10 text-[8px] text-white/80 px-2 py-1 rounded whitespace-nowrap z-10 shadow-lg pointer-events-none">
                 {detailText}
@@ -907,25 +816,25 @@ const CoverageFunnel = ({ funnel }: { funnel: any }) => {
     {
       label: "Critiques",
       value: funnel.totalCritiques,
-      pct: funnel.totalProcessus > 0 ? Math.round((funnel.totalCritiques / funnel.totalProcessus) * 100) : 0,
+      pct: ratioKpi(funnel.totalCritiques, funnel.totalProcessus).status === "ready" ? ratioKpi(funnel.totalCritiques, funnel.totalProcessus).percentage : null,
       icon: Shield,
     },
     {
       label: "Avec stratégie",
       value: funnel.avecStrategie,
-      pct: funnel.totalCritiques > 0 ? Math.round((funnel.avecStrategie / funnel.totalCritiques) * 100) : 0,
+      pct: ratioKpi(funnel.avecStrategie, funnel.totalCritiques).status === "ready" ? ratioKpi(funnel.avecStrategie, funnel.totalCritiques).percentage : null,
       icon: GitBranch,
     },
     {
       label: "Avec plan approuvé",
       value: funnel.avecPlan,
-      pct: funnel.totalCritiques > 0 ? Math.round((funnel.avecPlan / funnel.totalCritiques) * 100) : 0,
+      pct: ratioKpi(funnel.avecPlan, funnel.totalCritiques).status === "ready" ? ratioKpi(funnel.avecPlan, funnel.totalCritiques).percentage : null,
       icon: FileCheck,
     },
     {
       label: "Testés (12 mois)",
       value: funnel.hasExerciceTracking ? funnel.testes : null,
-      pct: funnel.hasExerciceTracking && funnel.totalCritiques > 0 ? Math.round((funnel.testes / funnel.totalCritiques) * 100) : 0,
+      pct: funnel.hasExerciceTracking && ratioKpi(funnel.testes, funnel.totalCritiques).status === "ready" ? ratioKpi(funnel.testes, funnel.totalCritiques).percentage : null,
       icon: PlayCircle,
       untracked: !funnel.hasExerciceTracking,
     },
@@ -976,7 +885,7 @@ const CoverageFunnel = ({ funnel }: { funnel: any }) => {
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-2xl font-bold text-[#172030] font-serif">{step.value}</span>
                       {idx > 0 && (
-                        <span className="text-[10px] text-[#172030]/40 font-medium">({step.pct}%)</span>
+                        <span className="text-[10px] text-[#172030]/40 font-medium">({step.pct === null ? "N/A" : `${step.pct}%`})</span>
                       )}
                     </div>
                   )}
@@ -988,6 +897,9 @@ const CoverageFunnel = ({ funnel }: { funnel: any }) => {
             );
           })}
         </div>
+        {funnel.hasExerciceTracking && <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-[#E8E4DC] pt-3 text-[11px] text-[#172030]/60" aria-label="Répartition des exercices par statut">
+          <span>Planifiés : {funnel.exerciseStatuses.planned}</span><span>En cours : {funnel.exerciseStatuses.inProgress}</span><span>Terminés : {funnel.exerciseStatuses.completed}</span><span>Annulés : {funnel.exerciseStatuses.cancelled}</span>
+        </div>}
       </CardContent>
     </Card>
   );
@@ -1497,10 +1409,10 @@ const RessourcesBloc = ({ ressources, total }: { ressources: any[]; total: numbe
 );
 
 // 10. STRATÉGIES
-const StrategiesBloc = ({ strategies, processus, associations }: { strategies: any[]; processus: any[]; associations: any[] }) => {
+const StrategiesBloc = ({ strategies, coverage }: { strategies: any[]; coverage: any }) => {
   const totalStrat = strategies?.length || 0;
-  const processusCouverts = processus?.filter((p) => associations?.some((a) => a.processus_id === p.id)).length || 0;
-  const sansStrategie = (processus?.length || 0) - processusCouverts;
+  const processusCouverts = coverage.numerator;
+  const sansStrategie = Math.max(0, coverage.denominator - coverage.numerator);
 
   return (
     <Card className="border border-[#E8E4DC] shadow-sm bg-white">
@@ -1535,7 +1447,7 @@ const StrategiesBloc = ({ strategies, processus, associations }: { strategies: a
         </div>
         <div className="flex items-center justify-between pt-3 mt-2 border-t border-[#E8E4DC]">
           <span className="text-sm font-semibold text-[#172030]">Total couverture</span>
-          <span className="text-xl font-bold text-[#2A5141] font-serif">{processus?.length > 0 ? Math.round((processusCouverts / processus.length) * 100) : 0}%</span>
+          <span className="text-xl font-bold text-[#2A5141] font-serif">{coverage.status === "ready" ? `${coverage.percentage}%` : "N/A"}</span>
         </div>
       </CardContent>
     </Card>
@@ -1625,7 +1537,7 @@ export const Dashboard = () => {
       {/* 8. Ressources & Stratégies */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <RessourcesBloc ressources={dashboard.ressources} total={dashboard.kpis.totalRessources} />
-        <StrategiesBloc strategies={dashboard.strategies} processus={processes} associations={dashboard.associations} />
+        <StrategiesBloc strategies={dashboard.strategies} coverage={dashboard.kpiService.strategies} />
       </div>
     </div>
   );

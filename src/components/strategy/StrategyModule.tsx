@@ -1,6 +1,6 @@
 // src/components/strategy/StrategyModule.tsx
-import { functionsClient } from "@/integrations/supabase/functionsClient";
-import { strategyCoverageKpi } from "@/lib/kpiService";
+import { supabase as functionsClient } from "@/integrations/resillia/client";
+import { isCriticalLevel, ratioKpi, strategyCoverageKpi } from "@/lib/kpiService";
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1242,7 +1242,10 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
   const [statutInitial, setStatutInitial] = useState<string>("Brouillon");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiRecommendation, setAiRecommendation] = useState<any>(null);
+  const [aiError, setAiError] = useState(false);
+  const [aiRetryKey, setAiRetryKey] = useState(0);
   const [aiJustifying, setAiJustifying] = useState(false);
+  const [aiJustificationError, setAiJustificationError] = useState(false);
   const [hasData, setHasData] = useState(false);
 
   useEffect(() => {
@@ -1343,9 +1346,11 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
   const scenarioOptions = ["Indisponibilité du site", "Panne systèmes", "Indisponibilité du personnel", "Défaillance fournisseur", "Cyberattaque"];
 
   useEffect(() => {
+    let cancelled = false;
     const fetchRecommendation = async () => {
       if (step !== 3 || !selectedProcess) return;
       setAiLoading(true);
+      setAiError(false);
       setAiRecommendation(null);
       try {
         const context = {
@@ -1359,22 +1364,29 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
           hypotheses: form.hypotheses,
           options: catalogue.map((opt: any) => ({ id: opt.id, nom: opt.nom, description: opt.description })),
         };
+        if (!context.processName || !context.options.length) throw new Error("Contexte de recommandation incomplet");
         const { data, error } = await functionsClient.functions.invoke('groq-strategy-assist', { body: { action: 'recommend', context } });
         if (error) throw error;
-        if (data?.response) {
-          try { setAiRecommendation(JSON.parse(data.response)); } catch (e) { console.error(e); }
-        }
-      } catch (error) { console.error(error); }
-      finally { setAiLoading(false); }
+        if (typeof data?.response !== "string") throw new Error("Réponse d'assistance invalide");
+        const recommendation = JSON.parse(data.response);
+        if (!cancelled) setAiRecommendation(recommendation);
+      } catch (error) {
+        if (import.meta.env.DEV) console.error("Échec de l’assistance stratégique", error);
+        if (!cancelled) setAiError(true);
+      } finally {
+        if (!cancelled) setAiLoading(false);
+      }
     };
     fetchRecommendation();
-  }, [step, selectedProcess?.id, dynamicCriticality]);
+    return () => { cancelled = true; };
+  }, [step, selectedProcess?.id, dynamicCriticality, aiRetryKey]);
 
   const handleGenerateJustification = async () => {
     if (!selectedOptionId) return;
     const selectedOption = catalogue.find((o: any) => o.id === selectedOptionId);
     if (!selectedOption) return;
     setAiJustifying(true);
+    setAiJustificationError(false);
     try {
       const context = {
         processName: selectedProcess?.name,
@@ -1386,9 +1398,11 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
       };
       const { data, error } = await functionsClient.functions.invoke('groq-strategy-assist', { body: { action: 'justify', context } });
       if (error) throw error;
-      if (data?.justification) setJustification(data.justification);
+      if (typeof data?.justification !== "string" || !data.justification.trim()) throw new Error("Réponse de justification invalide");
+      setJustification(data.justification);
     } catch (error) {
-      toast({ title: "Erreur", description: "Impossible de générer la justification.", variant: "destructive" });
+      if (import.meta.env.DEV) console.error("Échec de la génération de justification", error);
+      setAiJustificationError(true);
     } finally { setAiJustifying(false); }
   };
 
@@ -1607,6 +1621,12 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
                   <Loader2 className="h-4 w-4 animate-spin text-[#2A5141]" /> Analyse du contexte par l'IA...
                 </div>
               )}
+              {!aiLoading && aiError && (
+                <div role="alert" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  <span>L’assistance stratégique est temporairement indisponible. Vos données sont conservées. Réessayez dans quelques instants.</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setAiRetryKey((key) => key + 1)}>Réessayer</Button>
+                </div>
+              )}
               {!aiLoading && aiRecommendation?.rationale && (
                 <div className="bg-[#F8F6F2] border-l-4 border-l-[#2A5141] p-4 rounded-lg text-[13px] flex items-start gap-3 mt-5">
                   <Sparkles className="h-4 w-4 text-[#2A5141] mt-0.5 flex-shrink-0" />
@@ -1626,6 +1646,7 @@ const StrategyWizard = ({ data, onComplete, onCancel, initialProcessId }: { data
                     {aiJustifying ? "Génération..." : "Générer avec l'IA"}
                   </Button>
                 </div>
+                {aiJustificationError && <p role="alert" className="text-sm text-amber-800">L’assistance stratégique est temporairement indisponible. Vos données sont conservées. Réessayez dans quelques instants.</p>}
                 <FieldTextarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={3} placeholder="Expliquez votre choix..." />
               </div>
             </SectionCard>
@@ -1802,10 +1823,11 @@ export const StrategyModule = () => {
   }, [strategyData.processus, strategyData.associations]);
 
   const stats = useMemo(() => {
-    const coverageKpi = strategyCoverageKpi(strategyData.associations, strategyData.processus.map((p: any) => p.id));
+    const criticalIds = strategyData.processus.filter((p: any) => isCriticalLevel(scoreToCriticality(computeMaxScore(p.impacts)))).map((p: any) => p.id);
+    const coverageKpi = strategyCoverageKpi(strategyData.associations, criticalIds);
     const linkedIds = new Set(strategyData.associations.map(a => a.processus_id));
     const covered = strategyData.processus.filter(p => linkedIds.has(p.id));
-    const totalProcessus = strategyData.processus.length;
+    const totalProcessus = criticalIds.length;
     const sansStrategie = totalProcessus - coverageKpi.numerator;
     const tauxCouverture = coverageKpi.percentage;
 
@@ -1824,8 +1846,8 @@ export const StrategyModule = () => {
 
     const justifiedCount = strategyData.associations.filter(a => a.justification && a.justification.trim().length > 0).length;
     const totalAssociations = strategyData.associations.length;
-    const justificationRate = totalAssociations > 0 ? Math.round((justifiedCount / totalAssociations) * 100) : 0;
-    const maturityScore = Math.round((tauxCouverture * 0.40) + (justificationRate * 0.60));
+    const justificationKpi = ratioKpi(justifiedCount, totalAssociations);
+    const justificationRate = justificationKpi.percentage;
 
     const rtoGaps = strategyData.associations.filter((a: any) => {
       const p = strategyData.processus.find((pr: any) => pr.id === a.processus_id);
@@ -1874,7 +1896,9 @@ export const StrategyModule = () => {
       tauxCouverture,
       sansStrategie,
       linkedActionCount: linkedActionIds.size,
-      maturityScore,
+      coverageStatus: coverageKpi.status,
+      justificationStatus: justificationKpi.status,
+      justifiedCount,
       justificationRate,
       priorityList,
       totalProcessus,
@@ -1986,16 +2010,16 @@ export const StrategyModule = () => {
                   tone={stats.rtoGaps === 0 ? "success" : "alert"}
                 />
                 <KpiCard
-                  label="Maturité"
-                  value={stats.maturityScore}
-                  subLabel="/ 100"
+                  label="Justifications renseignées"
+                  value={stats.justificationStatus === "ready" ? `${stats.justificationRate}%` : "N/A"}
+                  subLabel={`${stats.justifiedCount}/${strategyData.associations.length} associations`}
                   icon={Gauge}
                   tone="neutral"
                 />
                 <KpiCard
                   label="Couverture"
-                  value={`${stats.tauxCouverture}%`}
-                  subLabel={`${stats.coveredCount}/${stats.totalProcessus}`}
+                  value={stats.coverageStatus === "ready" ? `${stats.tauxCouverture}%` : "N/A"}
+                  subLabel={`${stats.criticalCovered}/${stats.criticalTotal} processus critiques`}
                   icon={Layers}
                   tone="neutral"
                   badge={
@@ -2069,7 +2093,7 @@ export const StrategyModule = () => {
                       </div>
                       <div className="flex flex-col">
                         <span className="text-[10px] uppercase tracking-wider text-[#172030]/40 font-semibold">Processus couverts</span>
-                        <span className="text-[12px] font-medium text-[#172030]">{stats.coveredCount} / {stats.totalProcessus}</span>
+                        <span className="text-[12px] font-medium text-[#172030]">{stats.criticalCovered} / {stats.criticalTotal} critiques</span>
                       </div>
                     </div>
 

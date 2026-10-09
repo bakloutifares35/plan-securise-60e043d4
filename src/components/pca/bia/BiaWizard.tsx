@@ -357,9 +357,7 @@ export const getSuggestedRTO = (impacts: any): RTOSuggestion => {
   };
 };
 
-/**
- * Trouve l'option RTO la plus proche dans la liste des options disponibles.
- */
+/** Trouve l'option RTO la plus proche dans la liste des options disponibles. */
 const findClosestRTOOption = (value: number, options: number[]): number => {
   if (options.length === 0) return value;
   return options.reduce((prev, curr) =>
@@ -393,7 +391,7 @@ const getSafeImpacts = (impacts: any) => {
   return safe;
 };
 
-const newProcess = (): Process => ({
+const newProcess = (): Omit<Process, "rpo"> => ({
   id: `pr_${Date.now()}`,
   name: "",
   entityId: "",
@@ -403,7 +401,6 @@ const newProcess = (): Process => ({
   status: "Actif",
   impacts: emptyImpacts(),
   rto: null as unknown as number, // RTO vide par défaut : prérempli avec la suggestion dès qu'elle existe (jamais ≥ MTPD)
-  rpo: undefined as unknown as number, // non géré par ce wizard — valeur préservée telle quelle
   mtpd: 72,
   mbco: 80,
   resources: [],
@@ -422,6 +419,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
   // Le message d'erreur RTO n'apparaît qu'après une modification (RTO ou matrice) ou une tentative de validation
   const [rtoTouched, setRtoTouched] = useState(false);
   const [rtoSubmitAttempted, setRtoSubmitAttempted] = useState(false);
+  const [rtoManuallySet, setRtoManuallySet] = useState(false);
 
   const initial = useMemo(() => {
     const found = processes.find((p) => p.id === processId);
@@ -479,12 +477,13 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
 
   const showRtoError = Boolean(rtoError) && (rtoTouched || rtoSubmitAttempted);
 
-  // Préremplissage du RTO avec la suggestion — uniquement si aucune valeur n'a été saisie
+  // Actualise les suggestions tant que l'utilisateur n'a pas choisi une valeur manuellement.
   useEffect(() => {
-    if (rtoSuggestion.rto !== null && (data.rto === null || data.rto === undefined)) {
-      update("rto", rtoSuggestion.rto);
+    if (!rtoManuallySet) {
+      if (!processId) update("rto", rtoSuggestion.rto);
+      else if (rtoSuggestion.rto !== null && data.rto == null) update("rto", rtoSuggestion.rto);
     }
-  }, [rtoSuggestion.rto]);
+  }, [rtoSuggestion.rto, rtoManuallySet, processId]);
 
   const canNext = () => step === 0 ? (data.name && data.entityId && data.owner) : true;
 
@@ -496,14 +495,16 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
       return;
     }
     setIsSaving(true);
+    const wizardData = { ...data };
+    delete wizardData.rpo;
     const processToSave = {
-      ...data,
+      ...wizardData,
       lastUpdated: new Date().toISOString().slice(0, 10),
       appsCritiques: data.appsCritiques || [],
       resources: []
     };
     try {
-      await upsertProcess(processToSave);
+    await upsertProcess(processToSave);
       toast({ title: "BIA enregistré", description: `${data.name} — Criticité: ${criticality}` });
       onDone();
     } catch (error) {
@@ -513,22 +514,23 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
     }
   };
 
-  const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168, 240, 336, 504, 720];
+  const rtoOptions = [0.5, 1, 2, 4, 6, 8, 12, 24, 48, 72, 84, 96, 120, 168, 240, 336, 360, 504, 720];
 
   const applySuggestions = () => {
     if (rtoSuggestion.rto === null) {
       toast({
         title: "RTO non calculable",
-        description: "Ce processus n'est pas critique (aucun axe ≥ 4) — définissez le RTO manuellement.",
+        description: "Renseignez les impacts critiques ou définissez le RTO manuellement.",
         variant: "destructive",
       });
       return;
     }
     const closestOption = findClosestRTOOption(rtoSuggestion.rto, rtoOptions);
     update("rto", closestOption);
+    setRtoManuallySet(true);
     toast({
       title: "Suggestion RTO appliquée",
-      description: rtoSuggestion.explanation + ` → Option retenue : ${closestOption}h.`,
+      description: rtoSuggestion.explanation + ` Option retenue : ${closestOption}h.`,
       duration: 8000,
     });
   };
@@ -701,15 +703,15 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
               <div className="bg-[#F8F6F2] rounded-lg p-4 border border-[#E8E4DC]">
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-[#172030]">RTO suggéré</p>
+                    <p className="text-sm font-medium text-[#172030]">RTO du formulaire</p>
                     <p className="text-xs text-[#172030]/50">
                       Méthode Risk Manager BCI/ISO 22301 — RTO = MTPD × {RTO_COEFFICIENT} (seuil critique : score ≥ {CRITICAL_THRESHOLD})
                     </p>
                     <div className="flex gap-4 mt-2 flex-wrap">
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
-                        <span className="text-xs text-[#172030]/50">RTO suggéré</span>
+                        <span className="text-xs text-[#172030]/50">Valeur du champ RTO</span>
                         <p className="text-xl font-bold text-[#2A5141]">
-                          {rtoSuggestion.rto !== null ? `${rtoSuggestion.rto}h` : "—"}
+                          {data.rto !== null && data.rto !== undefined ? `${data.rto}h` : "RTO non calculable"}
                         </p>
                       </div>
                       <div className="bg-white rounded-lg px-3 py-1.5 border border-[#E8E4DC]">
@@ -770,7 +772,7 @@ export const BiaWizard = ({ processId, initialEntityId, onDone }: { processId?: 
                   <Label>RTO — Recovery Time Objective (heures)</Label>
                   <Select
                     value={data.rto === null || data.rto === undefined ? "" : String(data.rto)}
-                    onValueChange={(v) => { setRtoTouched(true); update("rto", Number(v)); }}
+                    onValueChange={(v) => { setRtoTouched(true); setRtoManuallySet(true); update("rto", Number(v)); }}
                   >
                     <SelectTrigger className="w-full"><SelectValue placeholder="Sélectionner un RTO" /></SelectTrigger>
                     <SelectContent>
