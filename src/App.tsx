@@ -10,11 +10,14 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import AdminUsers from "./pages/AdminUsers";
 import ResetPassword from "./pages/ResetPassword";
+import Onboarding from "./pages/ImmersiveOnboarding";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { OnboardingGate } from "@/components/auth/OnboardingGate";
 import { ChatbotWidget } from "./components/chatbot/ChatbotWidget";
+import { ApplicationShell } from "@/components/layout/ApplicationShell";
 
-const P = () => <ProtectedRoute><Index /></ProtectedRoute>;
+const P = () => <ProtectedRoute><OnboardingGate><Index /></OnboardingGate></ProtectedRoute>;
 function AuthedChatbot() {
   const { session } = useAuth();
   const { loading, hasActiveMembership } = useRole();
@@ -25,7 +28,7 @@ function AdminUsersRoute() {
   const { role, loading } = useRole();
   if (loading) return <div className="min-h-screen grid place-items-center">Chargement des permissions…</div>;
   if (role !== "admin_pca") return <main className="min-h-screen grid place-items-center p-6"><section className="max-w-md rounded-lg border bg-card p-6 text-center"><h1 className="text-xl font-semibold">Accès réservé à l’administration</h1><p className="mt-2 text-sm text-muted-foreground">Votre rôle ne permet pas de gérer les utilisateurs.</p></section></main>;
-  return <AdminUsers />;
+  return <ApplicationShell active="admin-users" onChange={() => undefined}><AdminUsers /></ApplicationShell>;
 }
 
 const queryClient = new QueryClient();
@@ -44,7 +47,8 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
-                <Route path="/admin/users" element={<ProtectedRoute><AdminUsersRoute /></ProtectedRoute>} />
+                <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+                <Route path="/admin/users" element={<ProtectedRoute><OnboardingGate><AdminUsersRoute /></OnboardingGate></ProtectedRoute>} />
                 <Route path="/bia" element={<P />} />
                 <Route path="/bia/synthese" element={<P />} />
                 <Route path="/bia/recovery" element={<P />} />

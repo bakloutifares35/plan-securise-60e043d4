@@ -16,19 +16,19 @@ export function AuthLoading() {
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
-  const { loading: roleLoading, hasActiveMembership, requiresOrganizationSelection, memberships, selectOrganization } = useRole();
+  const { loading: roleLoading, hasActiveMembership, requiresOrganizationSelection, memberships, selectMembership } = useRole();
   const location = useLocation();
   if (loading) return <AuthLoading />;
   if (!session) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (roleLoading) return <AuthLoading />;
-  if (requiresOrganizationSelection) return <OrganizationSelection memberships={memberships} onSelect={selectOrganization} />;
+  if (requiresOrganizationSelection) return <OrganizationSelection memberships={memberships} onSelect={selectMembership} />;
   if (!hasActiveMembership) return <PendingActivation />;
   return <>{children}</>;
 }
 
 function OrganizationSelection({ memberships, onSelect }: {
-  memberships: Array<{ id: string; role: string; organization_id: string | null }>;
-  onSelect: (organizationId: string) => void;
+  memberships: Array<{ id: string; role: string; organization_id: string | null; organization_name: string | null }>;
+  onSelect: (membershipId: string) => void;
 }) {
   return (
     <main className="min-h-screen flex items-center justify-center bg-background p-6">
@@ -36,9 +36,9 @@ function OrganizationSelection({ memberships, onSelect }: {
         <h1 className="text-2xl font-semibold">Sélection d’organisation requise</h1>
         <p className="text-sm text-muted-foreground">Plusieurs memberships sont actives. Choisissez explicitement celle à utiliser. Cette sélection ne constitue pas encore l’isolation des données métier par organisation.</p>
         <div className="space-y-2">
-          {memberships.filter((membership) => membership.organization_id).map((membership) => (
-            <Button key={membership.id} variant="outline" className="w-full justify-start" onClick={() => onSelect(membership.organization_id!)}>
-              {membership.organization_id} · {membership.role}
+          {memberships.map((membership) => (
+            <Button key={membership.id} variant="outline" className="w-full justify-start" onClick={() => onSelect(membership.id)}>
+              {membership.organization_name ?? "Aucune organisation assignée — isolation prévue en phase B"} · {membership.role}
             </Button>
           ))}
         </div>

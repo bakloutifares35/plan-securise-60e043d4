@@ -1,0 +1,43 @@
+.auth-brand {
+  background-color: #172030;
+  background-image: radial-gradient(ellipse at 52% 47%, rgb(42 81 65 / 27%), transparent 59%), radial-gradient(ellipse at 50% 45%, rgb(143 191 168 / 7%), transparent 72%), linear-gradient(145deg, #172030 5%, #173139 54%, #172030 100%);
+}
+.resilience-visual { width: min(100%, 32rem); margin: 0 auto; }
+.resilience-breath { display: block; width: 100%; overflow: visible; }
+.continuity-orbit { fill: none; stroke: rgb(143 191 168 / 12%); stroke-width: .8; }
+.breath-aura { opacity: .45; transform-origin: center; animation: aura-breathe 11s ease-in-out infinite; }
+.breath-orbits { transform-box: view-box; transform-origin: 50% 50%; animation: orbit-turn 68s linear infinite; }
+.breath-ribbon { fill: none; stroke: url(#breath-line); stroke-width: 1.25; stroke-linecap: round; opacity: .62; animation: ribbon-recompose 18s ease-in-out infinite; }
+.ribbon-two { stroke-width: 1; animation-delay: -6s; animation-duration: 23s; }
+.ribbon-three { stroke-width: 1.1; animation-delay: -11s; animation-duration: 28s; }
+.breath-amber-wave { fill: none; stroke: url(#breath-amber); stroke-width: 1.1; stroke-linecap: round; opacity: .46; animation: amber-breath 22s ease-in-out infinite; }
+.breath-core { opacity: .75; transform-origin: 260px 180px; animation: core-breathe 10s ease-in-out infinite; }
+.breath-core-ring { fill: none; stroke: #b6dfc8; stroke-width: 1; opacity: .32; filter: drop-shadow(0 0 7px rgb(143 191 168 / 45%)); }
+.breath-core-center { fill: #d9f4e5; opacity: .92; filter: drop-shadow(0 0 10px rgb(143 191 168 / 78%)); }
+.resilience-signature { margin: -.25rem 0 0; color: rgb(248 246 242 / 58%); font-size: .62rem; letter-spacing: .13em; text-align: center; text-transform: uppercase; }
+.resilience-signature span { color: #d8c28c; padding: 0 .25rem; }
+.resilience-static .breath-aura, .resilience-static .breath-orbits, .resilience-static .breath-ribbon, .resilience-static .breath-amber-wave, .resilience-static .breath-core { animation: none; }
+.resilience-static .breath-ribbon { opacity: .68; }
+.resilience-static .breath-amber-wave { opacity: .38; }
+.resilience-static .breath-core { opacity: .82; }
+
+@keyframes orbit-turn { to { transform: rotate(360deg); } }
+@keyframes aura-breathe { 0%, 100% { opacity: .3; transform: scale(.92); } 50% { opacity: .54; transform: scale(1.06); } }
+@keyframes ribbon-recompose { 0%, 100% { opacity: .34; } 50% { opacity: .76; } }
+@keyframes amber-breath { 0%, 100% { opacity: .14; } 50% { opacity: .43; } }
+@keyframes core-breathe { 0%, 100% { opacity: .62; transform: scale(.95); } 50% { opacity: .9; transform: scale(1.06); } }
+
+@media (max-width: 767px) {
+  .auth-brand { min-height: 14rem; text-align: center; }
+  .auth-brand-copy { padding-top: .5rem !important; padding-bottom: .5rem !important; }
+  .auth-brand-copy h1 { font-size: 1.5rem; }
+  .auth-brand-copy > p { margin-top: .5rem; }
+  .resilience-visual { width: min(100%, 22rem); }
+  .resilience-signature { font-size: .52rem; }
+  .auth-shell main { min-height: 72vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resilience-visual *, .resilience-visual { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .breath-amber-wave { opacity: .38; }
+}

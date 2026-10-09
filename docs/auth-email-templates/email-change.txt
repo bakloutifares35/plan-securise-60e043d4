@@ -1,0 +1,7 @@
+RESILLIA — Confirmation de changement d’adresse
+
+Vous avez demandé à associer l’adresse {{ .NewEmail }} à votre compte Resillia. Confirmez-la ici :
+{{ .ConfirmationURL }}
+
+Si vous n’avez pas demandé ce changement, ignorez ce message et sécurisez votre compte.
+Resillia · Message automatique lié à la sécurité de votre compte.

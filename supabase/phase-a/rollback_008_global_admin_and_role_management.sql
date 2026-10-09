@@ -31,6 +31,10 @@ REVOKE INSERT, UPDATE ON public.profiles, public.organization_members FROM authe
 
 DROP TRIGGER IF EXISTS resillia_sync_profile_email ON auth.users;
 DROP FUNCTION IF EXISTS public.sync_auth_user_profile_email();
+DROP TRIGGER IF EXISTS resillia_guard_last_active_admin_membership ON public.organization_members;
+DROP TRIGGER IF EXISTS resillia_guard_last_active_admin_profile ON public.profiles;
+DROP FUNCTION IF EXISTS public.prevent_last_active_admin_membership_change();
+DROP FUNCTION IF EXISTS public.prevent_last_active_admin_profile_change();
 REVOKE ALL ON FUNCTION public.is_global_admin() FROM PUBLIC, anon, authenticated;
 DROP FUNCTION IF EXISTS public.is_global_admin();
 
@@ -39,8 +43,8 @@ SET organization_id = '814b9dcc-ba20-4c09-b092-481150cfaa6f', updated_at = now()
 WHERE user_id = '39a6cd37-285b-4603-9bf8-f72eb9b9fd15'
   AND organization_id IS NULL AND role = 'admin_pca';
 ALTER TABLE public.organization_members
-  DROP CONSTRAINT organization_members_global_admin_check;
-DROP INDEX public.organization_members_one_global_admin_per_user_idx;
+  DROP CONSTRAINT IF EXISTS organization_members_global_admin_check;
+DROP INDEX public.organization_members_one_unassigned_per_user_idx;
 ALTER TABLE public.organization_members
   ALTER COLUMN organization_id SET NOT NULL;
 

@@ -1,31 +1,21 @@
 import { 
   LayoutDashboard, 
-  FileText, 
   ListChecks, 
   BarChart3, 
   ShieldCheck, 
-  Activity, 
   Building2, 
   AlertOctagon, 
-  Sparkles, 
-  Mic,
   GitBranch,
   Users,
-  Calendar,
-  FileBarChart,
   ClipboardList,
   PlayCircle,
-  TrendingUp,
-  PieChart,
   AlertTriangle,
   ChevronDown,
   ChevronRight,
   Database,
   Layers,
   ShieldAlert,
-  LogOut,
 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -49,61 +39,29 @@ export type Section =
   | "ressources"
   | "rapports"
   | "strategies"
-  | "warroom";  // ✅ AJOUT
+  | "warroom"
+  | "admin-users";
 
 const groups: { label: string; items: { id: Section; label: string; icon: typeof LayoutDashboard; subItems?: { id: Section; label: string }[] }[] }[] = [
   {
-    label: "Vue d'ensemble",
+    label: "PRINCIPAL",
     items: [
       { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-      { id: "governance", label: "Gouvernance PCA", icon: Building2 },
-      { 
-        id: "bia", 
-        label: "Processus & BIA", 
-        icon: ClipboardList,
-        subItems: [
-          { id: "bia", label: "Tableau de bord BIA" },
-          { id: "bia-synthese", label: "Synthèse BIA" },
-          { id: "bia-recovery", label: "Séquence de reprise" },
-        ]
-      },
-      { id: "cmdb", label: "Référentiel des ressources", icon: Database },
+      { id: "bia", label: "BIA", icon: ClipboardList },
       { id: "risk", label: "Risques", icon: AlertTriangle },
-      // ❌ "Scénarios" retiré comme demandé
-      { id: "strategies", label: "Stratégies de continuité", icon: Layers },
-      { id: "plan", label: "Gestion des plans", icon: ListChecks },
-      // ✅ AJOUT — War Room juste après "Gestion des plans"
+      { id: "plan", label: "Plans PCA", icon: ListChecks },
+      { id: "exercices", label: "Exercices", icon: PlayCircle },
       { id: "warroom", label: "War Room", icon: ShieldAlert },
-      { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
-      { id: "ressources", label: "Ressources", icon: Users },
-      { id: "rapports", label: "Rapports", icon: FileBarChart },
     ],
   },
   {
-    label: "Planifier",
+    label: "PILOTAGE",
     items: [
+      { id: "governance", label: "Gouvernance PCA", icon: Building2 },
+      { id: "cmdb", label: "Référentiel des ressources", icon: Database },
+      { id: "form", label: "Identification des risques", icon: AlertOctagon },
       { id: "strategies", label: "Stratégies de continuité", icon: Layers },
-      { id: "plan", label: "Gestion des plans", icon: ListChecks },
-      { id: "exercices", label: "Exercices PCA", icon: PlayCircle },
-    ],
-  },
-  {
-    label: "Référentiels",
-    items: [
       { id: "benchmark", label: "Benchmark", icon: BarChart3 },
-      { id: "ressources", label: "Ressources", icon: Users },
-    ],
-  },
-  {
-    label: "Piloter",
-    items: [
-      { id: "rapports", label: "Rapports", icon: FileBarChart },
-    ],
-  },
-  {
-    label: "Innovation",
-    items: [
-      { id: "tenacia", label: "Tenacia Voice AI", icon: Mic },
     ],
   },
 ];
@@ -111,7 +69,7 @@ const groups: { label: string; items: { id: Section; label: string; icon: typeof
 export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: Section) => void }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { role, activeOrganizationId } = useRole();
+  const { role, activeOrganizationName } = useRole();
   const [expandedItems, setExpandedItems] = useState<string[]>(['bia']);
 
   const getActiveFromPath = (path: string): Section => {
@@ -132,6 +90,7 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     if (path === "/form") return "form";
     if (path === "/ai") return "ai";
     if (path === "/warroom") return "warroom";  // ✅ AJOUT
+    if (path === "/admin/users") return "admin-users";
     return "dashboard";
   };
 
@@ -232,7 +191,7 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
 
   return (
     <aside
-      className="hidden md:flex w-64 shrink-0 flex-col"
+      className="sticky top-0 hidden h-screen w-64 min-w-64 shrink-0 flex-col md:flex"
       style={{ backgroundColor: "#172030", color: "#F8F6F2" }}
     >
       <div
@@ -258,17 +217,11 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
-        {activeOrganizationId && (
+      <nav aria-label="Navigation principale" className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-4">
+        {activeOrganizationName && (
           <p className="break-all rounded-md bg-white/5 px-3 py-2 text-[10px] text-white/60">
-            Organisation active : {activeOrganizationId}
+            Organisation active : {activeOrganizationName}
           </p>
-        )}
-        {role === "admin_pca" && (
-          <button type="button" onClick={() => navigate('/admin/users')}
-            className="w-full rounded-md border border-white/15 px-3 py-2 text-left text-xs text-white hover:bg-white/10">
-            Administration des utilisateurs
-          </button>
         )}
         {groups.map((g) => (
           <div key={g.label}>
@@ -368,7 +321,17 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
         ))}
       </nav>
 
-<SignOutButton />
+      {role === "admin_pca" && (
+        <div className="mx-3 border-t px-1 py-3" style={{ borderColor: "rgba(248,246,242,0.12)" }}>
+          <p className="px-3 pb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#D8C28C]">ADMINISTRATION</p>
+          <button type="button" title="Utilisateurs et rôles" aria-label="Utilisateurs et rôles" aria-current={location.pathname === "/admin/users" ? "page" : undefined}
+            onClick={() => navigate("/admin/users")}
+            className={cn("flex min-h-10 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8FBFA8]", location.pathname === "/admin/users" ? "bg-[#2A5141] text-white" : "text-white/90")}>
+            <Users className="h-4 w-4 shrink-0 text-[#8FBFA8]" /><span>Utilisateurs et rôles</span>
+          </button>
+        </div>
+      )}
+
       <div
         className="px-4 py-3 text-center"
         style={{
@@ -383,17 +346,3 @@ export const Sidebar = ({ active, onChange }: { active: Section; onChange: (s: S
     </aside>
   );
 };
-function SignOutButton() {
-  const { signOut, user } = useAuth();
-  const navigate = useNavigate();
-  return (
-    <div className="px-4 py-3" style={{ borderTop: "1px solid rgba(248,246,242,0.08)" }}>
-      {user?.email && <p className="truncate text-[11px] mb-2" style={{ color: "rgba(248,246,242,0.6)" }}>{user.email}</p>}
-      <button type="button" onClick={async () => { await signOut(); navigate("/login", { replace: true }); }}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        style={{ color: "rgba(248,246,242,0.8)" }}>
-        <LogOut className="h-3.5 w-3.5" aria-hidden /> Se déconnecter
-      </button>
-    </div>
-  );
-}

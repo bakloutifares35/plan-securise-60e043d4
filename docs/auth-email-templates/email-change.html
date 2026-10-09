@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Confirmation de changement d’adresse Resillia</title></head>
+  <body style="margin:0;background:#f4f2ed;color:#3b4454;font-family:Arial,Helvetica,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Confirmez la nouvelle adresse e-mail de votre compte Resillia.</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f2ed;padding:32px 12px;"><tr><td align="center">
+      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;border-radius:14px;overflow:hidden;">
+        <tr><td style="height:6px;background:#2a5141;"></td></tr>
+        <tr><td style="padding:30px 34px 12px;"><p style="margin:0;color:#172030;font-size:25px;font-weight:700;">Resillia</p><p style="margin:7px 0 0;color:#8a7040;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Continuité &amp; résilience</p></td></tr>
+        <tr><td style="padding:18px 34px 34px;">
+          <h1 style="margin:0 0 16px;color:#172030;font-family:Georgia,serif;font-size:27px;font-weight:500;">Confirmer votre nouvelle adresse</h1>
+          <p style="margin:0 0 24px;font-size:16px;line-height:1.65;">Vous avez demandé à associer l’adresse <strong>{{ .NewEmail }}</strong> à votre compte Resillia. Confirmez-la pour poursuivre.</p>
+          <p style="margin:0 0 26px;"><a href="{{ .ConfirmationURL }}" style="display:inline-block;border-radius:7px;background:#2a5141;padding:14px 22px;color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Confirmer la nouvelle adresse</a></p>
+          <p style="margin:0;color:#69717d;font-size:12px;line-height:1.6;">Lien alternatif :<br><a href="{{ .ConfirmationURL }}" style="color:#2a5141;word-break:break-all;">{{ .ConfirmationURL }}</a></p>
+          <p style="margin:22px 0 0;color:#69717d;font-size:13px;line-height:1.6;">Si vous n’avez pas demandé ce changement, ignorez le message et sécurisez votre compte.</p>
+        </td></tr>
+        <tr><td style="border-top:1px solid #ecebe6;padding:18px 34px;color:#737b86;font-size:11px;line-height:1.6;">Resillia · BIA · Risques · Plans PCA · Exercices<br>Message automatique lié à la sécurité de votre compte.</td></tr>
+      </table>
+    </td></tr></table>
+  </body>
+</html>

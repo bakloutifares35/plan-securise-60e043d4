@@ -1,0 +1,129 @@
+﻿.auth-brand-login {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 51% 36%, rgba(16, 185, 129, .13), transparent 43%),
+    radial-gradient(ellipse at 12% 82%, rgba(30, 64, 83, .25), transparent 42%),
+    linear-gradient(145deg, #0b1320 0%, #111d2b 54%, #10241f 100%);
+}
+.auth-brand-login::before,
+.auth-brand-login::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+}
+.auth-brand-login::before {
+  opacity: .28;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 47px, rgba(127, 164, 176, .055) 48px, transparent 49px 96px),
+    repeating-linear-gradient(90deg, transparent 0 47px, rgba(127, 164, 176, .045) 48px, transparent 49px 96px);
+  mask-image: radial-gradient(ellipse at center, #000 0%, transparent 78%);
+}
+.auth-brand-login::after {
+  background: linear-gradient(90deg, rgba(6, 12, 20, .24), transparent 24%, transparent 76%, rgba(6, 12, 20, .16));
+}
+.auth-brand-login > :not(.login-cyber-stage) { flex-shrink: 0; }
+.auth-brand-login .auth-brand-copy { max-width: 44rem; }
+.auth-brand-login .auth-brand-title { max-width: 15ch; text-wrap: balance; }
+.login-cyber-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 250px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: -1.1rem auto -.35rem;
+  overflow: hidden;
+}
+.login-cyber-visual {
+  position: relative;
+  width: min(82%, 390px);
+  aspect-ratio: 480 / 280;
+  isolation: isolate;
+}
+.login-cyber-visual::before {
+  position: absolute;
+  z-index: -1;
+  inset: 8% 14%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(16, 185, 129, .15), rgba(16, 185, 129, .035) 48%, transparent 76%);
+  content: "";
+  animation: cyber-halo-pulse 8s ease-in-out infinite;
+}
+.cyber-grid-art { display: block; width: 100%; height: 100%; overflow: visible; }
+.cyber-circuit-lines { fill: none; stroke: rgba(90, 170, 154, .19); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.cyber-circuit-lines path { stroke-dasharray: 3 9; animation: cyber-circuit-flow 18s linear infinite; }
+.cyber-nodes circle { fill: #77e5bc; opacity: .55; filter: drop-shadow(0 0 4px rgba(16, 185, 129, .8)); animation: cyber-node-glow 6s ease-in-out infinite alternate; }
+.cyber-nodes circle:nth-child(even) { animation-delay: -2.8s; }
+.cyber-hex { fill: rgba(16, 185, 129, .055); stroke: rgba(72, 211, 157, .38); stroke-width: 1; animation: cyber-cell-glow 7.5s var(--cell-delay, 0s) ease-in-out infinite; }
+.cyber-hex:nth-child(3n) { stroke: rgba(115, 232, 187, .52); }
+.cyber-hex:nth-child(4n) { fill: rgba(16, 185, 129, .1); }
+.cyber-core-halo { transform-origin: 240px 148px; animation: cyber-core-breathe 8s ease-in-out infinite; }
+.cyber-validation { fill: none; stroke: #d8c28c; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; filter: url(#cyber-check-glow); animation: cyber-check-glow 8s ease-in-out infinite; }
+.cyber-particles circle { fill: #c8f5e3; opacity: .42; filter: drop-shadow(0 0 3px rgba(125, 233, 192, .65)); animation: cyber-particle-drift 8s ease-in-out infinite alternate; }
+.cyber-particles circle:nth-child(2n) { animation-delay: -3.5s; }
+.cyber-static::before,
+.cyber-static .cyber-circuit-lines path,
+.cyber-static .cyber-nodes circle,
+.cyber-static .cyber-hex,
+.cyber-static .cyber-core-halo,
+.cyber-static .cyber-validation,
+.cyber-static .cyber-particles circle { animation: none !important; }
+.cyber-static .cyber-hex { fill: rgba(16, 185, 129, .09); stroke: rgba(72, 211, 157, .44); }
+.cyber-static .cyber-validation { opacity: .95; }
+.login-cyber-pillars {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: clamp(.55rem, 1.5vw, 1.2rem);
+  margin: -.35rem 0 1.6rem;
+  color: rgba(196, 226, 214, .62);
+  font-size: .57rem;
+  font-weight: 600;
+  letter-spacing: .15em;
+  white-space: nowrap;
+}
+.login-cyber-pillars span + span::before { margin-right: clamp(.55rem, 1.5vw, 1.2rem); color: rgba(16, 185, 129, .62); content: "·"; }
+.auth-brand-login-copy { margin-top: auto; padding-top: .25rem !important; padding-bottom: 1.15rem !important; }
+.auth-brand-login-copy > p:first-child { color: rgba(143, 191, 168, .78); }
+.auth-brand-login-copy > p:nth-of-type(2) { color: rgba(248, 246, 242, .7); }
+.auth-brand-login > p:last-child { padding-top: .85rem; border-top: 1px solid rgba(143, 191, 168, .11); }
+
+@keyframes cyber-halo-pulse { 0%, 100% { opacity: .64; transform: scale(.96); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes cyber-core-breathe { 0%, 100% { opacity: .64; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.06); } }
+@keyframes cyber-check-glow { 0%, 100% { opacity: .72; } 50% { opacity: 1; } }
+@keyframes cyber-cell-glow { 0%, 100% { opacity: .54; } 50% { opacity: .96; } }
+@keyframes cyber-node-glow { from { opacity: .28; } to { opacity: .82; } }
+@keyframes cyber-circuit-flow { to { stroke-dashoffset: -72; } }
+@keyframes cyber-particle-drift { from { transform: translateY(2px); opacity: .22; } to { transform: translateY(-4px); opacity: .68; } }
+
+@media (max-width: 767px) {
+  .auth-brand-login { min-height: 28rem; padding-top: 1.1rem; padding-bottom: .8rem; }
+  .login-cyber-stage { flex: 0 0 auto; min-height: 0; height: clamp(145px, 42vw, 205px); margin: -.15rem auto 0; }
+  .login-cyber-visual { width: min(88%, 325px); }
+  .login-cyber-pillars { margin: .05rem 0 .8rem; gap: .48rem; font-size: .48rem; letter-spacing: .09em; }
+  .login-cyber-pillars span + span::before { margin-right: .48rem; }
+  .auth-brand-login .auth-brand-login-copy { padding-top: .2rem !important; padding-bottom: .55rem !important; }
+  .auth-brand-login .auth-brand-title { max-width: 19ch; font-size: 1.6rem; }
+  .auth-brand-login-copy > p:nth-of-type(2) { font-size: .82rem; line-height: 1.4rem; }
+}
+@media (max-width: 360px) {
+  .login-cyber-pillars { gap: .32rem; font-size: .43rem; letter-spacing: .065em; }
+  .login-cyber-pillars span + span::before { margin-right: .32rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-cyber-visual::before,
+  .cyber-circuit-lines path,
+  .cyber-nodes circle,
+  .cyber-hex,
+  .cyber-core-halo,
+  .cyber-validation,
+  .cyber-particles circle { animation: none !important; }
+  .cyber-hex { fill: rgba(16, 185, 129, .09); stroke: rgba(72, 211, 157, .44); }
+  .cyber-validation { opacity: .95; }
+}

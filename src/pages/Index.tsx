@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { Sidebar, type Section } from "@/components/pca/Sidebar";
+import type { Section } from "@/components/pca/Sidebar";
 import { Dashboard } from "@/components/pca/Dashboard";
 import { RiskForm } from "@/components/pca/RiskForm";
 import PlansModule from "@/components/plans/PlansModule";
@@ -16,11 +16,11 @@ import CMDBModule from "@/components/pca/bia/CMDBModule";
 import StrategyModule from "@/components/strategy/StrategyModule";
 import ExercicesModule from "@/components/exercices/ExercicesModule";
 import WarRoomModule from "@/components/warroom/WarRoomModule"; // âœ… AJOUT
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GovernanceProvider } from "@/contexts/GovernanceContext";
 import { BiaProvider } from "@/contexts/BiaContext";
 import { RiskProvider } from "@/contexts/RiskContext";
 import { StrategyProvider } from "@/contexts/StrategyContext";
+import { ApplicationShell } from "@/components/layout/ApplicationShell";
 
 const Index = () => {
   const location = useLocation();
@@ -72,30 +72,8 @@ const Index = () => {
         <BiaProvider>
           <RiskProvider>
             <StrategyProvider>
-            <div className="min-h-screen flex bg-[image:var(--gradient-subtle)]">
-              <Sidebar active={section} onChange={setSection} />
-              <main className="flex-1 min-w-0">
-                <header className="md:hidden border-b border-border bg-card px-4 py-3">
-                  <Select value={section} onValueChange={(v) => setSection(v as Section)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="dashboard">Tableau de bord</SelectItem>
-                      <SelectItem value="ai">BCM AI Consultant</SelectItem>
-                      <SelectItem value="governance">Gouvernance PCA</SelectItem>
-                      <SelectItem value="bia">Business Impact Analysis</SelectItem>
-                      <SelectItem value="cmdb">RÃ©fÃ©rentiel des ressources</SelectItem>
-                      <SelectItem value="risk">Analyse des Risques</SelectItem>
-                      <SelectItem value="form">Identification des risques</SelectItem>
-                      <SelectItem value="plan">Gestion des plans</SelectItem>
-                      <SelectItem value="warroom">War Room</SelectItem> {/* âœ… AJOUT */}
-                      <SelectItem value="exercices">Exercices PCA</SelectItem>
-                      <SelectItem value="benchmark">Benchmark</SelectItem>
-                      <SelectItem value="tenacia">ðŸŽ¤ Tenacia Voice AI</SelectItem>
-                      <SelectItem value="strategies">StratÃ©gies de continuitÃ©</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </header>
-                <div className="p-6 md:p-10 max-w-7xl mx-auto">
+            <ApplicationShell active={section} onChange={setSection}>
+              <div className="mx-auto w-full min-w-0 max-w-7xl">
                   {section === "dashboard" && <Dashboard />}
                   {section === "ai" && <BcmAiConsultant />}
                   {section === "form" && <RiskForm />}
@@ -115,10 +93,9 @@ const Index = () => {
                   {section === "strategies" && <StrategyModule />}
                   {section === "warroom" && <WarRoomModule />}
                   {section === "exercices" && <ExercicesModule />} {/* âœ… AJOUT */}
-                </div>
-              </main>
-            </div>
-            </StrategyProvider>
+              </div>
+            </ApplicationShell>
+          </StrategyProvider>
           </RiskProvider>
         </BiaProvider>
       </GovernanceProvider>

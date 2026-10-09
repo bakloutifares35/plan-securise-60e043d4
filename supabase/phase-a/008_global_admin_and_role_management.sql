@@ -44,7 +44,10 @@ BEGIN
     WHERE conrelid = 'public.organization_members'::regclass
       AND conname = 'organization_members_global_admin_check'
   ) OR to_regclass('public.organization_members_one_global_admin_per_user_idx') IS NOT NULL
+     OR to_regclass('public.organization_members_one_unassigned_per_user_idx') IS NOT NULL
      OR to_regprocedure('public.is_global_admin()') IS NOT NULL
+     OR to_regprocedure('public.prevent_last_active_admin_profile_change()') IS NOT NULL
+     OR to_regprocedure('public.prevent_last_active_admin_membership_change()') IS NOT NULL
      OR EXISTS (SELECT 1 FROM pg_attribute
        WHERE attrelid = 'public.profiles'::regclass AND attname = 'email' AND NOT attisdropped)
      OR EXISTS (SELECT 1 FROM pg_trigger
@@ -76,10 +79,7 @@ $preflight$;
 
 ALTER TABLE public.organization_members
   ALTER COLUMN organization_id DROP NOT NULL;
-ALTER TABLE public.organization_members
-  ADD CONSTRAINT organization_members_global_admin_check
-  CHECK (organization_id IS NOT NULL OR role = 'admin_pca');
-CREATE UNIQUE INDEX organization_members_one_global_admin_per_user_idx
+CREATE UNIQUE INDEX organization_members_one_unassigned_per_user_idx
   ON public.organization_members (user_id) WHERE organization_id IS NULL;
 
 -- La membership existante est convertie en admin global sans supprimer de ligne.
@@ -138,6 +138,81 @@ REVOKE ALL ON FUNCTION public.sync_auth_user_profile_email() FROM PUBLIC, anon, 
 CREATE TRIGGER resillia_sync_profile_email
 AFTER INSERT OR UPDATE OF email ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.sync_auth_user_profile_email();
+
+-- Garde en base le dernier admin actif, y compris face aux mises à jour concurrentes.
+CREATE FUNCTION public.prevent_last_active_admin_membership_change()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  target_user uuid;
+  remains_admin boolean;
+  another_admin_exists boolean;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('resillia:last-active-admin'));
+  target_user := OLD.user_id;
+  IF TG_OP = 'UPDATE' AND (NEW.user_id <> OLD.user_id OR NEW.id <> OLD.id) THEN
+    RAISE EXCEPTION 'Une membership ne peut pas être déplacée vers un autre utilisateur.' USING ERRCODE = '23514';
+  END IF;
+  IF OLD.role <> 'admin_pca' OR OLD.status <> 'active'
+     OR NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.user_id = target_user AND p.status = 'active') THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+  END IF;
+  IF TG_OP = 'UPDATE' AND NEW.role = 'admin_pca' AND NEW.status = 'active' THEN RETURN NEW; END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM public.organization_members m
+    JOIN public.profiles p ON p.user_id = m.user_id AND p.status = 'active'
+    WHERE m.user_id = target_user AND m.id <> OLD.id
+      AND m.role = 'admin_pca' AND m.status = 'active'
+  ) INTO remains_admin;
+  IF remains_admin THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+  END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM public.organization_members m
+    JOIN public.profiles p ON p.user_id = m.user_id AND p.status = 'active'
+    WHERE m.user_id <> target_user AND m.role = 'admin_pca' AND m.status = 'active'
+  ) INTO another_admin_exists;
+  IF NOT another_admin_exists THEN
+    RAISE EXCEPTION 'Action impossible : cet utilisateur est le dernier administrateur actif. Créez ou activez un autre administrateur avant de continuer.' USING ERRCODE = '23514';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.prevent_last_active_admin_membership_change() FROM PUBLIC, anon, authenticated;
+CREATE TRIGGER resillia_guard_last_active_admin_membership
+BEFORE UPDATE OR DELETE ON public.organization_members
+FOR EACH ROW EXECUTE FUNCTION public.prevent_last_active_admin_membership_change();
+
+CREATE FUNCTION public.prevent_last_active_admin_profile_change()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE another_admin_exists boolean;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('resillia:last-active-admin'));
+  IF TG_OP = 'UPDATE' AND NEW.user_id <> OLD.user_id THEN
+    RAISE EXCEPTION 'Un profil ne peut pas être déplacé vers un autre utilisateur.' USING ERRCODE = '23514';
+  END IF;
+  IF TG_OP = 'UPDATE' AND (OLD.status <> 'active' OR NEW.status = 'active') THEN RETURN NEW; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.organization_members m WHERE m.user_id = OLD.user_id AND m.role = 'admin_pca' AND m.status = 'active') THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+  END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM public.organization_members m
+    JOIN public.profiles p ON p.user_id = m.user_id AND p.status = 'active'
+    WHERE m.user_id <> OLD.user_id AND m.role = 'admin_pca' AND m.status = 'active'
+  ) INTO another_admin_exists;
+  IF NOT another_admin_exists THEN
+    RAISE EXCEPTION 'Action impossible : cet utilisateur est le dernier administrateur actif. Créez ou activez un autre administrateur avant de continuer.' USING ERRCODE = '23514';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.prevent_last_active_admin_profile_change() FROM PUBLIC, anon, authenticated;
+CREATE TRIGGER resillia_guard_last_active_admin_profile
+BEFORE UPDATE OR DELETE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.prevent_last_active_admin_profile_change();
 
 -- Un rôle applicatif ne peut lire/administrer les autres profils et memberships.
 GRANT INSERT, UPDATE ON public.profiles, public.organization_members TO authenticated;

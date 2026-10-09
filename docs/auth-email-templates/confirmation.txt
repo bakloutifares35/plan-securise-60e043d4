@@ -1,0 +1,9 @@
+RESILLIA — Confirmation de votre adresse
+
+Bienvenue dans Resillia. Votre compte a été créé. Confirmez votre adresse e-mail pour poursuivre :
+{{ .ConfirmationURL }}
+
+La confirmation de votre adresse ne vaut pas activation de votre accès. Un administrateur devra autoriser votre compte.
+
+Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.
+Resillia · BIA · Risques · Plans PCA · Exercices

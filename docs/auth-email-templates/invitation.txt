@@ -1,0 +1,7 @@
+RESILLIA — Invitation
+
+Vous êtes invité à rejoindre Resillia. Acceptez cette invitation à l’aide du lien :
+{{ .ConfirmationURL }}
+
+Si vous ne reconnaissez pas cette invitation, ignorez ce message. N’ouvrez le lien que si vous attendiez cette invitation.
+Resillia · BIA · Risques · Plans PCA · Exercices

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/resillia/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthLayout } from "@/components/auth/AuthLayout";
@@ -18,6 +18,7 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,17 +76,20 @@ export default function Login() {
   };
 
   return (
-    <AuthLayout>
-      <h2 className="font-display text-3xl text-[#172030]">
+    <AuthLayout showResiliencePanel>
+      <div className="mb-7">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#2A5141]">Espace sécurisé Resillia</p>
+      <h2 className="font-display text-4xl text-[#172030]">
         {mode === "login" ? "Connexion" : "Mot de passe oublié"}
       </h2>
-      <p className="mt-2 text-sm text-[#3B4454]">
+      <p className="mt-2 text-base text-[#3B4454]">
         {mode === "login"
           ? "Accédez à votre espace Resillia."
           : "Saisissez votre e-mail pour recevoir un lien de réinitialisation."}
       </p>
+      </div>
 
-      <div aria-live="polite" className="mt-4 space-y-2">
+      <div aria-live="polite" className="mb-2 space-y-2">
         {sessionExpired && mode === "login" && !errors.form && (
           <p className="rounded-md bg-[#FFF3E0] px-3 py-2 text-sm text-[#172030]">Votre session a expiré. Reconnectez-vous.</p>
         )}
@@ -93,14 +97,14 @@ export default function Login() {
         {info && <p className="rounded-md bg-[#E8F5E9] px-3 py-2 text-sm text-[#2A5141]">{info}</p>}
       </div>
 
-      <form onSubmit={mode === "login" ? onLogin : onForgot} noValidate className="mt-4 space-y-4">
+      <form onSubmit={mode === "login" ? onLogin : onForgot} noValidate className="space-y-5" aria-busy={busy}>
         <div className="space-y-1.5">
           <Label htmlFor="email">E-mail</Label>
           <Input
             id="email" type="email" autoComplete="email" value={email}
             onChange={(e) => setEmail(e.target.value)}
             aria-invalid={!!errors.email} aria-describedby={errors.email ? "email-error" : undefined}
-            className="h-11 bg-white"
+            className="h-12 bg-white focus-visible:ring-2 focus-visible:ring-[#2A5141]"
           />
           {errors.email && <p id="email-error" className="text-xs text-destructive">{errors.email}</p>}
         </div>
@@ -114,31 +118,38 @@ export default function Login() {
                 Mot de passe oublié ?
               </button>
             </div>
-            <Input
-              id="password" type="password" autoComplete="current-password" value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-invalid={!!errors.password} aria-describedby={errors.password ? "password-error" : undefined}
-              className="h-11 bg-white"
-            />
+            <div className="relative">
+              <Input
+                id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={!!errors.password} aria-describedby={errors.password ? "password-error" : undefined}
+                className="h-12 bg-white pr-12 focus-visible:ring-2 focus-visible:ring-[#2A5141]"
+              />
+              <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"} aria-pressed={showPassword}
+                className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-[#3B4454] hover:bg-[#F8F6F2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2A5141]">
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
             {errors.password && <p id="password-error" className="text-xs text-destructive">{errors.password}</p>}
           </div>
         )}
 
-        <Button type="submit" disabled={busy} className="h-11 w-full bg-[#2A5141] hover:bg-[#1f3d31] text-white">
+        <Button type="submit" disabled={busy} className="h-12 w-full bg-[#2A5141] text-base text-white hover:bg-[#1f3d31] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#2A5141]">
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
           {mode === "login" ? (busy ? "Connexion en cours…" : "Se connecter") : busy ? "Envoi en cours…" : "Envoyer le lien"}
         </Button>
 
         {mode === "forgot" && (
           <button type="button" onClick={() => { setMode("login"); setErrors({}); setInfo(null); }}
-            className="w-full text-sm text-[#2A5141] hover:underline">
+            className="w-full rounded text-sm text-[#2A5141] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2A5141]">
             ← Retour à la connexion
           </button>
         )}
       </form>
 
-      <p className="mt-6 text-center text-sm text-[#3B4454]">
-        Pas encore de compte ?<br /><Link to="/signup" className="text-[#2A5141] underline-offset-2 hover:underline">Créer un compte</Link>
+      <p className="mt-7 border-t border-[#172030]/10 pt-5 text-center text-sm text-[#3B4454]">
+        <span className="font-medium">Accès sur invitation</span><br />
+        <Link to="/signup" className="mt-1 inline-block rounded text-[#2A5141] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2A5141]">Vous n’avez pas encore d’accès ? Demander un accès</Link>
       </p>
     </AuthLayout>
   );

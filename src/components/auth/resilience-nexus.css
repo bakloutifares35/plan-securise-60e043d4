@@ -1,0 +1,73 @@
+.auth-brand.auth-brand-nexus {
+  background-color: #081421;
+  background-image: radial-gradient(ellipse at 51% 47%, rgb(31 100 99 / 18%), transparent 58%), linear-gradient(145deg, #081421 4%, #102d35 53%, #091523 100%);
+}
+
+.nexus-scene {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: .96;
+}
+
+.nexus-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.nexus-base { opacity: .68; }
+.nexus-cloud { transform-box: fill-box; transform-origin: center; }
+.nexus-cloud-a { opacity: .72; animation: nexus-nebula-drift 38s ease-in-out infinite alternate; }
+.nexus-cloud-b { opacity: .8; animation: nexus-nebula-drift 51s ease-in-out -19s infinite alternate-reverse; }
+.nexus-nebula-rim { fill: none; stroke: #3d8d8e; stroke-width: 25; stroke-opacity: .11; filter: url(#nexus-blur-soft); }
+
+.nexus-dust circle { fill: #c2f1e7; }
+.nexus-trajectories { transform-box: view-box; transform-origin: 50% 50%; }
+.nexus-trajectories-a { animation: nexus-orbit-a 84s linear infinite; }
+.nexus-trajectories-b { animation: nexus-orbit-b 108s linear infinite; }
+.nexus-trajectories-c { animation: nexus-orbit-a 132s linear -47s infinite reverse; }
+.nexus-orbit { fill: none; stroke-linecap: round; }
+.nexus-orbit-soft { stroke: #77d5c7; stroke-width: 8; stroke-opacity: .16; filter: url(#nexus-blur-soft); }
+.nexus-orbit-mint { stroke: url(#nexus-orbit-mint); stroke-width: 1.15; stroke-opacity: .74; }
+.nexus-orbit-white { stroke: url(#nexus-orbit-white); stroke-width: 1.05; stroke-opacity: .76; }
+.nexus-orbit-amber { stroke: url(#nexus-amber); stroke-width: 1.1; stroke-opacity: .72; }
+.nexus-orbit-flow { stroke: #e0fff5; stroke-width: 1.5; stroke-dasharray: 2 650; stroke-dashoffset: 0; opacity: .76; filter: url(#nexus-glow); animation: nexus-light-flow 31s linear infinite; }
+.nexus-flow-delayed { animation-delay: -13s; animation-duration: 39s; }
+.nexus-orbit-inner { stroke-width: 1.4; opacity: .6; }
+
+.nexus-core-halo { opacity: .72; transform-box: fill-box; transform-origin: center; animation: nexus-core-breathe 9s ease-in-out infinite; }
+.nexus-core { opacity: .82; transform-box: fill-box; transform-origin: center; animation: nexus-core-breathe 9s ease-in-out -2s infinite; }
+.nexus-core-light { fill: #f2fff9; opacity: .96; filter: url(#nexus-glow); }
+
+@keyframes nexus-orbit-a { to { transform: rotate(360deg); } }
+@keyframes nexus-orbit-b { to { transform: rotate(-360deg); } }
+@keyframes nexus-light-flow { to { stroke-dashoffset: -652; } }
+@keyframes nexus-nebula-drift { from { transform: translate3d(-.5%, -.3%, 0) scale(.98); } to { transform: translate3d(.6%, .4%, 0) scale(1.03); } }
+@keyframes nexus-core-breathe { 0%, 100% { opacity: .56; transform: scale(.94); } 50% { opacity: .92; transform: scale(1.06); } }
+
+.nexus-static .nexus-cloud-a,
+.nexus-static .nexus-cloud-b,
+.nexus-static .nexus-trajectories,
+.nexus-static .nexus-orbit-flow,
+.nexus-static .nexus-core-halo,
+.nexus-static .nexus-core { animation: none; }
+.nexus-static .nexus-orbit-flow { stroke-dasharray: none; opacity: .28; }
+.nexus-static .nexus-core-halo { opacity: .82; }
+.nexus-static .nexus-core { opacity: .9; }
+
+@media (max-width: 767px) {
+  .nexus-scene { opacity: .62; }
+  .nexus-art { width: 118%; max-width: none; height: 100%; margin-left: -9%; }
+  .auth-brand-nexus .auth-brand-copy { text-shadow: 0 2px 18px rgb(4 14 22 / 64%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-scene *, .nexus-scene { animation: none !important; transition: none !important; }
+  .nexus-orbit-flow { stroke-dasharray: none; opacity: .28; }
+  .nexus-core-halo { opacity: .82; }
+  .nexus-core { opacity: .9; }
+}
