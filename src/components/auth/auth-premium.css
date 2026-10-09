@@ -1,7 +1,12 @@
 .auth-brand {
   background-color: #172030;
   background-image: radial-gradient(ellipse at 52% 47%, rgb(42 81 65 / 27%), transparent 59%), radial-gradient(ellipse at 50% 45%, rgb(143 191 168 / 7%), transparent 72%), linear-gradient(145deg, #172030 5%, #173139 54%, #172030 100%);
+  /* Garde-fou lisibilité : aucun texte sombre sur le panneau marine (le style global h1 est sombre). */
+  color: #F5F1E8;
 }
+.auth-brand h1, .auth-brand .auth-brand-title { color: #F5F1E8; }
+.auth-brand p { color: rgba(245, 241, 232, 0.78); }
+.auth-brand > p:last-child { color: rgba(245, 241, 232, 0.58); }
 .resilience-visual { width: min(100%, 32rem); margin: 0 auto; }
 .resilience-breath { display: block; width: 100%; overflow: visible; }
 .continuity-orbit { fill: none; stroke: rgb(143 191 168 / 12%); stroke-width: .8; }
