@@ -1,7 +1,7 @@
 ﻿import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { ShieldCheck, Lock } from "lucide-react";
-import { LoginCyberGrid } from "@/components/auth/LoginCyberGrid";
+import { ContinuityField } from "@/components/auth/ContinuityField";
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -25,25 +25,23 @@ export function AuthLayout({ children, showResiliencePanel = false }: { children
           <ShieldCheck className="h-7 w-7 text-[#8FBFA8]" aria-hidden />
           <span className="font-display text-2xl">Resillia</span>
         </div>
-        {showResiliencePanel && <>
-          <div className="login-cyber-stage">
-            <LoginCyberGrid staticMode={reducedMotion} />
+        {showResiliencePanel && (
+          <div className="continuity-stage">
+            <ContinuityField staticMode={reducedMotion} />
           </div>
-          <div className="login-cyber-pillars" aria-label="Piliers de la continuité">
-            <span>ANTICIPER</span><span>RÉSISTER</span><span>REBONDIR</span>
-          </div>
-        </>}
+        )}
         <div className={`auth-brand-copy relative z-10 w-full py-7 md:py-0${showResiliencePanel ? " auth-brand-login-copy" : " mx-auto max-w-xl"}`}>
           {showResiliencePanel ? <>
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#D8C28C]">
               RESILLIA · CONTINUITÉ D’ACTIVITÉ
             </p>
             <h1 className="auth-brand-title font-display text-2xl leading-tight md:text-[2.15rem]">
-              Votre continuité d’activité commence ici.
+              Votre activité continue, même quand tout s’arrête.
             </h1>
             <p className="mt-3 max-w-lg text-sm leading-6 text-[#F8F6F2]/75 md:text-base">
-              Comprendre les impacts. Décider avec méthode. Reprendre avec confiance.
+              Comprendre les impacts. Préparer les décisions. Reprendre avec méthode.
             </p>
+            <p className="mt-5 text-[11px] tracking-wide text-[#F8F6F2]/55 md:text-xs">BIA · Risques · Plans PCA · Exercices · War Room</p>
           </> : <>
             <h1 className="font-display text-3xl leading-tight md:text-[2.6rem]">Votre activité continue, même quand tout s’arrête.</h1>
             <p className="mt-4 text-sm text-[#F8F6F2]/75 md:text-base">Un espace dédié au pilotage de la continuité d’activité.</p>
