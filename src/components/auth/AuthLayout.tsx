@@ -23,7 +23,7 @@ export function AuthLayout({ children, showResiliencePanel = false }: { children
       <aside className={`auth-brand relative isolate order-2 flex flex-col justify-between overflow-hidden px-6 py-6 text-[#F8F6F2] md:order-1 md:w-[45%] md:px-12 md:py-10${showResiliencePanel ? " auth-brand-login" : ""}`}>
         <div className="relative z-10 flex items-center gap-2">
           <ShieldCheck className="h-7 w-7 text-[#8FBFA8]" aria-hidden />
-          <span className="font-display text-2xl">Resillia</span>
+          <span className="font-display text-2xl text-[#F5F1E8]">Resillia</span>
         </div>
         {showResiliencePanel && (
           <div className="continuity-stage">
@@ -32,23 +32,23 @@ export function AuthLayout({ children, showResiliencePanel = false }: { children
         )}
         <div className={`auth-brand-copy relative z-10 w-full py-7 md:py-0${showResiliencePanel ? " auth-brand-login-copy" : " mx-auto max-w-xl"}`}>
           {showResiliencePanel ? <>
-            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#D8C28C]">
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#A7E8C7]">
               RESILLIA · CONTINUITÉ D’ACTIVITÉ
             </p>
-            <h1 className="auth-brand-title font-display text-2xl leading-tight md:text-[2.15rem]">
-              Votre activité continue, même quand tout s’arrête.
+            <h1 className="auth-brand-title font-display text-2xl leading-tight text-[#F5F1E8] md:text-[2.15rem]">
+              Gardez le contrôle quand l’imprévu survient.
             </h1>
-            <p className="mt-3 max-w-lg text-sm leading-6 text-[#F8F6F2]/75 md:text-base">
+            <p className="mt-3 max-w-lg text-sm leading-6 text-[rgba(245,241,232,0.78)] md:text-base">
               Comprendre les impacts. Préparer les décisions. Reprendre avec méthode.
             </p>
-            <p className="mt-5 text-[11px] tracking-wide text-[#F8F6F2]/55 md:text-xs">BIA · Risques · Plans PCA · Exercices · War Room</p>
+            <p className="mt-5 text-[11px] tracking-wide text-[rgba(245,241,232,0.58)] md:text-xs">BIA · Risques · Plans PCA · Exercices · War Room</p>
           </> : <>
-            <h1 className="font-display text-3xl leading-tight md:text-[2.6rem]">Votre activité continue, même quand tout s’arrête.</h1>
-            <p className="mt-4 text-sm text-[#F8F6F2]/75 md:text-base">Un espace dédié au pilotage de la continuité d’activité.</p>
-            <p className="mt-6 text-[11px] tracking-wide text-[#F8F6F2]/60 md:text-xs">BIA · Risques · Plans · Exercices · Crise</p>
+            <h1 className="font-display text-3xl leading-tight text-[#F5F1E8] md:text-[2.6rem]">Gardez le contrôle quand l’imprévu survient.</h1>
+            <p className="mt-4 text-sm text-[rgba(245,241,232,0.78)] md:text-base">Un espace dédié au pilotage de la continuité d’activité.</p>
+            <p className="mt-6 text-[11px] tracking-wide text-[rgba(245,241,232,0.58)] md:text-xs">BIA · Risques · Plans · Exercices · Crise</p>
           </>}
         </div>
-        <p className="relative z-10 text-[10px] text-[#F8F6F2]/40">© 2026 Resillia</p>
+        <p className="relative z-10 text-[10px] text-[rgba(245,241,232,0.58)]">© 2026 Resillia</p>
       </aside>
       <main className="order-1 md:order-2 flex min-h-[72vh] md:min-h-screen flex-1 items-center justify-center px-5 py-9 sm:px-8 md:px-12 lg:px-16">
         <div className="w-full max-w-[460px]">
