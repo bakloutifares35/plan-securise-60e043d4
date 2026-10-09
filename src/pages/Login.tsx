@@ -148,8 +148,8 @@ export default function Login() {
       </form>
 
       <p className="mt-7 border-t border-[#172030]/10 pt-5 text-center text-sm text-[#3B4454]">
-        <span className="font-medium">Accès sur invitation</span><br />
-        <Link to="/signup" className="mt-1 inline-block rounded text-[#2A5141] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2A5141]">Vous n’avez pas encore d’accès ? Demander un accès</Link>
+        Pas encore de compte ?{" "}
+        <Link to="/signup" className="rounded font-medium text-[#2A5141] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2A5141]">Créer un compte</Link>
       </p>
     </AuthLayout>
   );
